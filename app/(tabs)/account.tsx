@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus } from 'lucide-react-native';
+import { EmailService, generateVerificationToken, isValidEmail } from '@/services/emailService';
 
 interface UserAccount {
   email: string;
@@ -33,10 +34,14 @@ export default function AccountScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [user, setUser] = useState<UserAccount | null>(null);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [emailService] = useState(() => {
+    const apiKey = process.env.EXPO_PUBLIC_RESEND_API_KEY;
+    const fromEmail = process.env.EXPO_PUBLIC_FROM_EMAIL || 'noreply@ptbot.app';
+    return apiKey ? new EmailService(apiKey, fromEmail) : null;
+  });
 
   const validateEmail = (email: string) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+    return isValidEmail(email);
   };
 
   const validatePassword = (password: string) => {
@@ -44,37 +49,28 @@ export default function AccountScreen() {
   };
 
   const sendVerificationEmail = async (userEmail: string, userName: string) => {
-    try {
-      // In a real app, this would be an API call to your backend
-      const verificationData = {
-        to: userEmail,
-        subject: 'Verify Your PTBot Account',
-        body: `
-          Hi ${userName},
-          
-          Welcome to PTBot! Please verify your email address to complete your account setup.
-          
-          Click the link below to verify your account:
-          https://ptbot.app/verify-email?token=verification_token_here
-          
-          If you didn't create this account, please ignore this email.
-          
-          Best regards,
-          The PTBot Team
-        `,
-      };
+    if (!emailService) {
+      console.warn('Email service not configured');
+      return false;
+    }
 
-      // Simulate API call
-      console.log('Verification email sent:', verificationData);
+    try {
+      const verificationToken = generateVerificationToken();
+      const appUrl = process.env.EXPO_PUBLIC_APP_URL || 'https://your-ptbot-app.vercel.app';
       
-      // In production, replace this with actual email API call:
-      // const response = await fetch('/api/send-verification', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(verificationData),
-      // });
+      const success = await emailService.sendVerificationEmail({
+        to: userEmail,
+        firstName: userName,
+        verificationToken,
+        appUrl,
+      });
       
-      return true;
+      if (success) {
+        // Store verification token (in real app, save to database)
+        console.log('Verification token for', userEmail, ':', verificationToken);
+      }
+      
+      return success;
     } catch (error) {
       console.error('Failed to send verification email:', error);
       return false;
@@ -123,11 +119,14 @@ export default function AccountScreen() {
         
         Alert.alert(
           'Account Created!',
-          `Welcome ${firstName}! We've sent a verification email to ${email}. Please check your inbox and click the verification link to activate your account.`,
+          `Welcome ${firstName}! We've sent a verification email to ${email}. Please check your inbox (and spam folder) and click the verification link to activate your account.`,
           [{ text: 'OK' }]
         );
       } else {
-        Alert.alert('Error', 'Failed to send verification email. Please try again.');
+        Alert.alert(
+          'Email Service Error', 
+          'Account created but verification email could not be sent. Please contact support or try signing in.'
+        );
       }
     } catch (error) {
       console.error('Sign up error:', error);
@@ -207,11 +206,11 @@ export default function AccountScreen() {
     if (emailSent) {
       Alert.alert(
         'Verification Email Sent',
-        `We've sent another verification email to ${user.email}. Please check your inbox.`,
+        `We've sent another verification email to ${user.email}. Please check your inbox and spam folder.`,
         [{ text: 'OK' }]
       );
     } else {
-      Alert.alert('Error', 'Failed to send verification email. Please try again.');
+      Alert.alert('Email Error', 'Failed to send verification email. Please check your internet connection and try again.');
     }
     
     setIsLoading(false);
@@ -271,6 +270,9 @@ export default function AccountScreen() {
                   </Text>
                   <Text style={styles.verificationAlertText}>
                     Please check your email and click the verification link to activate your account.
+                  </Text>
+                  <Text style={styles.verificationAlertNote}>
+                    Don't see the email? Check your spam folder or click below to resend.
                   </Text>
                   <TouchableOpacity 
                     style={styles.resendButton}
@@ -771,6 +773,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#92400E',
     marginBottom: 8,
+  },
+  verificationAlertNote: {
+    fontSize: 11,
+    color: '#92400E',
+    marginBottom: 8,
+    fontStyle: 'italic',
   },
   resendButton: {
     flexDirection: 'row',
