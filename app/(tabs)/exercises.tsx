@@ -99,9 +99,9 @@ export default function ExercisesScreen() {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Book Now', onPress: () => {
-          const consultationUrl = 'https://www.justinlemmodpt.com';
+          const consultationUrl = 'https://justinlemmodpt.com';
           Linking.openURL(consultationUrl).catch(() => {
-            Alert.alert('Error', 'Unable to open website. Please visit www.justinlemmodpt.com directly.');
+            Alert.alert('Error', 'Unable to open website. Please visit justinlemmodpt.com directly.');
           });
         }}
       ]

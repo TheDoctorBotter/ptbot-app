@@ -215,7 +215,7 @@ export default function ProgressScreen() {
     setNewEntry(prev => ({
       ...prev,
       exercises: prev.exercises.map((ex, i) => 
-        i === index ? { ...ex, [field]: value } : ex
+        i === index ? { ...ex, [field]: field === 'name' ? value : (typeof value === 'string' ? parseInt(value) || 0 : value) } : ex
       )
     }));
   };
@@ -223,7 +223,7 @@ export default function ProgressScreen() {
   const updateEditExercise = (index: number, field: string, value: string | number) => {
     if (!editingEntry) return;
     const updatedExercises = editingEntry.exerciseDetails?.map((ex, i) => 
-      i === index ? { ...ex, [field]: value } : ex
+      i === index ? { ...ex, [field]: field === 'name' ? value : (typeof value === 'string' ? parseInt(value) || 0 : value) } : ex
     ) || [];
     setEditingEntry(prev => prev ? { ...prev, exerciseDetails: updatedExercises } : null);
   };
@@ -441,11 +441,9 @@ export default function ProgressScreen() {
                 <TextInput
                   style={styles.exerciseNameInput}
                   value={exercise.name}
-                  onChangeText={(text) => updateExercise(index, 'name', text)}
+                  onChangeText={(value) => updateExercise(index, 'name', value)}
                   placeholder="Exercise name (e.g., Push-ups, Squats)"
                   placeholderTextColor="#9CA3AF"
-                  multiline={false}
-                  blurOnSubmit={true}
                 />
                 
                 <View style={styles.setsRepsContainer}>
@@ -453,8 +451,8 @@ export default function ProgressScreen() {
                     <Text style={styles.setsRepsLabel}>Sets</Text>
                     <TextInput
                       style={styles.setsRepsInput}
-                      value={exercise.sets > 0 ? exercise.sets.toString() : ''}
-                      onChangeText={(text) => updateExercise(index, 'sets', parseInt(text) || 0)}
+                      value={exercise.sets.toString()}
+                      onChangeText={(value) => updateExercise(index, 'sets', value)}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
                       keyboardType="numeric"
@@ -464,8 +462,8 @@ export default function ProgressScreen() {
                     <Text style={styles.setsRepsLabel}>Reps</Text>
                     <TextInput
                       style={styles.setsRepsInput}
-                      value={exercise.reps > 0 ? exercise.reps.toString() : ''}
-                      onChangeText={(text) => updateExercise(index, 'reps', parseInt(text) || 0)}
+                       value={exercise.reps.toString()}
+                       onChangeText={(value) => updateExercise(index, 'reps', value)}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
                       keyboardType="numeric"
@@ -594,11 +592,9 @@ export default function ProgressScreen() {
                     <TextInput
                       style={styles.exerciseNameInput}
                       value={exercise.name}
-                      onChangeText={(text) => updateEditExercise(index, 'name', text)}
+                      onChangeText={(value) => updateEditExercise(index, 'name', value)}
                       placeholder="Exercise name (e.g., Push-ups, Squats)"
                       placeholderTextColor="#9CA3AF"
-                      multiline={false}
-                      blurOnSubmit={true}
                     />
                     
                     <View style={styles.setsRepsContainer}>
@@ -606,8 +602,8 @@ export default function ProgressScreen() {
                         <Text style={styles.setsRepsLabel}>Sets</Text>
                         <TextInput
                           style={styles.setsRepsInput}
-                          value={exercise.sets > 0 ? exercise.sets.toString() : ''}
-                          onChangeText={(text) => updateEditExercise(index, 'sets', parseInt(text) || 0)}
+                          value={exercise.sets.toString()}
+                          onChangeText={(value) => updateEditExercise(index, 'sets', value)}
                           placeholder="0"
                           placeholderTextColor="#9CA3AF"
                           keyboardType="numeric"
@@ -617,8 +613,8 @@ export default function ProgressScreen() {
                         <Text style={styles.setsRepsLabel}>Reps</Text>
                         <TextInput
                           style={styles.setsRepsInput}
-                          value={exercise.reps > 0 ? exercise.reps.toString() : ''}
-                          onChangeText={(text) => updateEditExercise(index, 'reps', parseInt(text) || 0)}
+                          value={exercise.reps.toString()}
+                          onChangeText={(value) => updateEditExercise(index, 'reps', value)}
                           placeholder="0"
                           placeholderTextColor="#9CA3AF"
                           keyboardType="numeric"
