@@ -66,6 +66,8 @@ export default function ProgressScreen() {
     exercises: [{ name: '', sets: 0, reps: 0 }],
     notes: '',
   });
+  const [editingEntry, setEditingEntry] = useState<ProgressData | null>(null);
+  const [showEditEntry, setShowEditEntry] = useState(false);
 
   const screenWidth = Dimensions.get('window').width;
   const chartWidth = screenWidth - 64;
@@ -218,6 +220,30 @@ export default function ProgressScreen() {
     }));
   };
 
+  const updateEditExercise = (index: number, field: string, value: string | number) => {
+    if (!editingEntry) return;
+    const updatedExercises = editingEntry.exerciseDetails?.map((ex, i) => 
+      i === index ? { ...ex, [field]: value } : ex
+    ) || [];
+    setEditingEntry(prev => prev ? { ...prev, exerciseDetails: updatedExercises } : null);
+  };
+
+  const addEditExerciseField = () => {
+    if (!editingEntry) return;
+    setEditingEntry(prev => prev ? {
+      ...prev,
+      exerciseDetails: [...(prev.exerciseDetails || []), { name: '', sets: 0, reps: 0 }]
+    } : null);
+  };
+
+  const removeEditExerciseField = (index: number) => {
+    if (!editingEntry) return;
+    setEditingEntry(prev => prev ? {
+      ...prev,
+      exerciseDetails: prev.exerciseDetails?.filter((_, i) => i !== index) || []
+    } : null);
+  };
+
   const saveEntry = () => {
     // Validate entry
     if (newEntry.painLevel === 0) {
@@ -258,6 +284,64 @@ export default function ProgressScreen() {
 
     setShowAddEntry(false);
     Alert.alert('Success', 'Progress entry added! Your stats have been updated.');
+  };
+
+  const startEditEntry = (entry: ProgressData) => {
+    setEditingEntry({ ...entry });
+    setShowEditEntry(true);
+  };
+
+  const saveEditEntry = () => {
+    if (!editingEntry) return;
+
+    if (editingEntry.painLevel === 0) {
+      Alert.alert('Missing Information', 'Please select a pain level.');
+      return;
+    }
+
+    const validExercises = editingEntry.exerciseDetails?.filter(ex => 
+      ex.name.trim() && ex.sets > 0 && ex.reps > 0
+    ) || [];
+
+    if (validExercises.length === 0) {
+      Alert.alert('Missing Information', 'Please add at least one exercise with sets and reps.');
+      return;
+    }
+
+    const updatedEntry: ProgressData = {
+      ...editingEntry,
+      exercisesCompleted: validExercises.length,
+      exerciseDetails: validExercises,
+      notes: editingEntry.notes.trim(),
+    };
+
+    setProgressData(prev => 
+      prev.map(entry => 
+        entry.date === editingEntry.date ? updatedEntry : entry
+      ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    );
+
+    setEditingEntry(null);
+    setShowEditEntry(false);
+    Alert.alert('Success', 'Progress entry updated!');
+  };
+
+  const deleteEntry = (entryToDelete: ProgressData) => {
+    Alert.alert(
+      'Delete Entry',
+      `Are you sure you want to delete the entry from ${new Date(entryToDelete.date).toLocaleDateString()}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setProgressData(prev => prev.filter(entry => entry.date !== entryToDelete.date));
+            Alert.alert('Success', 'Entry deleted successfully.');
+          }
+        }
+      ]
+    );
   };
 
   const AddEntryModal = () => (
@@ -321,6 +405,10 @@ export default function ProgressScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <View style={styles.painLevelLabels}>
+              <Text style={styles.painLevelLabel}>No Pain</Text>
+              <Text style={styles.painLevelLabel}>Severe</Text>
+            </View>
           </View>
 
           {/* Exercises */}
@@ -356,6 +444,8 @@ export default function ProgressScreen() {
                   onChangeText={(text) => updateExercise(index, 'name', text)}
                   placeholder="Exercise name (e.g., Push-ups, Squats)"
                   placeholderTextColor="#9CA3AF"
+                  multiline={false}
+                  blurOnSubmit={true}
                 />
                 
                 <View style={styles.setsRepsContainer}>
@@ -363,7 +453,7 @@ export default function ProgressScreen() {
                     <Text style={styles.setsRepsLabel}>Sets</Text>
                     <TextInput
                       style={styles.setsRepsInput}
-                      value={exercise.sets.toString()}
+                      value={exercise.sets > 0 ? exercise.sets.toString() : ''}
                       onChangeText={(text) => updateExercise(index, 'sets', parseInt(text) || 0)}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
@@ -374,7 +464,7 @@ export default function ProgressScreen() {
                     <Text style={styles.setsRepsLabel}>Reps</Text>
                     <TextInput
                       style={styles.setsRepsInput}
-                      value={exercise.reps.toString()}
+                      value={exercise.reps > 0 ? exercise.reps.toString() : ''}
                       onChangeText={(text) => updateExercise(index, 'reps', parseInt(text) || 0)}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
@@ -406,6 +496,161 @@ export default function ProgressScreen() {
     </Modal>
   );
 
+  const EditEntryModal = () => (
+    <Modal
+      visible={showEditEntry}
+      animationType="slide"
+      presentationStyle="pageSheet"
+    >
+      <SafeAreaView style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <TouchableOpacity
+            style={styles.modalCloseButton}
+            onPress={() => {
+              setShowEditEntry(false);
+              setEditingEntry(null);
+            }}
+          >
+            <X size={24} color="#6B7280" />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Edit Progress Entry</Text>
+          <TouchableOpacity
+            style={styles.modalSaveButton}
+            onPress={saveEditEntry}
+          >
+            <Save size={20} color="#2563EB" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+          {editingEntry && (
+            <>
+              {/* Date Display */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Date</Text>
+                <Text style={styles.dateDisplay}>
+                  {new Date(editingEntry.date).toLocaleDateString()}
+                </Text>
+              </View>
+
+              {/* Pain Level */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Pain Level (0-10)</Text>
+                <View style={styles.painLevelContainer}>
+                  {[...Array(11)].map((_, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={[
+                        styles.painLevelButton,
+                        editingEntry.painLevel === i && styles.painLevelButtonSelected,
+                        i >= 7 && styles.painLevelButtonHigh,
+                      ]}
+                      onPress={() => setEditingEntry(prev => prev ? { ...prev, painLevel: i } : null)}
+                    >
+                      <Text
+                        style={[
+                          styles.painLevelText,
+                          editingEntry.painLevel === i && styles.painLevelTextSelected,
+                        ]}
+                      >
+                        {i}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.painLevelLabels}>
+                  <Text style={styles.painLevelLabel}>No Pain</Text>
+                  <Text style={styles.painLevelLabel}>Severe</Text>
+                </View>
+              </View>
+
+              {/* Exercises */}
+              <View style={styles.modalSection}>
+                <View style={styles.exerciseHeader}>
+                  <Text style={styles.modalSectionTitle}>Exercises Performed</Text>
+                  <TouchableOpacity
+                    style={styles.addExerciseButton}
+                    onPress={addEditExerciseField}
+                  >
+                    <Plus size={16} color="#2563EB" />
+                    <Text style={styles.addExerciseText}>Add Exercise</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                {(editingEntry.exerciseDetails || []).map((exercise, index) => (
+                  <View key={index} style={styles.exerciseInputGroup}>
+                    <View style={styles.exerciseInputHeader}>
+                      <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
+                      {(editingEntry.exerciseDetails?.length || 0) > 1 && (
+                        <TouchableOpacity
+                          style={styles.removeExerciseButton}
+                          onPress={() => removeEditExerciseField(index)}
+                        >
+                          <X size={16} color="#EF4444" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    
+                    <TextInput
+                      style={styles.exerciseNameInput}
+                      value={exercise.name}
+                      onChangeText={(text) => updateEditExercise(index, 'name', text)}
+                      placeholder="Exercise name (e.g., Push-ups, Squats)"
+                      placeholderTextColor="#9CA3AF"
+                      multiline={false}
+                      blurOnSubmit={true}
+                    />
+                    
+                    <View style={styles.setsRepsContainer}>
+                      <View style={styles.setsRepsField}>
+                        <Text style={styles.setsRepsLabel}>Sets</Text>
+                        <TextInput
+                          style={styles.setsRepsInput}
+                          value={exercise.sets > 0 ? exercise.sets.toString() : ''}
+                          onChangeText={(text) => updateEditExercise(index, 'sets', parseInt(text) || 0)}
+                          placeholder="0"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                        />
+                      </View>
+                      <View style={styles.setsRepsField}>
+                        <Text style={styles.setsRepsLabel}>Reps</Text>
+                        <TextInput
+                          style={styles.setsRepsInput}
+                          value={exercise.reps > 0 ? exercise.reps.toString() : ''}
+                          onChangeText={(text) => updateEditExercise(index, 'reps', parseInt(text) || 0)}
+                          placeholder="0"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                        />
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* Notes */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Notes (Optional)</Text>
+                <TextInput
+                  style={styles.notesInput}
+                  value={editingEntry.notes}
+                  onChangeText={(text) => setEditingEntry(prev => prev ? { ...prev, notes: text } : null)}
+                  placeholder="How did you feel? Any observations..."
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+            </>
+          )}
+
+          <View style={styles.modalBottomSpacer} />
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -420,6 +665,7 @@ export default function ProgressScreen() {
       </View>
 
       <AddEntryModal />
+      <EditEntryModal />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Add Entry Button */}
@@ -514,9 +760,25 @@ export default function ProgressScreen() {
           {getFilteredData().slice(-5).reverse().map((item, index) => (
             <View key={index} style={styles.entryCard}>
               <View style={styles.entryHeader}>
-                <Text style={styles.entryDate}>
-                  {new Date(item.date).toLocaleDateString()}
-                </Text>
+                <View style={styles.entryDateContainer}>
+                  <Text style={styles.entryDate}>
+                    {new Date(item.date).toLocaleDateString()}
+                  </Text>
+                  <View style={styles.entryActions}>
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => startEditEntry(item)}
+                    >
+                      <Text style={styles.editButtonText}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => deleteEntry(item)}
+                    >
+                      <Text style={styles.deleteButtonText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
                 <View style={styles.entryMetrics}>
                   <View style={[
                     styles.painBadge,
@@ -781,15 +1043,45 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   entryHeader: {
+    flexDirection: 'column',
+    gap: 8,
+    marginBottom: 8,
+  },
+  entryDateContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
   entryDate: {
     fontSize: 14,
     fontWeight: '500',
     color: '#374151',
+  },
+  entryActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  editButton: {
+    backgroundColor: '#EBF4FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  editButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#2563EB',
+  },
+  deleteButton: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  deleteButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#DC2626',
   },
   entryMetrics: {
     flexDirection: 'row',
@@ -1006,5 +1298,23 @@ const styles = StyleSheet.create({
   },
   modalBottomSpacer: {
     height: 40,
+  },
+  dateDisplay: {
+    fontSize: 16,
+    color: '#374151',
+    fontWeight: '500',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+  },
+  painLevelLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  painLevelLabel: {
+    fontSize: 12,
+    color: '#6B7280',
   },
 });
