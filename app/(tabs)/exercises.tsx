@@ -1,13 +1,5 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  Linking,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Calendar, DollarSign, Dumbbell } from 'lucide-react-native';
 
@@ -93,40 +85,26 @@ export default function ExercisesScreen() {
   };
 
   const bookConsultation = () => {
-    Alert.alert(
-      'Virtual Consultation',
-      'Book a personalized virtual consultation with Dr. Justin Lemmo, PT, DPT to discuss your specific condition and get customized exercise recommendations.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Book Now', onPress: () => {
-          const consultationUrl = 'https://justinlemmodpt.com';
-          console.log('Opening URL:', consultationUrl);
-          
-          Linking.canOpenURL(consultationUrl)
-            .then((supported) => {
-              console.log('URL supported:', supported);
-              if (supported) {
-                return Linking.openURL(consultationUrl);
-              } else {
-                throw new Error('URL not supported');
-              }
-            })
-            .then(() => {
-              console.log('URL opened successfully');
-            })
-            .catch((error) => {
-              console.error('Failed to open URL:', error);
-              Alert.alert(
-                'Open Website',
-                'Please visit justinlemmodpt.com in your browser to book a consultation.',
-                [{ text: 'OK' }]
-              );
-            });
-        }}
-      ]
-    );
-  };
+  const consultationUrl = 'https://www.justinlemmodpt.com';
 
+  if (Platform.OS === 'web') {
+    // Try to open a new tab
+    const newWindow = window.open(
+      consultationUrl,
+      '_blank',
+      'noopener,noreferrer'
+    );
+    // Fallback to full-page navigation if pop-up blocked
+    if (!newWindow) {
+      window.location.href = consultationUrl;
+    }
+  } else {
+    // React Native mobile
+    Linking.openURL(consultationUrl)
+      .catch((err) => console.error('Linking.openURL failed', err));
+  }
+};
+       
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
       case 'Beginner': return '#10B981';
@@ -173,7 +151,9 @@ export default function ExercisesScreen() {
         </TouchableOpacity>
 
         {/* Texas Consultation Offer */}
-        <TouchableOpacity style={styles.consultationCard} onPress={bookConsultation}>
+        <TouchableOpacity style={styles.consultationCard} 
+        onPress={bookConsultation}
+        >
           <View style={styles.consultationHeader}>
             <MapPin size={20} color="#2563EB" />
             <Text style={styles.consultationTitle}>Texas Residents</Text>
