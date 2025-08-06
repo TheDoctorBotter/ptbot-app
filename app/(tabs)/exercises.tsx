@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Calendar, DollarSign, Dumbbell } from 'lucide-react-native';
 
@@ -69,8 +69,19 @@ export default function ExercisesScreen() {
     : exercises.filter(ex => ex.bodyPart === selectedBodyPart);
 
   const openYouTubeChannel = () => {
-    Linking.openURL('http://www.youtube.com/@justinlemmodpt').catch(() => {
-      Alert.alert('Error', 'Unable to open YouTube channel. Please try again later.');
+    const url = 'http://www.youtube.com/@justinlemmodpt'
+    
+    Linking.canOpenURL(url)
+      .then((supported: boolean) => {
+        if (supported) {
+          Linking.openURL(url);
+        } else {
+          Alert.alert('Error', 'Cannot open the YouTube channel.');
+        }
+      })
+    .catch((err: unknown) => {
+      console.error('Failed to open URL:', err);
+      Alert.alert('Error', 'Unable to open Youtube chanel. Please try again later.');
     });
   };
 
