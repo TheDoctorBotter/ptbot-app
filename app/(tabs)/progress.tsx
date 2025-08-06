@@ -214,17 +214,33 @@ export default function ProgressScreen() {
   const updateExercise = (index: number, field: string, value: string | number) => {
     setNewEntry(prev => ({
       ...prev,
-      exercises: prev.exercises.map((ex, i) => 
-        i === index ? { ...ex, [field]: field === 'name' ? value : (typeof value === 'string' ? parseInt(value) || 0 : value) } : ex
-      )
+      exercises: prev.exercises.map((ex, i) => {
+        if (i === index) {
+          if (field === 'name') {
+            return { ...ex, [field]: value as string };
+          } else {
+            const numValue = typeof value === 'string' ? parseInt(value) || 0 : value;
+            return { ...ex, [field]: numValue };
+          }
+        }
+        return ex;
+      })
     }));
   };
 
   const updateEditExercise = (index: number, field: string, value: string | number) => {
     if (!editingEntry) return;
-    const updatedExercises = editingEntry.exerciseDetails?.map((ex, i) => 
-      i === index ? { ...ex, [field]: field === 'name' ? value : (typeof value === 'string' ? parseInt(value) || 0 : value) } : ex
-    ) || [];
+    const updatedExercises = editingEntry.exerciseDetails?.map((ex, i) => {
+      if (i === index) {
+        if (field === 'name') {
+          return { ...ex, [field]: value as string };
+        } else {
+          const numValue = typeof value === 'string' ? parseInt(value) || 0 : value;
+          return { ...ex, [field]: numValue };
+        }
+      }
+      return ex;
+    }) || [];
     setEditingEntry(prev => prev ? { ...prev, exerciseDetails: updatedExercises } : null);
   };
 
@@ -451,7 +467,7 @@ export default function ProgressScreen() {
                     <Text style={styles.setsRepsLabel}>Sets</Text>
                     <TextInput
                       style={styles.setsRepsInput}
-                      value={exercise.sets.toString()}
+                      value={exercise.sets === 0 ? '' : exercise.sets.toString()}
                       onChangeText={(value) => updateExercise(index, 'sets', value)}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
@@ -462,8 +478,8 @@ export default function ProgressScreen() {
                     <Text style={styles.setsRepsLabel}>Reps</Text>
                     <TextInput
                       style={styles.setsRepsInput}
-                       value={exercise.reps.toString()}
-                       onChangeText={(value) => updateExercise(index, 'reps', value)}
+                      value={exercise.reps === 0 ? '' : exercise.reps.toString()}
+                      onChangeText={(value) => updateExercise(index, 'reps', value)}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
                       keyboardType="numeric"
@@ -602,7 +618,7 @@ export default function ProgressScreen() {
                         <Text style={styles.setsRepsLabel}>Sets</Text>
                         <TextInput
                           style={styles.setsRepsInput}
-                          value={exercise.sets.toString()}
+                          value={exercise.sets === 0 ? '' : exercise.sets.toString()}
                           onChangeText={(value) => updateEditExercise(index, 'sets', value)}
                           placeholder="0"
                           placeholderTextColor="#9CA3AF"
@@ -613,7 +629,7 @@ export default function ProgressScreen() {
                         <Text style={styles.setsRepsLabel}>Reps</Text>
                         <TextInput
                           style={styles.setsRepsInput}
-                          value={exercise.reps.toString()}
+                          value={exercise.reps === 0 ? '' : exercise.reps.toString()}
                           onChangeText={(value) => updateEditExercise(index, 'reps', value)}
                           placeholder="0"
                           placeholderTextColor="#9CA3AF"

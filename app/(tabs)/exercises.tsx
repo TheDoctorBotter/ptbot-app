@@ -100,9 +100,28 @@ export default function ExercisesScreen() {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Book Now', onPress: () => {
           const consultationUrl = 'https://justinlemmodpt.com';
-          Linking.openURL(consultationUrl).catch(() => {
-            Alert.alert('Error', 'Unable to open website. Please visit justinlemmodpt.com directly.');
-          });
+          console.log('Opening URL:', consultationUrl);
+          
+          Linking.canOpenURL(consultationUrl)
+            .then((supported) => {
+              console.log('URL supported:', supported);
+              if (supported) {
+                return Linking.openURL(consultationUrl);
+              } else {
+                throw new Error('URL not supported');
+              }
+            })
+            .then(() => {
+              console.log('URL opened successfully');
+            })
+            .catch((error) => {
+              console.error('Failed to open URL:', error);
+              Alert.alert(
+                'Open Website',
+                'Please visit justinlemmodpt.com in your browser to book a consultation.',
+                [{ text: 'OK' }]
+              );
+            });
         }}
       ]
     );

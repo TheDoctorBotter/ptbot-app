@@ -37,6 +37,11 @@ export default function AccountScreen() {
   const [emailService] = useState(() => {
     const apiKey = process.env.EXPO_PUBLIC_RESEND_API_KEY;
     const fromEmail = process.env.EXPO_PUBLIC_FROM_EMAIL || 'noreply@ptbot.app';
+    console.log('Email service config:', { 
+      hasApiKey: !!apiKey, 
+      fromEmail,
+      apiKeyLength: apiKey?.length 
+    });
     return apiKey ? new EmailService(apiKey, fromEmail) : null;
   });
 
@@ -50,7 +55,12 @@ export default function AccountScreen() {
 
   const sendVerificationEmail = async (userEmail: string, userName: string) => {
     if (!emailService) {
-      console.warn('Email service not configured');
+      console.warn('Email service not configured - missing EXPO_PUBLIC_RESEND_API_KEY');
+      Alert.alert(
+        'Email Service Not Available',
+        'Email verification is not configured. Please contact support.',
+        [{ text: 'OK' }]
+      );
       return false;
     }
 
@@ -67,12 +77,20 @@ export default function AccountScreen() {
       
       if (success) {
         // Store verification token (in real app, save to database)
-        console.log('Verification token for', userEmail, ':', verificationToken);
+        console.log('✅ Verification email sent successfully to:', userEmail);
+        console.log('Verification token:', verificationToken);
+      } else {
+        console.error('❌ Failed to send verification email');
       }
       
       return success;
     } catch (error) {
       console.error('Failed to send verification email:', error);
+      Alert.alert(
+        'Email Error',
+        'Failed to send verification email. Please check your internet connection and try again.',
+        [{ text: 'OK' }]
+      );
       return false;
     }
   };
