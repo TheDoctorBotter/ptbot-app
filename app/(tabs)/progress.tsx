@@ -1,4 +1,4 @@
-// ProgressScreen.tsx
+// app/(tabs)/progress.tsx
 
 import React, { useState, useMemo } from 'react';
 import {
@@ -101,9 +101,7 @@ export default function ProgressScreen() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => {
-          setProgressEntries(prev => prev.filter(e => e.id !== id));
-        },
+        onPress: () => setProgressEntries(prev => prev.filter(e => e.id !== id)),
       },
     ]);
   };
@@ -153,16 +151,15 @@ export default function ProgressScreen() {
       exercises: newEntry.exercises,
       notes: newEntry.notes,
     };
-    setProgressEntries(prev => {
-      if (editingId) {
-        return prev.map(e => (e.id === editingId ? entry : e));
-      }
-      return [entry, ...prev];
-    });
+    setProgressEntries(prev =>
+      editingId
+        ? prev.map(e => (e.id === editingId ? entry : e))
+        : [entry, ...prev]
+    );
     setShowModal(false);
   };
 
-  // ---- RENDER MODAL ----
+  // ---- MODAL COMPONENT ----
   const AddEditModal = () => (
     <Modal visible={showModal} animationType="slide">
       <SafeAreaView style={styles.modalContainer}>
@@ -170,9 +167,7 @@ export default function ProgressScreen() {
           <TouchableOpacity onPress={() => setShowModal(false)}>
             <X size={24} color="#000" />
           </TouchableOpacity>
-          <Text style={styles.modalTitle}>
-            {editingId ? 'Edit Entry' : 'Add Entry'}
-          </Text>
+          <Text style={styles.modalTitle}>{editingId ? 'Edit Entry' : 'Add Entry'}</Text>
           <TouchableOpacity onPress={saveEntry}>
             <Save size={24} color="#000" />
           </TouchableOpacity>
@@ -192,9 +187,7 @@ export default function ProgressScreen() {
                 style={styles.input}
                 keyboardType="numeric"
                 value={newEntry.painLevel}
-                onChangeText={v =>
-                  setNewEntry(prev => ({ ...prev, painLevel: v }))
-                }
+                onChangeText={v => setNewEntry(prev => ({ ...prev, painLevel: v }))}
               />
 
               {newEntry.exercises.map((ex, idx) => (
@@ -223,22 +216,16 @@ export default function ProgressScreen() {
                     />
                   </View>
                   {newEntry.exercises.length > 1 && (
-                    <TouchableOpacity
-                      onPress={() => removeExerciseField(idx)}
-                    >
+                    <TouchableOpacity onPress={() => removeExerciseField(idx)}>
                       <Text style={styles.removeText}>Remove</Text>
                     </TouchableOpacity>
                   )}
                 </View>
               ))}
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={addExerciseField}
-              >
+
+              <TouchableOpacity style={styles.addButton} onPress={addExerciseField}>
                 <Plus size={16} color="#FFF" />
-                <Text style={styles.addButtonText}>
-                  Add Another Exercise
-                </Text>
+                <Text style={styles.addButtonText}>Add Another Exercise</Text>
               </TouchableOpacity>
 
               <Text style={styles.label}>Notes</Text>
@@ -246,9 +233,7 @@ export default function ProgressScreen() {
                 style={[styles.input, { minHeight: 80 }]}
                 multiline
                 value={newEntry.notes}
-                onChangeText={v =>
-                  setNewEntry(prev => ({ ...prev, notes: v }))
-                }
+                onChangeText={v => setNewEntry(prev => ({ ...prev, notes: v }))}
               />
             </ScrollView>
           </TouchableWithoutFeedback>
@@ -262,26 +247,21 @@ export default function ProgressScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header Image */}
       <Image
-        source={require('../assets/progressHeader.png')}
+        source={require('../../assets/progressHeader.png')}
         style={styles.headerImage}
         resizeMode="cover"
       />
       <View style={styles.headerText}>
         <Text style={styles.title}>Progress Tracking</Text>
-        <Text style={styles.subtitle}>
-          Monitor your recovery journey
-        </Text>
+        <Text style={styles.subtitle}>Monitor your recovery journey</Text>
       </View>
 
-      {/* Add Entry */}
-      <TouchableOpacity
-        style={styles.entryButton}
-        onPress={openAddModal}
-      >
+      {/* Add Entry Button */}
+      <TouchableOpacity style={styles.entryButton} onPress={openAddModal}>
         <Text style={styles.entryButtonText}>+ Add Entry</Text>
       </TouchableOpacity>
 
-      {/* Segment Control (UI only) */}
+      {/* Segment Control */}
       <View style={styles.toggleRow}>
         {['Week', 'Month', 'All Time'].map(label => (
           <View
@@ -323,9 +303,7 @@ export default function ProgressScreen() {
             {improvement >= 0 ? '+' : ''}
             {improvement.toFixed(1)}
           </Text>
-          <Text style={styles.statCaption}>
-            Pain level change
-          </Text>
+          <Text style={styles.statCaption}>Pain level change</Text>
         </View>
       </View>
 
@@ -337,9 +315,7 @@ export default function ProgressScreen() {
             <View style={styles.cardHeader}>
               <Text style={styles.cardDate}>{entry.date}</Text>
               <View style={styles.cardActions}>
-                <TouchableOpacity
-                  onPress={() => openEditModal(entry)}
-                >
+                <TouchableOpacity onPress={() => openEditModal(entry)}>
                   <Edit2 size={18} color="#2563EB" />
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -350,17 +326,13 @@ export default function ProgressScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-            <Text style={styles.cardPain}>
-              Pain: {entry.painLevel}/10
-            </Text>
+            <Text style={styles.cardPain}>Pain: {entry.painLevel}/10</Text>
             {entry.exercises.map(ex => (
               <Text key={ex.id} style={styles.cardExercise}>
                 • {ex.name} ({ex.sets} x {ex.reps})
               </Text>
             ))}
-            {entry.notes ? (
-              <Text style={styles.cardNotes}>📝 {entry.notes}</Text>
-            ) : null}
+            {entry.notes ? <Text style={styles.cardNotes}>📝 {entry.notes}</Text> : null}
           </View>
         ))}
       </ScrollView>
@@ -376,6 +348,7 @@ const styles = StyleSheet.create({
   headerText: { padding: 16 },
   title: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
   subtitle: { fontSize: 14, color: '#E0EFFF', marginTop: 4 },
+
   entryButton: {
     backgroundColor: '#2563EB',
     marginHorizontal: 16,
@@ -385,6 +358,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   entryButtonText: { color: '#fff', fontSize: 16, fontWeight: '500' },
+
   toggleRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -400,6 +374,7 @@ const styles = StyleSheet.create({
   toggleSelected: { backgroundColor: '#2563EB' },
   toggleText: { color: '#333', fontWeight: '500' },
   toggleTextSelected: { color: '#fff' },
+
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -419,6 +394,7 @@ const styles = StyleSheet.create({
   statTitle: { fontSize: 12, color: '#555' },
   statValue: { fontSize: 18, fontWeight: '600', marginTop: 4 },
   statCaption: { fontSize: 12, color: '#777', marginTop: 2 },
+
   sectionHeader: {
     fontSize: 16,
     fontWeight: '600',
@@ -426,6 +402,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   entriesList: { marginHorizontal: 16, marginBottom: 16 },
+
   entryCard: {
     backgroundColor: '#fff',
     borderRadius: 10,
@@ -458,6 +435,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: '600' },
   modalScroll: { padding: 16 },
+
   label: { fontWeight: '600', marginBottom: 6 },
   input: {
     borderWidth: 1,
@@ -469,6 +447,8 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
   halfInput: { flex: 0.48 },
+  exerciseGroup: { marginBottom: 16 },
+
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -478,6 +458,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   addButtonText: { color: '#fff', fontWeight: '600', marginLeft: 6 },
+
   removeText: { color: '#D00', marginTop: -8, marginBottom: 12 },
-  exerciseGroup: { marginBottom: 16 },
 });
