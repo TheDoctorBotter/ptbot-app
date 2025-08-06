@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -28,17 +28,15 @@ interface ProgressData {
   id: string;
   date: string;
   painLevel: number;
-  exercisesCompleted: number;
-  exerciseDetails: ExerciseEntry[];
+  exercises: ExerciseEntry[];
   notes: string;
 }
 
 export default function ProgressScreen() {
-  const [progressList, setProgressList] = useState<ProgressData[]>([]);
+  const [progressEntries, setProgressEntries] = useState<ProgressData[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newEntry, setNewEntry] = useState({
-    date: new Date().toISOString().split('T')[0],
-    painLevel: 0,
+    painLevel: '',
     exercises: [{ id: uuidv4(), name: '', sets: 0, reps: 0 }],
     notes: '',
   });
@@ -61,110 +59,127 @@ export default function ProgressScreen() {
     setNewEntry(prev => ({
       ...prev,
       exercises: prev.exercises.map((ex, i) =>
-        i === index ? { ...ex, [field]: field === 'name' ? value : parseInt(value) || 0 } : ex
+        i === index
+          ? { ...ex, [field]: field === 'name' ? value : parseInt(value) || 0 }
+          : ex
       ),
     }));
   };
 
   const saveEntry = () => {
-    const completed = newEntry.exercises.length;
-    const newProgressEntry: ProgressData = {
+    const pain = parseFloat(newEntry.painLevel);
+    if (isNaN(pain) || pain < 0 || pain > 10) {
+      Alert.alert('Invalid pain level', 'Please enter a number between 0 and 10.');
+      return;
+    }
+
+    const newLog: ProgressData = {
       id: uuidv4(),
-      date: newEntry.date,
-      painLevel: newEntry.painLevel,
-      exercisesCompleted: completed,
-      exerciseDetails: newEntry.exercises,
+      date: new Date().toISOString().split('T')[0],
+      painLevel: pain,
+      exercises: newEntry.exercises,
       notes: newEntry.notes,
     };
 
-    setProgressList(prev => [newProgressEntry, ...prev]);
-    setShowAdd(false);
+    setProgressEntries(prev => [newLog, ...prev]);
     setNewEntry({
-      date: new Date().toISOString().split('T')[0],
-      painLevel: 0,
+      painLevel: '',
       exercises: [{ id: uuidv4(), name: '', sets: 0, reps: 0 }],
       notes: '',
     });
+    setShowAdd(false);
   };
+  const avgPain = useMemo(() => {
+    if (progressEntries.length === 0) return 0;
+    const total = progressEntries.reduce((sum, e) => sum + e.painLevel, 0);
+    return total / progressEntries.length;
+  }, [progressEntries]);
+
+  const totalExercises = useMemo(() => {
+    return progressEntries.reduce((sum, e) => sum + e.exercises.length, 0);
+  }, [progressEntries]);
+
+  const improvement = useMemo(() => {
+    if (progressEntries.length < 4) return 0.0;
+    const half = Math.floor(progressEntries.length / 2);
+    const firstHalfAvg =
+      progressEntries.slice(half).reduce((sum, e) => sum + e.painLevel, 0) / (progressEntries.length - half);
+    const secondHalfAvg =
+      progressEntries.slice(0, half).reduce((sum, e) => sum + e.painLevel, 0) / half;
+    return parseFloat((firstHalfAvg - secondHalfAvg).toFixed(1));
+  }, [progressEntries]);
 
   const AddEntryModal = () => (
-    <Modal visible={showAdd} animationType="slide" transparent={false}>
+    <Modal visible={showAdd} animationType="slide">
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
           <TouchableOpacity onPress={() => setShowAdd(false)}>
             <X size={24} color="#000" />
           </TouchableOpacity>
-          <Text style={styles.modalTitle}>Add Exercise Entry</Text>
+          <Text style={styles.modalTitle}>Add Entry</Text>
           <TouchableOpacity onPress={saveEntry}>
             <Save size={24} color="#000" />
           </TouchableOpacity>
         </View>
-
         <KeyboardAvoidingView
-          style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
           keyboardVerticalOffset={100}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <ScrollView
-              contentContainerStyle={styles.modalContentContainer}
-              keyboardShouldPersistTaps="handled"
-            >
+            <ScrollView contentContainerStyle={styles.modalScroll}>
+              <Text style={styles.label}>Pain Level (0–10)</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                value={newEntry.painLevel}
+                onChangeText={v => setNewEntry(prev => ({ ...prev, painLevel: v }))}
+              />
+
               {newEntry.exercises.map((ex, idx) => (
-                <View key={ex.id} style={styles.exerciseGroup}>
-                  <View style={styles.exerciseHeader}>
-                    <Text style={styles.exerciseLabel}>Exercise {idx + 1}</Text>
-                    {newEntry.exercises.length > 1 && (
-                      <TouchableOpacity onPress={() => removeExerciseField(idx)}>
-                        <X size={18} color="#D00" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                <View key={ex.id} style={{ marginBottom: 16 }}>
+                  <Text style={styles.label}>Exercise {idx + 1}</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Name"
                     value={ex.name}
                     onChangeText={v => updateExercise(idx, 'name', v)}
-                    returnKeyType="done"
-                    blurOnSubmit={false}
                   />
-                  <View style={styles.row}>
-                    <View style={styles.halfInput}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Sets"
-                        keyboardType="number-pad"
-                        value={ex.sets.toString()}
-                        onChangeText={v => updateExercise(idx, 'sets', v)}
-                      />
-                    </View>
-                    <View style={styles.halfInput}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Reps"
-                        keyboardType="number-pad"
-                        value={ex.reps.toString()}
-                        onChangeText={v => updateExercise(idx, 'reps', v)}
-                      />
-                    </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <TextInput
+                      style={[styles.input, { flex: 0.48 }]}
+                      placeholder="Sets"
+                      keyboardType="numeric"
+                      value={ex.sets.toString()}
+                      onChangeText={v => updateExercise(idx, 'sets', v)}
+                    />
+                    <TextInput
+                      style={[styles.input, { flex: 0.48 }]}
+                      placeholder="Reps"
+                      keyboardType="numeric"
+                      value={ex.reps.toString()}
+                      onChangeText={v => updateExercise(idx, 'reps', v)}
+                    />
                   </View>
+                  {newEntry.exercises.length > 1 && (
+                    <TouchableOpacity onPress={() => removeExerciseField(idx)}>
+                      <Text style={{ color: 'red', marginTop: 4 }}>Remove</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ))}
 
-              {/* Notes Field */}
-              <Text style={styles.sectionLabel}>Notes</Text>
+              <TouchableOpacity onPress={addExerciseField} style={styles.addButton}>
+                <Text style={styles.addButtonText}>+ Add Another Exercise</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.label}>Notes</Text>
               <TextInput
-                style={[styles.input, { minHeight: 80 }]}
-                placeholder="Enter notes here"
+                style={[styles.input, { minHeight: 60 }]}
                 multiline
                 value={newEntry.notes}
                 onChangeText={v => setNewEntry(prev => ({ ...prev, notes: v }))}
               />
-
-              <TouchableOpacity style={styles.addButton} onPress={addExerciseField}>
-                <Plus size={20} color="#FFF" />
-                <Text style={styles.addButtonText}>Add Exercise</Text>
-              </TouchableOpacity>
             </ScrollView>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
@@ -174,32 +189,53 @@ export default function ProgressScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>Progress Tracker</Text>
-        <TouchableOpacity style={styles.openButton} onPress={() => setShowAdd(true)}>
-          <Text style={styles.openButtonText}>+ Add</Text>
-        </TouchableOpacity>
+      <View style={styles.header}>
+        <Text style={styles.title}>Progress Tracking</Text>
+        <Text style={styles.subtitle}>Monitor your recovery journey</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.progressList}>
-        {progressList.length === 0 ? (
-          <Text style={styles.emptyText}>No progress entries yet.</Text>
-        ) : (
-          progressList.map(entry => (
-            <View key={entry.id} style={styles.progressCard}>
-              <Text style={styles.entryDate}>📅 {entry.date}</Text>
-              <Text style={styles.entrySummary}>Exercises: {entry.exercisesCompleted}</Text>
-              {entry.exerciseDetails.map(ex => (
-                <Text key={ex.id} style={styles.entryDetail}>
-                  • {ex.name} — {ex.sets} x {ex.reps}
-                </Text>
-              ))}
-              {entry.notes.length > 0 && (
-                <Text style={styles.entryNotes}>📝 {entry.notes}</Text>
-              )}
-            </View>
-          ))
-        )}
+      <TouchableOpacity style={styles.entryButton} onPress={() => setShowAdd(true)}>
+        <Text style={styles.entryButtonText}>+ Add Entry</Text>
+      </TouchableOpacity>
+
+      <View style={styles.toggleRow}>
+        {['Week', 'Month', 'All Time'].map(label => (
+          <View key={label} style={[styles.toggleItem, label === 'Week' && styles.toggleSelected]}>
+            <Text style={{ fontWeight: '500', color: label === 'Week' ? '#fff' : '#333' }}>{label}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statTitle}>Avg Pain Level</Text>
+          <Text style={styles.statValue}>{avgPain.toFixed(1)}/10</Text>
+          <Text style={styles.statCaption}>{avgPain <= 3 ? 'Stable' : 'Elevated'}</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statTitle}>Total Exercises</Text>
+          <Text style={styles.statValue}>{totalExercises}</Text>
+          <Text style={styles.statCaption}>This period</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statTitle}>Improvement</Text>
+          <Text style={styles.statValue}>+{improvement.toFixed(1)}</Text>
+          <Text style={styles.statCaption}>Pain level change</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sectionHeader}>Recent Entries</Text>
+      <ScrollView style={{ paddingHorizontal: 16 }}>
+        {progressEntries.map(entry => (
+          <View key={entry.id} style={styles.entryCard}>
+            <Text style={{ fontWeight: '600' }}>{entry.date}</Text>
+            <Text style={{ marginTop: 4 }}>Pain: {entry.painLevel}/10</Text>
+            {entry.exercises.map(ex => (
+              <Text key={ex.id}>• {ex.name} ({ex.sets} x {ex.reps})</Text>
+            ))}
+            {entry.notes && <Text style={{ fontStyle: 'italic', marginTop: 4 }}>📝 {entry.notes}</Text>}
+          </View>
+        ))}
       </ScrollView>
 
       <AddEntryModal />
@@ -209,77 +245,88 @@ export default function ProgressScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 16,
+  header: { padding: 16, backgroundColor: '#2563EB' },
+  title: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
+  subtitle: { color: '#E0EFFF', marginTop: 4 },
+  entryButton: {
+    backgroundColor: '#2563EB',
+    margin: 16,
+    padding: 14,
+    borderRadius: 12,
     alignItems: 'center',
   },
-  title: { fontSize: 22, fontWeight: '600' },
-  openButton: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-  },
-  openButtonText: { color: '#FFF', fontWeight: '500' },
-  progressList: { paddingHorizontal: 16, paddingBottom: 20 },
-  emptyText: { textAlign: 'center', marginTop: 40, color: '#777' },
-  progressCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    padding: 12,
+  entryButtonText: { color: '#fff', fontSize: 16, fontWeight: '500' },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginHorizontal: 16,
     marginBottom: 12,
+  },
+  toggleItem: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: '#E5E7EB',
+  },
+  toggleSelected: {
+    backgroundColor: '#2563EB',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  statBox: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    width: '30%',
     shadowColor: '#000',
     shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 4,
+    shadowRadius: 3,
     elevation: 2,
   },
-  entryDate: { fontWeight: '600', marginBottom: 4 },
-  entrySummary: { fontStyle: 'italic', marginBottom: 4 },
-  entryDetail: { marginLeft: 8 },
-  entryNotes: { marginTop: 6, fontStyle: 'italic', color: '#555' },
-  modalContainer: { flex: 1, backgroundColor: '#FFF' },
+  statTitle: { fontSize: 12, color: '#555' },
+  statValue: { fontSize: 18, fontWeight: '600', marginTop: 4 },
+  statCaption: { fontSize: 12, color: '#777', marginTop: 2 },
+  sectionHeader: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 16,
+    marginBottom: 8,
+  },
+  entryCard: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  modalContainer: { flex: 1, backgroundColor: '#fff' },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: 16,
     borderBottomWidth: 1,
-    borderColor: '#DDD',
+    borderColor: '#ddd',
   },
   modalTitle: { fontSize: 18, fontWeight: '600' },
-  modalContentContainer: {
-    padding: 16,
-    flexGrow: 1,
-  },
-  exerciseGroup: { marginBottom: 16 },
-  exerciseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  exerciseLabel: { fontSize: 16, fontWeight: '500' },
+  modalScroll: { padding: 16 },
+  label: { fontWeight: '600', marginBottom: 6 },
   input: {
     borderWidth: 1,
-    borderColor: '#CCC',
-    borderRadius: 6,
-    padding: 8,
-    marginBottom: 8,
-    backgroundColor: '#FFF',
-  },
-  sectionLabel: { fontWeight: '600', marginBottom: 6 },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  halfInput: { flex: 0.48 },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    backgroundColor: '#10B981',
+    borderColor: '#ccc',
+    padding: 10,
     borderRadius: 8,
-    marginTop: 20,
+    marginBottom: 12,
+    backgroundColor: '#fff',
   },
-  addButtonText: { color: '#FFF', marginLeft: 8, fontWeight: '500' },
+  addButton: {
+    padding: 10,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  addButtonText: { color: '#fff', fontWeight: '600' },
 });
