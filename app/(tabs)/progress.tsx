@@ -1,6 +1,6 @@
 // ProgressScreen.tsx
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,9 +19,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, X, Save, Edit2, Trash2 } from 'lucide-react-native';
 import { v4 as uuidv4 } from 'uuid';
-
-// adjust this path if your assets folder is elsewhere
-import ProgressHeaderImage from '../assets/progressHeader.png';
 
 interface ExerciseEntry {
   id: string;
@@ -92,7 +89,7 @@ export default function ProgressScreen() {
     setEditingId(entry.id);
     setNewEntry({
       painLevel: entry.painLevel.toString(),
-      exercises: entry.exercises.map(ex => ({ ...ex })), // clone
+      exercises: entry.exercises.map(ex => ({ ...ex })),
       notes: entry.notes,
     });
     setShowModal(true);
@@ -136,8 +133,7 @@ export default function ProgressScreen() {
         i === index
           ? {
               ...ex,
-              [field]:
-                field === 'name' ? value : parseInt(value, 10) || 0,
+              [field]: field === 'name' ? value : parseInt(value, 10) || 0,
             }
           : ex
       ),
@@ -191,7 +187,6 @@ export default function ProgressScreen() {
               contentContainerStyle={styles.modalScroll}
               keyboardShouldPersistTaps="handled"
             >
-              {/* Pain Level */}
               <Text style={styles.label}>Pain Level (0–10)</Text>
               <TextInput
                 style={styles.input}
@@ -202,7 +197,6 @@ export default function ProgressScreen() {
                 }
               />
 
-              {/* Exercises */}
               {newEntry.exercises.map((ex, idx) => (
                 <View key={ex.id} style={styles.exerciseGroup}>
                   <Text style={styles.label}>Exercise {idx + 1}</Text>
@@ -247,7 +241,6 @@ export default function ProgressScreen() {
                 </Text>
               </TouchableOpacity>
 
-              {/* Notes */}
               <Text style={styles.label}>Notes</Text>
               <TextInput
                 style={[styles.input, { minHeight: 80 }]}
@@ -267,9 +260,9 @@ export default function ProgressScreen() {
   // ---- MAIN RENDER ----
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* Header Image */}
       <Image
-        source={ProgressHeaderImage}
+        source={require('../assets/progressHeader.png')}
         style={styles.headerImage}
         resizeMode="cover"
       />
@@ -486,4 +479,5 @@ const styles = StyleSheet.create({
   },
   addButtonText: { color: '#fff', fontWeight: '600', marginLeft: 6 },
   removeText: { color: '#D00', marginTop: -8, marginBottom: 12 },
+  exerciseGroup: { marginBottom: 16 },
 });
