@@ -1,483 +1,1335 @@
-// ProgressScreen.tsx
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Dimensions,
   Modal,
   TextInput,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Keyboard,
-  TouchableWithoutFeedback,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, X, Save, Edit2, Trash2 } from 'lucide-react-native';
-import { v4 as uuidv4 } from 'uuid';
+import { TrendingUp, ChartBar as BarChart3, TrendingDown, Minus, Calendar, Activity, Target, Award, Plus, X, Save } from 'lucide-react-native';
+
+interface ProgressData {
+  date: string;
+  painLevel: number;
+  exercisesCompleted: number;
+  exerciseDetails?: ExerciseEntry[];
+  notes: string;
+}
 
 interface ExerciseEntry {
-  id: string;
   name: string;
   sets: number;
   reps: number;
 }
 
-interface ProgressData {
-  id: string;
-  date: string;
-  painLevel: number;
-  exercises: ExerciseEntry[];
-  notes: string;
-}
+const mockProgressData: ProgressData[] = [
+  { 
+    date: '2024-01-15', 
+    painLevel: 7, 
+    exercisesCompleted: 2, 
+    notes: 'Started therapy',
+    exerciseDetails: [
+      { name: 'Lower back stretch', sets: 3, reps: 10 },
+      { name: 'Cat-cow pose', sets: 2, reps: 15 }
+    ]
+  },
+  { 
+    date: '2024-01-16', 
+    painLevel: 6, 
+    exercisesCompleted: 3, 
+    notes: 'Feeling better',
+    exerciseDetails: [
+      { name: 'Neck rolls', sets: 2, reps: 8 },
+      { name: 'Shoulder shrugs', sets: 3, reps: 12 },
+      { name: 'Wall push-ups', sets: 2, reps: 10 }
+    ]
+  },
+  { date: '2024-01-17', painLevel: 6, exercisesCompleted: 4, notes: 'Good progress' },
+  { date: '2024-01-18', painLevel: 5, exercisesCompleted: 4, notes: 'Less morning stiffness' },
+  { date: '2024-01-19', painLevel: 4, exercisesCompleted: 5, notes: 'Great day!' },
+  { date: '2024-01-20', painLevel: 5, exercisesCompleted: 3, notes: 'Slight flare-up' },
+  { date: '2024-01-21', painLevel: 4, exercisesCompleted: 4, notes: 'Back on track' },
+];
 
 export default function ProgressScreen() {
-  // ---- STATE ----
-  const [progressEntries, setProgressEntries] = useState<ProgressData[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [newEntry, setNewEntry] = useState<{
-    painLevel: string;
-    exercises: ExerciseEntry[];
-    notes: string;
-  }>({
-    painLevel: '',
-    exercises: [{ id: uuidv4(), name: '', sets: 0, reps: 0 }],
+  const [progressData, setProgressData] = useState<ProgressData[]>(mockProgressData);
+  const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'all'>('week');
+  const [showAddEntry, setShowAddEntry] = useState(false);
+  const [newEntry, setNewEntry] = useState({
+    date: new Date().toISOString().split('T')[0],
+    painLevel: 0,
+    exercises: [{ name: '', sets: 0, reps: 0 }],
     notes: '',
   });
+  const [editingEntry, setEditingEntry] = useState<ProgressData | null>(null);
+  const [showEditEntry, setShowEditEntry] = useState(false);
 
-  // ---- STATISTICS ----
-  const avgPain = useMemo(() => {
-    if (!progressEntries.length) return 0;
-    const total = progressEntries.reduce((sum, e) => sum + e.painLevel, 0);
-    return total / progressEntries.length;
-  }, [progressEntries]);
+  const screenWidth = Dimensions.get('window').width;
+  const chartWidth = screenWidth - 64;
+  const maxPainLevel = 10;
 
-  const totalExercises = useMemo(() => {
-    return progressEntries.reduce((sum, e) => sum + e.exercises.length, 0);
-  }, [progressEntries]);
+  const getFilteredData = () => {
+    const now = new Date();
+    let filteredData = progressData;
 
-  const improvement = useMemo(() => {
-    const n = progressEntries.length;
-    if (n < 2) return 0;
-    const half = Math.floor(n / 2);
-    const firstHalf = progressEntries.slice(half);
-    const secondHalf = progressEntries.slice(0, half);
-    const avgFirst =
-      firstHalf.reduce((s, e) => s + e.painLevel, 0) / (firstHalf.length || 1);
-    const avgSecond =
-      secondHalf.reduce((s, e) => s + e.painLevel, 0) / (secondHalf.length || 1);
-    return parseFloat((avgSecond - avgFirst).toFixed(1));
-  }, [progressEntries]);
+    if (selectedPeriod === 'week') {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      filteredData = progressData.filter(item => new Date(item.date) >= weekAgo);
+    } else if (selectedPeriod === 'month') {
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      filteredData = progressData.filter(item => new Date(item.date) >= monthAgo);
+    }
 
-  // ---- HANDLERS ----
-  const openAddModal = () => {
-    setEditingId(null);
-    setNewEntry({
-      painLevel: '',
-      exercises: [{ id: uuidv4(), name: '', sets: 0, reps: 0 }],
-      notes: '',
-    });
-    setShowModal(true);
+    return filteredData;
   };
 
-  const openEditModal = (entry: ProgressData) => {
-    setEditingId(entry.id);
-    setNewEntry({
-      painLevel: entry.painLevel.toString(),
-      exercises: entry.exercises.map(ex => ({ ...ex })),
-      notes: entry.notes,
-    });
-    setShowModal(true);
+  const getStats = () => {
+    const data = getFilteredData();
+    if (data.length === 0) return { avgPain: 0, trend: 'stable', totalExercises: 0, improvement: 0 };
+
+    // Calculate average pain level from all entries in the selected period
+    const avgPain = Math.round((data.reduce((sum, item) => sum + item.painLevel, 0) / data.length) * 10) / 10;
+    
+    // Calculate total exercises completed in the selected period
+    const totalExercises = data.reduce((sum, item) => sum + item.exercisesCompleted, 0);
+    
+    // Calculate improvement by comparing first and last entries in chronological order
+    const sortedData = [...data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const firstPain = sortedData[0]?.painLevel || 0;
+    const lastPain = sortedData[sortedData.length - 1]?.painLevel || 0;
+    const improvement = Math.round((firstPain - lastPain) * 10) / 10;
+    
+    let trend: 'improving' | 'worsening' | 'stable' = 'stable';
+    if (improvement > 0.5) trend = 'improving';
+    else if (improvement < -0.5) trend = 'worsening';
+
+    return { avgPain, trend, totalExercises, improvement };
   };
 
-  const deleteEntry = (id: string) => {
-    Alert.alert('Delete Entry', 'Are you sure you want to delete this entry?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setProgressEntries(prev => prev.filter(e => e.id !== id));
-        },
-      },
-    ]);
+  const renderChart = () => {
+    const data = getFilteredData();
+    if (data.length === 0) return null;
+
+    const pointWidth = chartWidth / Math.max(data.length - 1, 1);
+    const chartHeight = 200;
+
+    return (
+      <View style={styles.chartContainer}>
+        <Text style={styles.chartTitle}>Pain Level Over Time</Text>
+        <View style={[styles.chart, { width: chartWidth, height: chartHeight }]}>
+          {/* Y-axis labels */}
+          <View style={styles.yAxisLabels}>
+            {[10, 8, 6, 4, 2, 0].map(level => (
+              <Text key={level} style={styles.yAxisLabel}>{level}</Text>
+            ))}
+          </View>
+          
+          {/* Chart area */}
+          <View style={styles.chartArea}>
+            {/* Grid lines */}
+            {[0, 2, 4, 6, 8, 10].map(level => (
+              <View
+                key={level}
+                style={[
+                  styles.gridLine,
+                  { bottom: (level / maxPainLevel) * (chartHeight - 40) }
+                ]}
+              />
+            ))}
+            
+            {/* Data points and lines */}
+            {data.map((item, index) => {
+              const x = index * pointWidth;
+              const y = chartHeight - 40 - (item.painLevel / maxPainLevel) * (chartHeight - 40);
+              
+              const nextItem = data[index + 1];
+              let lineProps = null;
+              
+              if (nextItem) {
+                const nextX = (index + 1) * pointWidth;
+                const nextY = chartHeight - 40 - (nextItem.painLevel / maxPainLevel) * (chartHeight - 40);
+                const lineLength = Math.sqrt(Math.pow(nextX - x, 2) + Math.pow(nextY - y, 2));
+                const angle = Math.atan2(nextY - y, nextX - x) * (180 / Math.PI);
+                
+                lineProps = {
+                  width: lineLength,
+                  transform: [{ rotate: `${angle}deg` }],
+                  left: x,
+                  top: y,
+                };
+              }
+              
+              return (
+                <View key={index}>
+                  {lineProps && (
+                    <View style={[styles.chartLine, lineProps]} />
+                  )}
+                  <View
+                    style={[
+                      styles.chartPoint,
+                      { left: x - 4, top: y - 4 },
+                      item.painLevel >= 7 && styles.chartPointHigh,
+                      item.painLevel <= 3 && styles.chartPointLow,
+                    ]}
+                  />
+                </View>
+              );
+            })}
+          </View>
+        </View>
+        
+        {/* X-axis labels */}
+        <View style={styles.xAxisLabels}>
+          {data.map((item, index) => (
+            <Text key={index} style={styles.xAxisLabel}>
+              {new Date(item.date).getDate()}
+            </Text>
+          ))}
+        </View>
+      </View>
+    );
   };
+
+  const stats = getStats();
 
   const addExerciseField = () => {
     setNewEntry(prev => ({
       ...prev,
-      exercises: [...prev.exercises, { id: uuidv4(), name: '', sets: 0, reps: 0 }],
+      exercises: [...prev.exercises, { name: '', sets: 0, reps: 0 }]
     }));
   };
 
   const removeExerciseField = (index: number) => {
     setNewEntry(prev => ({
       ...prev,
-      exercises: prev.exercises.filter((_, i) => i !== index),
+      exercises: prev.exercises.filter((_, i) => i !== index)
     }));
   };
 
-  const updateExercise = (
-    index: number,
-    field: keyof Omit<ExerciseEntry, 'id'>,
-    value: string
-  ) => {
-    setNewEntry(prev => ({
+  const updateExercise = (index: number, field: string, value: string | number) => {
+    setNewEntry(prev => {
+      const updatedExercises = [...prev.exercises];
+      if (field === 'name') {
+        updatedExercises[index] = { ...updatedExercises[index], name: value as string };
+      } else {
+        const numValue = typeof value === 'string' ? parseInt(value) || 0 : value;
+        updatedExercises[index] = { ...updatedExercises[index], [field]: numValue };
+      }
+      return { ...prev, exercises: updatedExercises };
+    });
+  };
+
+  const updateEditExercise = (index: number, field: string, value: string | number) => {
+    if (!editingEntry) return;
+    setEditingEntry(prev => {
+      if (!prev) return null;
+      const updatedExercises = [...(prev.exerciseDetails || [])];
+      if (field === 'name') {
+        updatedExercises[index] = { ...updatedExercises[index], name: value as string };
+      } else {
+        const numValue = typeof value === 'string' ? parseInt(value) || 0 : value;
+        updatedExercises[index] = { ...updatedExercises[index], [field]: numValue };
+      }
+      return { ...prev, exerciseDetails: updatedExercises };
+    });
+  };
+
+  const addEditExerciseField = () => {
+    if (!editingEntry) return;
+    setEditingEntry(prev => prev ? {
       ...prev,
-      exercises: prev.exercises.map((ex, i) =>
-        i === index
-          ? {
-              ...ex,
-              [field]: field === 'name' ? value : parseInt(value, 10) || 0,
-            }
-          : ex
-      ),
-    }));
+      exerciseDetails: [...(prev.exerciseDetails || []), { name: '', sets: 0, reps: 0 }]
+    } : null);
+  };
+
+  const removeEditExerciseField = (index: number) => {
+    if (!editingEntry) return;
+    setEditingEntry(prev => prev ? {
+      ...prev,
+      exerciseDetails: prev.exerciseDetails?.filter((_, i) => i !== index) || []
+    } : null);
   };
 
   const saveEntry = () => {
-    const pain = parseFloat(newEntry.painLevel);
-    if (isNaN(pain) || pain < 0 || pain > 10) {
-      Alert.alert('Invalid Pain Level', 'Enter a number 0–10.');
+    // Validate entry
+    if (newEntry.painLevel === 0) {
+      Alert.alert('Missing Information', 'Please select a pain level.');
       return;
     }
-    const entry: ProgressData = {
-      id: editingId || uuidv4(),
-      date: new Date().toISOString().split('T')[0],
-      painLevel: pain,
-      exercises: newEntry.exercises,
-      notes: newEntry.notes,
+
+    const validExercises = newEntry.exercises.filter(ex => 
+      ex.name.trim() && ex.sets > 0 && ex.reps > 0
+    );
+
+    if (validExercises.length === 0) {
+      Alert.alert('Missing Information', 'Please add at least one exercise with sets and reps.');
+      return;
+    }
+
+    // Create new progress entry
+    const progressEntry: ProgressData = {
+      date: newEntry.date,
+      painLevel: newEntry.painLevel,
+      exercisesCompleted: validExercises.length,
+      exerciseDetails: validExercises,
+      notes: newEntry.notes.trim(),
     };
-    setProgressEntries(prev => {
-      if (editingId) {
-        return prev.map(e => (e.id === editingId ? entry : e));
-      }
-      return [entry, ...prev];
+
+    // Add to progress data and sort by date to maintain chronological order
+    setProgressData(prev => [...prev, progressEntry].sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    ));
+
+    // Reset form
+    setNewEntry({
+      date: new Date().toISOString().split('T')[0],
+      painLevel: 0,
+      exercises: [{ name: '', sets: 0, reps: 0 }],
+      notes: '',
     });
-    setShowModal(false);
+
+    setShowAddEntry(false);
+    Alert.alert('Success', 'Progress entry added! Your stats have been updated.');
   };
 
-  // ---- RENDER MODAL ----
-  const AddEditModal = () => (
-    <Modal visible={showModal} animationType="slide">
+  const startEditEntry = (entry: ProgressData) => {
+    setEditingEntry({ ...entry });
+    setShowEditEntry(true);
+  };
+
+  const saveEditEntry = () => {
+    if (!editingEntry) return;
+
+    if (editingEntry.painLevel === 0) {
+      Alert.alert('Missing Information', 'Please select a pain level.');
+      return;
+    }
+
+    const validExercises = editingEntry.exerciseDetails?.filter(ex => 
+      ex.name.trim() && ex.sets > 0 && ex.reps > 0
+    ) || [];
+
+    if (validExercises.length === 0) {
+      Alert.alert('Missing Information', 'Please add at least one exercise with sets and reps.');
+      return;
+    }
+
+    const updatedEntry: ProgressData = {
+      ...editingEntry,
+      exercisesCompleted: validExercises.length,
+      exerciseDetails: validExercises,
+      notes: editingEntry.notes.trim(),
+    };
+
+    setProgressData(prev => 
+      prev.map(entry => 
+        entry.date === editingEntry.date ? updatedEntry : entry
+      ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    );
+
+    setEditingEntry(null);
+    setShowEditEntry(false);
+    Alert.alert('Success', 'Progress entry updated!');
+  };
+
+  const deleteEntry = (entryToDelete: ProgressData) => {
+    Alert.alert(
+      'Delete Entry',
+      `Are you sure you want to delete the entry from ${new Date(entryToDelete.date).toLocaleDateString()}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setProgressData(prev => prev.filter(entry => entry.date !== entryToDelete.date));
+            Alert.alert('Success', 'Entry deleted successfully.');
+          }
+        }
+      ]
+    );
+  };
+
+  const AddEntryModal = () => (
+    <Modal
+      visible={showAddEntry}
+      animationType="slide"
+      presentationStyle="pageSheet"
+    >
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={() => setShowModal(false)}>
-            <X size={24} color="#000" />
+          <TouchableOpacity
+            style={styles.modalCloseButton}
+            onPress={() => setShowAddEntry(false)}
+          >
+            <X size={24} color="#6B7280" />
           </TouchableOpacity>
-          <Text style={styles.modalTitle}>
-            {editingId ? 'Edit Entry' : 'Add Entry'}
-          </Text>
-          <TouchableOpacity onPress={saveEntry}>
-            <Save size={24} color="#000" />
+          <Text style={styles.modalTitle}>Add Progress Entry</Text>
+          <TouchableOpacity
+            style={styles.modalSaveButton}
+            onPress={saveEntry}
+          >
+            <Save size={20} color="#2563EB" />
           </TouchableOpacity>
         </View>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={100}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <ScrollView
-              contentContainerStyle={styles.modalScroll}
-              keyboardShouldPersistTaps="handled"
-            >
-              <Text style={styles.label}>Pain Level (0–10)</Text>
-              <TextInput
-                style={styles.input}
-                keyboardType="numeric"
-                value={newEntry.painLevel}
-                onChangeText={v =>
-                  setNewEntry(prev => ({ ...prev, painLevel: v }))
-                }
-              />
 
-              {newEntry.exercises.map((ex, idx) => (
-                <View key={ex.id} style={styles.exerciseGroup}>
-                  <Text style={styles.label}>Exercise {idx + 1}</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Name"
-                    value={ex.name}
-                    onChangeText={v => updateExercise(idx, 'name', v)}
-                  />
-                  <View style={styles.row}>
-                    <TextInput
-                      style={[styles.input, styles.halfInput]}
-                      placeholder="Sets"
-                      keyboardType="numeric"
-                      value={ex.sets.toString()}
-                      onChangeText={v => updateExercise(idx, 'sets', v)}
-                    />
-                    <TextInput
-                      style={[styles.input, styles.halfInput]}
-                      placeholder="Reps"
-                      keyboardType="numeric"
-                      value={ex.reps.toString()}
-                      onChangeText={v => updateExercise(idx, 'reps', v)}
-                    />
-                  </View>
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+          {/* Date Selection */}
+          <View style={styles.modalSection}>
+            <Text style={styles.modalSectionTitle}>Date</Text>
+            <TextInput
+              style={styles.dateInput}
+              value={newEntry.date}
+              onChangeText={(text) => setNewEntry(prev => ({ ...prev, date: text }))}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
+          {/* Pain Level */}
+          <View style={styles.modalSection}>
+            <Text style={styles.modalSectionTitle}>Pain Level (0-10)</Text>
+            <View style={styles.painLevelContainer}>
+              {[...Array(11)].map((_, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[
+                    styles.painLevelButton,
+                    newEntry.painLevel === i && styles.painLevelButtonSelected,
+                    i >= 7 && styles.painLevelButtonHigh,
+                  ]}
+                  onPress={() => setNewEntry(prev => ({ ...prev, painLevel: i }))}
+                >
+                  <Text
+                    style={[
+                      styles.painLevelText,
+                      newEntry.painLevel === i && styles.painLevelTextSelected,
+                    ]}
+                  >
+                    {i}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.painLevelLabels}>
+              <Text style={styles.painLevelLabel}>No Pain</Text>
+              <Text style={styles.painLevelLabel}>Severe</Text>
+            </View>
+          </View>
+
+          {/* Exercises */}
+          <View style={styles.modalSection}>
+            <View style={styles.exerciseHeader}>
+              <Text style={styles.modalSectionTitle}>Exercises Performed</Text>
+              <TouchableOpacity
+                style={styles.addExerciseButton}
+                onPress={addExerciseField}
+              >
+                <Plus size={16} color="#2563EB" />
+                <Text style={styles.addExerciseText}>Add Exercise</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {newEntry.exercises.map((exercise, index) => (
+              <View key={index} style={styles.exerciseInputGroup}>
+                <View style={styles.exerciseInputHeader}>
+                  <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
                   {newEntry.exercises.length > 1 && (
                     <TouchableOpacity
-                      onPress={() => removeExerciseField(idx)}
+                      style={styles.removeExerciseButton}
+                      onPress={() => removeExerciseField(index)}
                     >
-                      <Text style={styles.removeText}>Remove</Text>
+                      <X size={16} color="#EF4444" />
                     </TouchableOpacity>
                   )}
                 </View>
-              ))}
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={addExerciseField}
-              >
-                <Plus size={16} color="#FFF" />
-                <Text style={styles.addButtonText}>
-                  Add Another Exercise
-                </Text>
-              </TouchableOpacity>
+                
+                <TextInput
+                  style={styles.exerciseNameInput}
+                  value={exercise.name}
+                  onChangeText={(value) => updateExercise(index, 'name', value)}
+                  placeholder="Exercise name (e.g., Push-ups, Squats)"
+                  placeholderTextColor="#9CA3AF"
+                />
+                
+                <View style={styles.setsRepsContainer}>
+                  <View style={styles.setsRepsField}>
+                    <Text style={styles.setsRepsLabel}>Sets</Text>
+                    <TextInput
+                      style={styles.setsRepsInput}
+                      value={exercise.sets === 0 ? '' : exercise.sets.toString()}
+                      onChangeText={(value) => updateExercise(index, 'sets', value)}
+                      placeholder="0"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <View style={styles.setsRepsField}>
+                    <Text style={styles.setsRepsLabel}>Reps</Text>
+                    <TextInput
+                      style={styles.setsRepsInput}
+                      value={exercise.reps === 0 ? '' : exercise.reps.toString()}
+                      onChangeText={(value) => updateExercise(index, 'reps', value)}
+                      placeholder="0"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
 
-              <Text style={styles.label}>Notes</Text>
-              <TextInput
-                style={[styles.input, { minHeight: 80 }]}
-                multiline
-                value={newEntry.notes}
-                onChangeText={v =>
-                  setNewEntry(prev => ({ ...prev, notes: v }))
-                }
-              />
-            </ScrollView>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
+          {/* Notes */}
+          <View style={styles.modalSection}>
+            <Text style={styles.modalSectionTitle}>Notes (Optional)</Text>
+            <TextInput
+              style={styles.notesInput}
+              value={newEntry.notes}
+              onChangeText={(text) => setNewEntry(prev => ({ ...prev, notes: text }))}
+              placeholder="How did you feel? Any observations..."
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={3}
+            />
+          </View>
+
+          <View style={styles.modalBottomSpacer} />
+        </ScrollView>
       </SafeAreaView>
     </Modal>
   );
 
-  // ---- MAIN RENDER ----
+  const EditEntryModal = () => (
+    <Modal
+      visible={showEditEntry}
+      animationType="slide"
+      presentationStyle="pageSheet"
+    >
+      <SafeAreaView style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <TouchableOpacity
+            style={styles.modalCloseButton}
+            onPress={() => {
+              setShowEditEntry(false);
+              setEditingEntry(null);
+            }}
+          >
+            <X size={24} color="#6B7280" />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Edit Progress Entry</Text>
+          <TouchableOpacity
+            style={styles.modalSaveButton}
+            onPress={saveEditEntry}
+          >
+            <Save size={20} color="#2563EB" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+          {editingEntry && (
+            <>
+              {/* Date Display */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Date</Text>
+                <Text style={styles.dateDisplay}>
+                  {new Date(editingEntry.date).toLocaleDateString()}
+                </Text>
+              </View>
+
+              {/* Pain Level */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Pain Level (0-10)</Text>
+                <View style={styles.painLevelContainer}>
+                  {[...Array(11)].map((_, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={[
+                        styles.painLevelButton,
+                        editingEntry.painLevel === i && styles.painLevelButtonSelected,
+                        i >= 7 && styles.painLevelButtonHigh,
+                      ]}
+                      onPress={() => setEditingEntry(prev => prev ? { ...prev, painLevel: i } : null)}
+                    >
+                      <Text
+                        style={[
+                          styles.painLevelText,
+                          editingEntry.painLevel === i && styles.painLevelTextSelected,
+                        ]}
+                      >
+                        {i}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.painLevelLabels}>
+                  <Text style={styles.painLevelLabel}>No Pain</Text>
+                  <Text style={styles.painLevelLabel}>Severe</Text>
+                </View>
+              </View>
+
+              {/* Exercises */}
+              <View style={styles.modalSection}>
+                <View style={styles.exerciseHeader}>
+                  <Text style={styles.modalSectionTitle}>Exercises Performed</Text>
+                  <TouchableOpacity
+                    style={styles.addExerciseButton}
+                    onPress={addEditExerciseField}
+                  >
+                    <Plus size={16} color="#2563EB" />
+                    <Text style={styles.addExerciseText}>Add Exercise</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                {(editingEntry.exerciseDetails || []).map((exercise, index) => (
+                  <View key={index} style={styles.exerciseInputGroup}>
+                    <View style={styles.exerciseInputHeader}>
+                      <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
+                      {(editingEntry.exerciseDetails?.length || 0) > 1 && (
+                        <TouchableOpacity
+                          style={styles.removeExerciseButton}
+                          onPress={() => removeEditExerciseField(index)}
+                        >
+                          <X size={16} color="#EF4444" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    
+                    <TextInput
+                      style={styles.exerciseNameInput}
+                      value={exercise.name}
+                      onChangeText={(value) => updateEditExercise(index, 'name', value)}
+                      placeholder="Exercise name (e.g., Push-ups, Squats)"
+                      placeholderTextColor="#9CA3AF"
+                      autoCorrect={false}
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                      autoCapitalize="words"
+                    />
+                    
+                    <View style={styles.setsRepsContainer}>
+                      <View style={styles.setsRepsField}>
+                        <Text style={styles.setsRepsLabel}>Sets</Text>
+                        <TextInput
+                          style={styles.setsRepsInput}
+                          value={exercise.sets === 0 ? '' : exercise.sets.toString()}
+                          onChangeText={(value) => updateEditExercise(index, 'sets', value)}
+                          placeholder="0"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                          autoCorrect={false}
+                          autoCorrect={false}
+                        />
+                      </View>
+                      <View style={styles.setsRepsField}>
+                        <Text style={styles.setsRepsLabel}>Reps</Text>
+                        <TextInput
+                          style={styles.setsRepsInput}
+                          value={exercise.reps === 0 ? '' : exercise.reps.toString()}
+                          onChangeText={(value) => updateEditExercise(index, 'reps', value)}
+                          placeholder="0"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                          autoCorrect={false}
+                          autoCorrect={false}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* Notes */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Notes (Optional)</Text>
+                <TextInput
+                  style={styles.notesInput}
+                  value={editingEntry.notes}
+                  onChangeText={(text) => setEditingEntry(prev => prev ? { ...prev, notes: text } : null)}
+                  placeholder="How did you feel? Any observations..."
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+            </>
+          )}
+
+          <View style={styles.modalBottomSpacer} />
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header Image */}
-      <Image
-        source={require('../assets/progressHeader.png')}
-        style={styles.headerImage}
-        resizeMode="cover"
-      />
-      <View style={styles.headerText}>
-        <Text style={styles.title}>Progress Tracking</Text>
-        <Text style={styles.subtitle}>
-          Monitor your recovery journey
-        </Text>
+      <View style={styles.header}>
+        <View style={styles.headerLogo}>
+          <View style={styles.logoContainer}>
+            <BarChart3 size={28} color="#FFFFFF" />
+            <Text style={styles.logoText}>PTBOT</Text>
+          </View>
+          <Text style={styles.headerTitle}>Progress Tracking</Text>
+        </View>
+        <Text style={styles.headerSubtitle}>Monitor your recovery journey</Text>
       </View>
 
-      {/* Add Entry */}
-      <TouchableOpacity
-        style={styles.entryButton}
-        onPress={openAddModal}
-      >
-        <Text style={styles.entryButtonText}>+ Add Entry</Text>
-      </TouchableOpacity>
+      <AddEntryModal />
+      <EditEntryModal />
 
-      {/* Segment Control (UI only) */}
-      <View style={styles.toggleRow}>
-        {['Week', 'Month', 'All Time'].map(label => (
-          <View
-            key={label}
-            style={[
-              styles.toggleItem,
-              label === 'Week' && styles.toggleSelected,
-            ]}
-          >
-            <Text
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Add Entry Button */}
+        <TouchableOpacity 
+          style={styles.addEntryButton}
+          onPress={() => setShowAddEntry(true)}
+        >
+          <Plus size={20} color="#FFFFFF" />
+          <Text style={styles.addEntryButtonText}>Add Entry</Text>
+        </TouchableOpacity>
+
+        {/* Period Selector */}
+        <View style={styles.periodSelector}>
+          {(['week', 'month', 'all'] as const).map((period) => (
+            <TouchableOpacity
+              key={period}
               style={[
-                styles.toggleText,
-                label === 'Week' && styles.toggleTextSelected,
+                styles.periodButton,
+                selectedPeriod === period && styles.periodButtonSelected,
               ]}
+              onPress={() => setSelectedPeriod(period)}
             >
-              {label}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Stats Widgets */}
-      <View style={styles.statsRow}>
-        <View style={styles.statBox}>
-          <Text style={styles.statTitle}>Avg Pain Level</Text>
-          <Text style={styles.statValue}>{avgPain.toFixed(1)}/10</Text>
-          <Text style={styles.statCaption}>
-            {avgPain <= 3 ? 'Stable' : 'Elevated'}
-          </Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statTitle}>Total Exercises</Text>
-          <Text style={styles.statValue}>{totalExercises}</Text>
-          <Text style={styles.statCaption}>This period</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statTitle}>Improvement</Text>
-          <Text style={styles.statValue}>
-            {improvement >= 0 ? '+' : ''}
-            {improvement.toFixed(1)}
-          </Text>
-          <Text style={styles.statCaption}>
-            Pain level change
-          </Text>
-        </View>
-      </View>
-
-      {/* Recent Entries */}
-      <Text style={styles.sectionHeader}>Recent Entries</Text>
-      <ScrollView style={styles.entriesList}>
-        {progressEntries.map(entry => (
-          <View key={entry.id} style={styles.entryCard}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardDate}>{entry.date}</Text>
-              <View style={styles.cardActions}>
-                <TouchableOpacity
-                  onPress={() => openEditModal(entry)}
-                >
-                  <Edit2 size={18} color="#2563EB" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => deleteEntry(entry.id)}
-                  style={{ marginLeft: 12 }}
-                >
-                  <Trash2 size={18} color="#D00" />
-                </TouchableOpacity>
-              </View>
-            </View>
-            <Text style={styles.cardPain}>
-              Pain: {entry.painLevel}/10
-            </Text>
-            {entry.exercises.map(ex => (
-              <Text key={ex.id} style={styles.cardExercise}>
-                • {ex.name} ({ex.sets} x {ex.reps})
+              <Text
+                style={[
+                  styles.periodButtonText,
+                  selectedPeriod === period && styles.periodButtonTextSelected,
+                ]}
+              >
+                {period === 'week' ? 'Week' : period === 'month' ? 'Month' : 'All Time'}
               </Text>
-            ))}
-            {entry.notes ? (
-              <Text style={styles.cardNotes}>📝 {entry.notes}</Text>
-            ) : null}
-          </View>
-        ))}
-      </ScrollView>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-      <AddEditModal />
+        {/* Stats Cards */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Activity size={20} color="#2563EB" />
+              <Text style={styles.statTitle}>Avg Pain Level</Text>
+            </View>
+            <Text style={styles.statValue}>{stats.avgPain.toFixed(1)}/10</Text>
+            <View style={styles.trendContainer}>
+              {stats.trend === 'improving' && <TrendingDown size={16} color="#10B981" />}
+              {stats.trend === 'worsening' && <TrendingUp size={16} color="#EF4444" />}
+              {stats.trend === 'stable' && <Minus size={16} color="#6B7280" />}
+              <Text style={[
+                styles.trendText,
+                stats.trend === 'improving' && styles.trendImproving,
+                stats.trend === 'worsening' && styles.trendWorsening,
+              ]}>
+                {stats.trend === 'improving' ? 'Improving' : 
+                 stats.trend === 'worsening' ? 'Needs attention' : 'Stable'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Target size={20} color="#0D9488" />
+              <Text style={styles.statTitle}>Total Exercises</Text>
+            </View>
+            <Text style={styles.statValue}>{stats.totalExercises}</Text>
+            <Text style={styles.statSubtext}>Completed this period</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Award size={20} color="#F59E0B" />
+              <Text style={styles.statTitle}>Improvement</Text>
+            </View>
+            <Text style={[
+              styles.statValue,
+              stats.improvement > 0 && styles.improvementPositive,
+              stats.improvement < 0 && styles.improvementNegative,
+            ]}>
+              {stats.improvement > 0 ? '-' : '+'}
+              {Math.abs(stats.improvement).toFixed(1)}
+            </Text>
+            <Text style={styles.statSubtext}>Pain level change</Text>
+          </View>
+        </View>
+
+        {/* Chart */}
+        {renderChart()}
+
+        {/* Recent Entries */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            <Calendar size={18} color="#2563EB" /> Recent Entries
+          </Text>
+          {getFilteredData().slice(-5).reverse().map((item, index) => (
+            <View key={index} style={styles.entryCard}>
+              <View style={styles.entryHeader}>
+                <View style={styles.entryDateContainer}>
+                  <Text style={styles.entryDate}>
+                    {new Date(item.date).toLocaleDateString()}
+                  </Text>
+                  <View style={styles.entryActions}>
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => startEditEntry(item)}
+                    >
+                      <Text style={styles.editButtonText}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => deleteEntry(item)}
+                    >
+                      <Text style={styles.deleteButtonText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View style={styles.entryMetrics}>
+                  <View style={[
+                    styles.painBadge,
+                    item.painLevel >= 7 && styles.painBadgeHigh,
+                    item.painLevel <= 3 && styles.painBadgeLow,
+                  ]}>
+                    <Text style={styles.painBadgeText}>Pain: {item.painLevel}</Text>
+                  </View>
+                  <View style={styles.exerciseBadge}>
+                    <Text style={styles.exerciseBadgeText}>
+                      {item.exercisesCompleted} exercises
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              {item.notes && (
+                <Text style={styles.entryNotes}>{item.notes}</Text>
+              )}
+              {item.exerciseDetails && item.exerciseDetails.length > 0 && (
+                <View style={styles.exerciseDetailsContainer}>
+                  <Text style={styles.exerciseDetailsTitle}>Exercises:</Text>
+                  {item.exerciseDetails.map((exercise, index) => (
+                    <Text key={index} style={styles.exerciseDetail}>
+                      • {exercise.name}: {exercise.sets} sets × {exercise.reps} reps
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  headerImage: { width: '100%', height: 140 },
-  headerText: { padding: 16 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-  subtitle: { fontSize: 14, color: '#E0EFFF', marginTop: 4 },
-  entryButton: {
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  header: {
     backgroundColor: '#2563EB',
-    marginHorizontal: 16,
-    marginVertical: 8,
-    padding: 14,
-    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  headerLogo: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 4,
   },
-  entryButtonText: { color: '#fff', fontSize: 16, fontWeight: '500' },
-  toggleRow: {
+  logoContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginHorizontal: 16,
-    marginVertical: 8,
+    alignItems: 'center',
+    backgroundColor: '#1D4ED8',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginRight: 12,
   },
-  toggleItem: {
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: '#E5E7EB',
-  },
-  toggleSelected: { backgroundColor: '#2563EB' },
-  toggleText: { color: '#333', fontWeight: '500' },
-  toggleTextSelected: { color: '#fff' },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginVertical: 12,
-  },
-  statBox: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    width: '30%',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  statTitle: { fontSize: 12, color: '#555' },
-  statValue: { fontSize: 18, fontWeight: '600', marginTop: 4 },
-  statCaption: { fontSize: 12, color: '#777', marginTop: 2 },
-  sectionHeader: {
+  logoText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginLeft: 4,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#BFDBFE',
+  },
+  content: {
+    flex: 1,
+  },
+  periodSelector: {
+    flexDirection: 'row',
+    margin: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 4,
+  },
+  periodButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  periodButtonSelected: {
+    backgroundColor: '#2563EB',
+  },
+  periodButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  periodButtonTextSelected: {
+    color: '#FFFFFF',
+  },
+  statsContainer: {
+    flexDirection: 'row',
     marginHorizontal: 16,
-    marginTop: 12,
+    gap: 12,
   },
-  entriesList: { marginHorizontal: 16, marginBottom: 16 },
-  entryCard: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 12,
-    marginVertical: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cardDate: { fontWeight: '600' },
-  cardActions: { flexDirection: 'row' },
-  cardPain: { marginTop: 4 },
-  cardExercise: { marginLeft: 8, marginTop: 2 },
-  cardNotes: { marginTop: 6, fontStyle: 'italic', color: '#555' },
-
-  // Modal Styles
-  modalContainer: { flex: 1, backgroundColor: '#fff' },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
     padding: 16,
-    borderBottomWidth: 1,
-    borderColor: '#ddd',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  modalTitle: { fontSize: 18, fontWeight: '600' },
-  modalScroll: { padding: 16 },
-  label: { fontWeight: '600', marginBottom: 6 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 12,
-    backgroundColor: '#fff',
-  },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  halfInput: { flex: 0.48 },
-  addButton: {
+  statHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#10B981',
-    padding: 10,
-    borderRadius: 8,
+    marginBottom: 8,
+  },
+  statTitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginLeft: 6,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  statSubtext: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  trendContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trendText: {
+    fontSize: 12,
+    marginLeft: 4,
+    color: '#6B7280',
+  },
+  trendImproving: {
+    color: '#10B981',
+  },
+  trendWorsening: {
+    color: '#EF4444',
+  },
+  improvementPositive: {
+    color: '#10B981',
+  },
+  improvementNegative: {
+    color: '#EF4444',
+  },
+  chartContainer: {
+    margin: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
     marginBottom: 16,
   },
-  addButtonText: { color: '#fff', fontWeight: '600', marginLeft: 6 },
-  removeText: { color: '#D00', marginTop: -8, marginBottom: 12 },
-  exerciseGroup: { marginBottom: 16 },
+  chart: {
+    position: 'relative',
+    flexDirection: 'row',
+  },
+  yAxisLabels: {
+    justifyContent: 'space-between',
+    height: 160,
+    paddingVertical: 20,
+    marginRight: 8,
+  },
+  yAxisLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'right',
+    width: 20,
+  },
+  chartArea: {
+    flex: 1,
+    position: 'relative',
+  },
+  gridLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: '#F3F4F6',
+  },
+  chartPoint: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#2563EB',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  chartPointHigh: {
+    backgroundColor: '#EF4444',
+  },
+  chartPointLow: {
+    backgroundColor: '#10B981',
+  },
+  chartLine: {
+    position: 'absolute',
+    height: 2,
+    backgroundColor: '#2563EB',
+    transformOrigin: 'left center',
+  },
+  xAxisLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingLeft: 28,
+  },
+  xAxisLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  section: {
+    margin: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  entryCard: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  entryHeader: {
+    flexDirection: 'column',
+    gap: 8,
+    marginBottom: 8,
+  },
+  entryDateContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  entryDate: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  entryActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  editButton: {
+    backgroundColor: '#EBF4FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  editButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#2563EB',
+  },
+  deleteButton: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  deleteButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#DC2626',
+  },
+  entryMetrics: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  painBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  painBadgeHigh: {
+    backgroundColor: '#FEE2E2',
+  },
+  painBadgeLow: {
+    backgroundColor: '#D1FAE5',
+  },
+  painBadgeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#92400E',
+  },
+  exerciseBadge: {
+    backgroundColor: '#E0E7FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  exerciseBadgeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#3730A3',
+  },
+  entryNotes: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
+  bottomSpacer: {
+    height: 20,
+  },
+  addEntryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addEntryButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  exerciseDetailsContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  exerciseDetailsTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  exerciseDetail: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 2,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  modalSaveButton: {
+    padding: 4,
+  },
+  modalContent: {
+    flex: 1,
+  },
+  modalSection: {
+    margin: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modalSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  dateInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    backgroundColor: '#F9FAFB',
+  },
+  exerciseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  addExerciseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  addExerciseText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#2563EB',
+  },
+  exerciseInputGroup: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  exerciseInputHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  exerciseInputTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  removeExerciseButton: {
+    padding: 4,
+  },
+  exerciseNameInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    backgroundColor: '#F9FAFB',
+    marginBottom: 8,
+  },
+  setsRepsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  setsRepsField: {
+    flex: 1,
+  },
+  setsRepsLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  setsRepsInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    backgroundColor: '#F9FAFB',
+    textAlign: 'center',
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    backgroundColor: '#F9FAFB',
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  modalBottomSpacer: {
+    height: 40,
+  },
+  dateDisplay: {
+    fontSize: 16,
+    color: '#374151',
+    fontWeight: '500',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+  },
+  painLevelLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  painLevelLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
 });
