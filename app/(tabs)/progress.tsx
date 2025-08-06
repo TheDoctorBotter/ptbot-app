@@ -86,4 +86,117 @@ export default function ProgressScreen() {
 
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          b
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={100}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <ScrollView
+              contentContainerStyle={styles.modalContentContainer}
+              keyboardShouldPersistTaps="handled"
+            >
+              {newEntry.exercises.map((ex, idx) => (
+                <View key={ex.id} style={styles.exerciseGroup}>
+                  <View style={styles.exerciseHeader}>
+                    <Text style={styles.exerciseLabel}>Exercise {idx + 1}</Text>
+                    {newEntry.exercises.length > 1 && (
+                      <TouchableOpacity onPress={() => removeExerciseField(idx)}>
+                        <X size={18} color="#D00" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Name"
+                    value={ex.name}
+                    onChangeText={v => updateExercise(idx, 'name', v)}
+                    returnKeyType="done"
+                    blurOnSubmit={false}
+                  />
+                  <View style={styles.row}>
+                    <View style={styles.halfInput}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Sets"
+                        keyboardType="number-pad"
+                        value={ex.sets.toString()}
+                        onChangeText={v => updateExercise(idx, 'sets', v)}
+                      />
+                    </View>
+                    <View style={styles.halfInput}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Reps"
+                        keyboardType="number-pad"
+                        value={ex.reps.toString()}
+                        onChangeText={v => updateExercise(idx, 'reps', v)}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ))}
+              <TouchableOpacity style={styles.addButton} onPress={addExerciseField}>
+                <Plus size={20} color="#FFF" />
+                <Text style={styles.addButtonText}>Add Exercise</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <TouchableOpacity style={styles.openButton} onPress={() => setShowAdd(true)}>
+        <Text style={styles.openButtonText}>Open Add Modal</Text>
+      </TouchableOpacity>
+      <AddEntryModal />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  openButton: { padding: 12, backgroundColor: '#2563EB', borderRadius: 8 },
+  openButtonText: { color: '#FFF' },
+  modalContainer: { flex: 1, backgroundColor: '#FFF' },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderColor: '#DDD',
+  },
+  modalTitle: { fontSize: 18, fontWeight: '600' },
+  modalContentContainer: {
+    padding: 16,
+    flexGrow: 1,
+  },
+  exerciseGroup: { marginBottom: 16 },
+  exerciseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  exerciseLabel: { fontSize: 16, fontWeight: '500' },
+  input: {
+    borderWidth: 1,
+    borderColor: '#CCC',
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 8,
+  },
+  row: { flexDirection: 'row', justifyContent: 'space-between' },
+  halfInput: { flex: 0.48 },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    backgroundColor: '#10B981',
+    borderRadius: 8,
+    marginTop: 20,
+  },
+  addButtonText: { color: '#FFF', marginLeft: 8 },
+});
