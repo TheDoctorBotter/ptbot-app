@@ -9,6 +9,8 @@ import {
   Modal,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TrendingUp, ChartBar as BarChart3, TrendingDown, Minus, Calendar, Activity, Target, Award, Plus, X, Save } from 'lucide-react-native';
@@ -195,6 +197,8 @@ export default function ProgressScreen() {
     );
   };
 
+  const KEYBOARD_VERTICAL_OFFSET = Platform.OS === 'ios' ? 100 : 0;
+
   const stats = getStats();
 
   const addExerciseField = () => {
@@ -361,7 +365,12 @@ export default function ProgressScreen() {
       animationType="slide"
       presentationStyle="pageSheet"
     >
-      <SafeAreaView style={styles.modalContainer}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={100}
+        style={{ flex: 1 }}
+      >
+        <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
           <TouchableOpacity
             style={styles.modalCloseButton}
@@ -501,7 +510,8 @@ export default function ProgressScreen() {
 
           <View style={styles.modalBottomSpacer} />
         </ScrollView>
-      </SafeAreaView>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -511,7 +521,11 @@ export default function ProgressScreen() {
       animationType="slide"
       presentationStyle="pageSheet"
     >
-      <SafeAreaView style={styles.modalContainer}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalKeyboardContainer}
+      >
+        <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
           <TouchableOpacity
             style={styles.modalCloseButton}
@@ -608,8 +622,6 @@ export default function ProgressScreen() {
                       placeholderTextColor="#9CA3AF"
                       autoCorrect={false}
                       autoCapitalize="words"
-                      autoCorrect={false}
-                      autoCapitalize="words"
                     />
                     
                     <View style={styles.setsRepsContainer}>
@@ -623,7 +635,6 @@ export default function ProgressScreen() {
                           placeholderTextColor="#9CA3AF"
                           keyboardType="numeric"
                           autoCorrect={false}
-                          autoCorrect={false}
                         />
                       </View>
                       <View style={styles.setsRepsField}>
@@ -635,7 +646,6 @@ export default function ProgressScreen() {
                           placeholder="0"
                           placeholderTextColor="#9CA3AF"
                           keyboardType="numeric"
-                          autoCorrect={false}
                           autoCorrect={false}
                         />
                       </View>
@@ -662,7 +672,8 @@ export default function ProgressScreen() {
 
           <View style={styles.modalBottomSpacer} />
         </ScrollView>
-      </SafeAreaView>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1276,6 +1287,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     backgroundColor: '#F9FAFB',
     marginBottom: 8,
+    textAlignVertical: 'center',
   },
   setsRepsContainer: {
     flexDirection: 'row',
@@ -1312,7 +1324,10 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   modalBottomSpacer: {
-    height: 40,
+    height: 100,
+  },
+  modalKeyboardContainer: {
+    flex: 1,
   },
   dateDisplay: {
     fontSize: 16,
@@ -1322,6 +1337,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: '#F3F4F6',
     borderRadius: 8,
+  },
+  painLevelContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  painLevelButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+  },
+  painLevelButtonSelected: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  painLevelButtonHigh: {
+    borderColor: '#DC2626',
+  },
+  painLevelText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#374151',
+  },
+  painLevelTextSelected: {
+    color: '#FFFFFF',
   },
   painLevelLabels: {
     flexDirection: 'row',
