@@ -15,18 +15,27 @@ interface WelcomeEmailData {
 export class EmailService {
   private resend: Resend;
   private fromEmail: string;
+  private fromName: string;
 
-  constructor(apiKey: string, fromEmail: string = 'noreply@ptbot.app') {
+  constructor(apiKey: string, fromEmail: string = 'noreply@ptbot.justinlemmodpt.com', fromName: string = 'PTBot Team') {
     this.resend = new Resend(apiKey);
     this.fromEmail = fromEmail;
+    this.fromName = fromName;
   }
 
   async sendVerificationEmail(data: VerificationEmailData): Promise<boolean> {
     try {
+      console.log('📧 Sending verification email with Resend...', {
+        to: data.to,
+        from: `${this.fromName} <${this.fromEmail}>`,
+        hasApiKey: !!this.resend,
+        verificationUrl: `${data.appUrl}/verify-email?token=${data.verificationToken}`
+      });
+      
       const verificationUrl = `${data.appUrl}/verify-email?token=${data.verificationToken}`;
       
       const { error } = await this.resend.emails.send({
-        from: this.fromEmail,
+        from: `${this.fromName} <${this.fromEmail}>`,
         to: data.to,
         subject: 'Verify Your PTBot Account',
         html: `
@@ -85,13 +94,22 @@ export class EmailService {
       });
 
       if (error) {
-        console.error('Email sending error:', error);
+        console.error('❌ Resend API error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         return false;
       }
 
+      console.log('✅ Email sent successfully via Resend API');
       return true;
     } catch (error) {
-      console.error('Failed to send verification email:', error);
+      console.error('❌ Email service exception:', {
+        error: typeof error === 'object' && error !== null && 'message' in error ? (error as any).message : String(error),
+        stack: typeof error === 'object' && error !== null && 'stack' in error ? (error as any).stack : undefined,
+        apiKeyConfigured: !!this.resend
+      });
       return false;
     }
   }
@@ -99,7 +117,7 @@ export class EmailService {
   async sendWelcomeEmail(data: WelcomeEmailData): Promise<boolean> {
     try {
       const { error } = await this.resend.emails.send({
-        from: this.fromEmail,
+        from: `${this.fromName} <${this.fromEmail}>`,
         to: data.to,
         subject: 'Welcome to PTBot - Your Recovery Journey Starts Now!',
         html: `
@@ -174,7 +192,7 @@ export class EmailService {
       const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
       
       const { error } = await this.resend.emails.send({
-        from: this.fromEmail,
+        from: `${this.fromName} <${this.fromEmail}>`,
         to,
         subject: 'Reset Your PTBot Password',
         html: `
