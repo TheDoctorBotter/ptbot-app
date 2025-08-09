@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Keyboard,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -29,18 +27,18 @@ import {
   Save,
 } from 'lucide-react-native';
 
+interface ExerciseEntry {
+  name: string;
+  sets: number;
+  reps: number;
+}
+
 interface ProgressData {
   date: string;
   painLevel: number;
   exercisesCompleted: number;
   exerciseDetails?: ExerciseEntry[];
   notes: string;
-}
-
-interface ExerciseEntry {
-  name: string;
-  sets: number;
-  reps: number;
 }
 
 const mockProgressData: ProgressData[] = [
@@ -72,69 +70,56 @@ const mockProgressData: ProgressData[] = [
   { date: '2024-01-21', painLevel: 4, exercisesCompleted: 4, notes: 'Back on track' },
 ];
 
+// keep this outside the component so it’s stable
+const KEYBOARD_VERTICAL_OFFSET = Platform.OS === 'ios' ? 100 : 0;
+
 export default function ProgressScreen() {
   const [progressData, setProgressData] = useState<ProgressData[]>(mockProgressData);
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'all'>('week');
+
   const [showAddEntry, setShowAddEntry] = useState(false);
+  const [showEditEntry, setShowEditEntry] = useState(false);
+
   const [newEntry, setNewEntry] = useState({
     date: new Date().toISOString().split('T')[0],
     painLevel: 0,
-    exercises: [{ name: '', sets: 0, reps: 0 }],
+    exercises: [{ name: '', sets: 0, reps: 0 }] as ExerciseEntry[],
     notes: '',
   });
-  const [editingEntry, setEditingEntry] = useState<ProgressData | null>(null);
-  const [showEditEntry, setShowEditEntry] = useState(false);
 
-  // Layout / chart sizes
+  const [editingEntry, setEditingEntry] = useState<ProgressData | null>(null);
+
+  // Refs to allow smooth scrolling when adding exercise fields
+  const addScrollRef = useRef<ScrollView>(null!);
+  const editScrollRef = useRef<ScrollView>(null!);
+
   const screenWidth = Dimensions.get('window').width;
   const chartWidth = screenWidth - 64;
   const maxPainLevel = 10;
 
-  // Keyboard handling
-  const HEADER_HEIGHT = 64;  // approximate blue header height
-  const TAB_BAR_HEIGHT = 60; // bottom tabs height
-  const KEYBOARD_VERTICAL_OFFSET =
-    Platform.OS === 'ios' ? HEADER_HEIGHT + TAB_BAR_HEIGHT + 12 : 0;
-
-  const addScrollRef = useRef<ScrollView>(null!);
-  const editScrollRef = useRef<ScrollView>(null!);
-
-  const scrollToEndSoon = (ref: React.RefObject<ScrollView>) => {
-    requestAnimationFrame(() => {
-      setTimeout(() => ref.current?.scrollToEnd({ animated: true }), 80);
-    });
-  };
-
   const getFilteredData = () => {
     const now = new Date();
-    let filteredData = progressData;
-
+    let filtered = progressData;
     if (selectedPeriod === 'week') {
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      filteredData = progressData.filter((item) => new Date(item.date) >= weekAgo);
+      filtered = progressData.filter((i) => new Date(i.date) >= weekAgo);
     } else if (selectedPeriod === 'month') {
       const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      filteredData = progressData.filter((item) => new Date(item.date) >= monthAgo);
+      filtered = progressData.filter((i) => new Date(i.date) >= monthAgo);
     }
-
-    return filteredData;
+    return filtered;
   };
 
   const getStats = () => {
     const data = getFilteredData();
-    if (data.length === 0)
-      return { avgPain: 0, trend: 'stable' as const, totalExercises: 0, improvement: 0 };
+    if (data.length === 0) return { avgPain: 0, trend: 'stable' as const, totalExercises: 0, improvement: 0 };
 
-    const avgPain =
-      Math.round((data.reduce((sum, item) => sum + item.painLevel, 0) / data.length) * 10) / 10;
+    const avgPain = Math.round((data.reduce((s, i) => s + i.painLevel, 0) / data.length) * 10) / 10;
+    const totalExercises = data.reduce((s, i) => s + i.exercisesCompleted, 0);
 
-    const totalExercises = data.reduce((sum, item) => sum + item.exercisesCompleted, 0);
-
-    const sortedData = [...data].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-    );
-    const firstPain = sortedData[0]?.painLevel || 0;
-    const lastPain = sortedData[sortedData.length - 1]?.painLevel || 0;
+    const sorted = [...data].sort((a, b) => +new Date(a.date) - +new Date(b.date));
+    const firstPain = sorted[0]?.painLevel ?? 0;
+    const lastPain = sorted[sorted.length - 1]?.painLevel ?? 0;
     const improvement = Math.round((firstPain - lastPain) * 10) / 10;
 
     let trend: 'improving' | 'worsening' | 'stable' = 'stable';
@@ -143,6 +128,8 @@ export default function ProgressScreen() {
 
     return { avgPain, trend, totalExercises, improvement };
   };
+
+  const stats = getStats();
 
   const renderChart = () => {
     const data = getFilteredData();
@@ -155,7 +142,6 @@ export default function ProgressScreen() {
       <View style={styles.chartContainer}>
         <Text style={styles.chartTitle}>Pain Level Over Time</Text>
         <View style={[styles.chart, { width: chartWidth, height: chartHeight }]}>
-          {/* Y-axis labels */}
           <View style={styles.yAxisLabels}>
             {[10, 8, 6, 4, 2, 0].map((level) => (
               <Text key={level} style={styles.yAxisLabel}>
@@ -164,9 +150,7 @@ export default function ProgressScreen() {
             ))}
           </View>
 
-          {/* Chart area */}
           <View style={styles.chartArea}>
-            {/* Grid lines */}
             {[0, 2, 4, 6, 8, 10].map((level) => (
               <View
                 key={level}
@@ -174,28 +158,20 @@ export default function ProgressScreen() {
               />
             ))}
 
-            {/* Data points and lines */}
             {data.map((item, index) => {
               const x = index * pointWidth;
               const y = chartHeight - 40 - (item.painLevel / maxPainLevel) * (chartHeight - 40);
 
               const nextItem = data[index + 1];
-              let lineProps: null | { width: number; transform: any[]; left: number; top: number } =
-                null;
+              let lineProps: { width: number; transform: any[]; left: number; top: number } | null = null;
 
               if (nextItem) {
                 const nextX = (index + 1) * pointWidth;
-                const nextY =
-                  chartHeight - 40 - (nextItem.painLevel / maxPainLevel) * (chartHeight - 40);
+                const nextY = chartHeight - 40 - (nextItem.painLevel / maxPainLevel) * (chartHeight - 40);
                 const lineLength = Math.sqrt(Math.pow(nextX - x, 2) + Math.pow(nextY - y, 2));
                 const angle = (Math.atan2(nextY - y, nextX - x) * 180) / Math.PI;
 
-                lineProps = {
-                  width: lineLength,
-                  transform: [{ rotate: `${angle}deg` }],
-                  left: x,
-                  top: y,
-                };
+                lineProps = { width: lineLength, transform: [{ rotate: `${angle}deg` }], left: x, top: y };
               }
 
               return (
@@ -215,7 +191,6 @@ export default function ProgressScreen() {
           </View>
         </View>
 
-        {/* X-axis labels */}
         <View style={styles.xAxisLabels}>
           {data.map((item, index) => (
             <Text key={index} style={styles.xAxisLabel}>
@@ -227,13 +202,13 @@ export default function ProgressScreen() {
     );
   };
 
-  const stats = getStats();
-
+  // ---- Mutators ----
   const addExerciseField = () => {
     setNewEntry((prev) => ({
       ...prev,
       exercises: [...prev.exercises, { name: '', sets: 0, reps: 0 }],
     }));
+    requestAnimationFrame(() => addScrollRef.current?.scrollToEnd({ animated: true }));
   };
 
   const removeExerciseField = (index: number) => {
@@ -243,55 +218,46 @@ export default function ProgressScreen() {
     }));
   };
 
-  const updateExercise = (index: number, field: string, value: string | number) => {
+  const updateExercise = (index: number, field: keyof ExerciseEntry, value: string) => {
     setNewEntry((prev) => {
-      const updatedExercises = [...prev.exercises];
+      const updated = [...prev.exercises];
       if (field === 'name') {
-        updatedExercises[index] = { ...updatedExercises[index], name: value as string };
+        updated[index] = { ...updated[index], name: value };
       } else {
-        const numValue = typeof value === 'string' ? parseInt(value) || 0 : value;
-        updatedExercises[index] = { ...updatedExercises[index], [field]: numValue };
+        const n = parseInt(value, 10);
+        updated[index] = { ...updated[index], [field]: Number.isNaN(n) ? 0 : n } as ExerciseEntry;
       }
-      return { ...prev, exercises: updatedExercises };
+      return { ...prev, exercises: updated };
     });
   };
 
-  const updateEditExercise = (index: number, field: string, value: string | number) => {
-    if (!editingEntry) return;
+  const updateEditExercise = (index: number, field: keyof ExerciseEntry, value: string) => {
     setEditingEntry((prev) => {
-      if (!prev) return null;
-      const updated = [...(prev.exerciseDetails || [])];
+      if (!prev) return prev;
+      const list = [...(prev.exerciseDetails || [])];
       if (field === 'name') {
-        updated[index] = { ...updated[index], name: value as string };
+        list[index] = { ...list[index], name: value };
       } else {
-        const numValue = typeof value === 'string' ? parseInt(value) || 0 : value;
-        updated[index] = { ...updated[index], [field]: numValue };
+        const n = parseInt(value, 10);
+        list[index] = { ...list[index], [field]: Number.isNaN(n) ? 0 : n } as ExerciseEntry;
       }
-      return { ...prev, exerciseDetails: updated };
+      return { ...prev, exerciseDetails: list };
     });
+    requestAnimationFrame(() => editScrollRef.current?.scrollToEnd({ animated: true }));
   };
 
   const addEditExerciseField = () => {
-    if (!editingEntry) return;
     setEditingEntry((prev) =>
-      prev
-        ? {
-            ...prev,
-            exerciseDetails: [...(prev.exerciseDetails || []), { name: '', sets: 0, reps: 0 }],
-          }
-        : null,
+      prev ? { ...prev, exerciseDetails: [...(prev.exerciseDetails || []), { name: '', sets: 0, reps: 0 }] } : prev
     );
+    requestAnimationFrame(() => editScrollRef.current?.scrollToEnd({ animated: true }));
   };
 
   const removeEditExerciseField = (index: number) => {
-    if (!editingEntry) return;
     setEditingEntry((prev) =>
       prev
-        ? {
-            ...prev,
-            exerciseDetails: prev.exerciseDetails?.filter((_, i) => i !== index) || [],
-          }
-        : null,
+        ? { ...prev, exerciseDetails: prev.exerciseDetails?.filter((_, i) => i !== index) || [] }
+        : prev
     );
   };
 
@@ -301,10 +267,7 @@ export default function ProgressScreen() {
       return;
     }
 
-    const validExercises = newEntry.exercises.filter(
-      (ex) => ex.name.trim() && ex.sets > 0 && ex.reps > 0,
-    );
-
+    const validExercises = newEntry.exercises.filter((ex) => ex.name.trim() && ex.sets > 0 && ex.reps > 0);
     if (validExercises.length === 0) {
       Alert.alert('Missing Information', 'Please add at least one exercise with sets and reps.');
       return;
@@ -319,9 +282,7 @@ export default function ProgressScreen() {
     };
 
     setProgressData((prev) =>
-      [...prev, progressEntry].sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-      ),
+      [...prev, progressEntry].sort((a, b) => +new Date(a.date) - +new Date(b.date))
     );
 
     setNewEntry({
@@ -336,7 +297,7 @@ export default function ProgressScreen() {
   };
 
   const startEditEntry = (entry: ProgressData) => {
-    setEditingEntry({ ...entry });
+    setEditingEntry({ ...entry, exerciseDetails: entry.exerciseDetails ? [...entry.exerciseDetails] : [] });
     setShowEditEntry(true);
   };
 
@@ -348,16 +309,15 @@ export default function ProgressScreen() {
       return;
     }
 
-    const validExercises =
-      editingEntry.exerciseDetails?.filter((ex) => ex.name.trim() && ex.sets > 0 && ex.reps > 0) ||
-      [];
-
+    const validExercises = (editingEntry.exerciseDetails || []).filter(
+      (ex) => ex.name.trim() && ex.sets > 0 && ex.reps > 0
+    );
     if (validExercises.length === 0) {
       Alert.alert('Missing Information', 'Please add at least one exercise with sets and reps.');
       return;
     }
 
-    const updatedEntry: ProgressData = {
+    const updated: ProgressData = {
       ...editingEntry,
       exercisesCompleted: validExercises.length,
       exerciseDetails: validExercises,
@@ -366,8 +326,8 @@ export default function ProgressScreen() {
 
     setProgressData((prev) =>
       prev
-        .map((e) => (e.date === editingEntry.date ? updatedEntry : e))
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+        .map((e) => (e.date === editingEntry.date ? updated : e))
+        .sort((a, b) => +new Date(a.date) - +new Date(b.date))
     );
 
     setEditingEntry(null);
@@ -376,19 +336,17 @@ export default function ProgressScreen() {
   };
 
   const deleteEntry = (entryToDelete: ProgressData) => {
-    Alert.alert('Delete Entry', `Delete the entry from ${new Date(entryToDelete.date).toLocaleDateString()}?`, [
+    Alert.alert('Delete Entry', `Delete ${new Date(entryToDelete.date).toLocaleDateString()}?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => {
-          setProgressData((prev) => prev.filter((e) => e.date !== entryToDelete.date));
-          Alert.alert('Success', 'Entry deleted successfully.');
-        },
+        onPress: () => setProgressData((prev) => prev.filter((e) => e.date !== entryToDelete.date)),
       },
     ]);
   };
 
+  // -------- Modals --------
   const AddEntryModal = () => (
     <Modal visible={showAddEntry} animationType="slide" presentationStyle="pageSheet">
       <KeyboardAvoidingView
@@ -396,158 +354,150 @@ export default function ProgressScreen() {
         keyboardVerticalOffset={KEYBOARD_VERTICAL_OFFSET}
         style={{ flex: 1 }}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <SafeAreaView style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowAddEntry(false)}>
-                <X size={24} color="#6B7280" />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Add Progress Entry</Text>
-              <TouchableOpacity style={styles.modalSaveButton} onPress={saveEntry}>
-                <Save size={20} color="#2563EB" />
-              </TouchableOpacity>
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowAddEntry(false)}>
+              <X size={24} color="#6B7280" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Add Progress Entry</Text>
+            <TouchableOpacity style={styles.modalSaveButton} onPress={saveEntry}>
+              <Save size={20} color="#2563EB" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            ref={addScrollRef}
+            style={styles.modalContent}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Date */}
+            <View style={styles.modalSection}>
+              <Text style={styles.modalSectionTitle}>Date</Text>
+              <TextInput
+                style={styles.dateInput}
+                value={newEntry.date}
+                onChangeText={(text) => setNewEntry((p) => ({ ...p, date: text }))}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor="#9CA3AF"
+                autoCorrect={false}
+                autoCapitalize="none"
+                editable
+              />
             </View>
 
-            <ScrollView
-              ref={addScrollRef}
-              style={styles.modalContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              automaticallyAdjustKeyboardInsets
-              contentContainerStyle={{ paddingBottom: 200 }}
-            >
-              {/* Date */}
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Date</Text>
-                <TextInput
-                  style={styles.dateInput}
-                  value={newEntry.date}
-                  onChangeText={(text) => setNewEntry((prev) => ({ ...prev, date: text }))}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#9CA3AF"
-                  onFocus={() => scrollToEndSoon(addScrollRef)}
-                  blurOnSubmit={false}
-                  returnKeyType="next"
-                />
-              </View>
-
-              {/* Pain Level */}
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Pain Level (0-10)</Text>
-                <View style={styles.painLevelContainer}>
-                  {[...Array(11)].map((_, i) => (
-                    <TouchableOpacity
-                      key={i}
-                      style={[
-                        styles.painLevelButton,
-                        newEntry.painLevel === i && styles.painLevelButtonSelected,
-                        i >= 7 && styles.painLevelButtonHigh,
-                      ]}
-                      onPress={() => setNewEntry((prev) => ({ ...prev, painLevel: i }))}
+            {/* Pain */}
+            <View style={styles.modalSection}>
+              <Text style={styles.modalSectionTitle}>Pain Level (0-10)</Text>
+              <View style={styles.painLevelContainer}>
+                {[...Array(11)].map((_, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={[
+                      styles.painLevelButton,
+                      newEntry.painLevel === i && styles.painLevelButtonSelected,
+                      i >= 7 && styles.painLevelButtonHigh,
+                    ]}
+                    onPress={() => setNewEntry((p) => ({ ...p, painLevel: i }))}
+                  >
+                    <Text
+                      style={[styles.painLevelText, newEntry.painLevel === i && styles.painLevelTextSelected]}
                     >
-                      <Text
-                        style={[styles.painLevelText, newEntry.painLevel === i && styles.painLevelTextSelected]}
-                      >
-                        {i}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <View style={styles.painLevelLabels}>
-                  <Text style={styles.painLevelLabel}>No Pain</Text>
-                  <Text style={styles.painLevelLabel}>Severe</Text>
-                </View>
-              </View>
-
-              {/* Exercises */}
-              <View style={styles.modalSection}>
-                <View style={styles.exerciseHeader}>
-                  <Text style={styles.modalSectionTitle}>Exercises Performed</Text>
-                  <TouchableOpacity style={styles.addExerciseButton} onPress={addExerciseField}>
-                    <Plus size={16} color="#2563EB" />
-                    <Text style={styles.addExerciseText}>Add Exercise</Text>
+                      {i}
+                    </Text>
                   </TouchableOpacity>
-                </View>
-
-                {newEntry.exercises.map((exercise, index) => (
-                  <View key={index} style={styles.exerciseInputGroup}>
-                    <View style={styles.exerciseInputHeader}>
-                      <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
-                      {newEntry.exercises.length > 1 && (
-                        <TouchableOpacity style={styles.removeExerciseButton} onPress={() => removeExerciseField(index)}>
-                          <X size={16} color="#EF4444" />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-
-                    <TextInput
-                      style={styles.exerciseNameInput}
-                      value={exercise.name}
-                      onChangeText={(v) => updateExercise(index, 'name', v)}
-                      placeholder="Exercise name (e.g., Push-ups, Squats)"
-                      placeholderTextColor="#9CA3AF"
-                      onFocus={() => scrollToEndSoon(addScrollRef)}
-                      blurOnSubmit={false}
-                      returnKeyType="next"
-                      autoCorrect={false}
-                      autoCapitalize="words"
-                    />
-
-                    <View style={styles.setsRepsContainer}>
-                      <View style={styles.setsRepsField}>
-                        <Text style={styles.setsRepsLabel}>Sets</Text>
-                        <TextInput
-                          style={styles.setsRepsInput}
-                          value={exercise.sets === 0 ? '' : String(exercise.sets)}
-                          onChangeText={(v) => updateExercise(index, 'sets', v)}
-                          placeholder="0"
-                          placeholderTextColor="#9CA3AF"
-                          keyboardType="numeric"
-                          onFocus={() => scrollToEndSoon(addScrollRef)}
-                          blurOnSubmit={false}
-                          returnKeyType="next"
-                        />
-                      </View>
-                      <View style={styles.setsRepsField}>
-                        <Text style={styles.setsRepsLabel}>Reps</Text>
-                        <TextInput
-                          style={styles.setsRepsInput}
-                          value={exercise.reps === 0 ? '' : String(exercise.reps)}
-                          onChangeText={(v) => updateExercise(index, 'reps', v)}
-                          placeholder="0"
-                          placeholderTextColor="#9CA3AF"
-                          keyboardType="numeric"
-                          onFocus={() => scrollToEndSoon(addScrollRef)}
-                          blurOnSubmit={false}
-                          returnKeyType="next"
-                        />
-                      </View>
-                    </View>
-                  </View>
                 ))}
               </View>
+              <View style={styles.painLevelLabels}>
+                <Text style={styles.painLevelLabel}>No Pain</Text>
+                <Text style={styles.painLevelLabel}>Severe</Text>
+              </View>
+            </View>
 
-              {/* Notes */}
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionTitle}>Notes (Optional)</Text>
-                <TextInput
-                  style={styles.notesInput}
-                  value={newEntry.notes}
-                  onChangeText={(text) => setNewEntry((prev) => ({ ...prev, notes: text }))}
-                  placeholder="How did you feel? Any observations..."
-                  placeholderTextColor="#9CA3AF"
-                  multiline
-                  numberOfLines={3}
-                  onFocus={() => scrollToEndSoon(addScrollRef)}
-                  blurOnSubmit={false}
-                  returnKeyType="done"
-                />
+            {/* Exercises */}
+            <View style={styles.modalSection}>
+              <View style={styles.exerciseHeader}>
+                <Text style={styles.modalSectionTitle}>Exercises Performed</Text>
+                <TouchableOpacity style={styles.addExerciseButton} onPress={addExerciseField}>
+                  <Plus size={16} color="#2563EB" />
+                  <Text style={styles.addExerciseText}>Add Exercise</Text>
+                </TouchableOpacity>
               </View>
 
-              <View style={styles.modalBottomSpacer} />
-            </ScrollView>
-          </SafeAreaView>
-        </TouchableWithoutFeedback>
+              {newEntry.exercises.map((exercise, index) => (
+                <View key={`${exercise.name}-${index}`} style={styles.exerciseInputGroup}>
+                  <View style={styles.exerciseInputHeader}>
+                    <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
+                    {newEntry.exercises.length > 1 && (
+                      <TouchableOpacity style={styles.removeExerciseButton} onPress={() => removeExerciseField(index)}>
+                        <X size={16} color="#EF4444" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <TextInput
+                    style={styles.exerciseNameInput}
+                    value={exercise.name}
+                    onChangeText={(v) => updateExercise(index, 'name', v)}
+                    placeholder="Exercise name (e.g., Squats)"
+                    placeholderTextColor="#9CA3AF"
+                    autoCorrect={false}
+                    autoCapitalize="words"
+                    editable
+                  />
+
+                  <View style={styles.setsRepsContainer}>
+                    <View style={styles.setsRepsField}>
+                      <Text style={styles.setsRepsLabel}>Sets</Text>
+                      <TextInput
+                        style={styles.setsRepsInput}
+                        value={exercise.sets ? String(exercise.sets) : ''}
+                        onChangeText={(v) => updateExercise(index, 'sets', v)}
+                        placeholder="0"
+                        placeholderTextColor="#9CA3AF"
+                        keyboardType="numeric"
+                        autoCorrect={false}
+                        inputMode="numeric"
+                        editable
+                      />
+                    </View>
+                    <View style={styles.setsRepsField}>
+                      <Text style={styles.setsRepsLabel}>Reps</Text>
+                      <TextInput
+                        style={styles.setsRepsInput}
+                        value={exercise.reps ? String(exercise.reps) : ''}
+                        onChangeText={(v) => updateExercise(index, 'reps', v)}
+                        placeholder="0"
+                        placeholderTextColor="#9CA3AF"
+                        keyboardType="numeric"
+                        autoCorrect={false}
+                        inputMode="numeric"
+                        editable
+                      />
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            {/* Notes */}
+            <View style={styles.modalSection}>
+              <Text style={styles.modalSectionTitle}>Notes (Optional)</Text>
+              <TextInput
+                style={styles.notesInput}
+                value={newEntry.notes}
+                onChangeText={(text) => setNewEntry((p) => ({ ...p, notes: text }))}
+                placeholder="How did you feel? Any observations..."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={3}
+                editable
+              />
+            </View>
+          </ScrollView>
+        </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -559,171 +509,155 @@ export default function ProgressScreen() {
         keyboardVerticalOffset={KEYBOARD_VERTICAL_OFFSET}
         style={{ flex: 1 }}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <SafeAreaView style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={() => {
-                  setShowEditEntry(false);
-                  setEditingEntry(null);
-                }}
-              >
-                <X size={24} color="#6B7280" />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Edit Progress Entry</Text>
-              <TouchableOpacity style={styles.modalSaveButton} onPress={saveEditEntry}>
-                <Save size={20} color="#2563EB" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              ref={editScrollRef}
-              style={styles.modalContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              automaticallyAdjustKeyboardInsets
-              contentContainerStyle={{ paddingBottom: 200 }}
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => {
+                setShowEditEntry(false);
+                setEditingEntry(null);
+              }}
             >
-              {editingEntry && (
-                <>
-                  {/* Date */}
-                  <View style={styles.modalSection}>
-                    <Text style={styles.modalSectionTitle}>Date</Text>
-                    <Text style={styles.dateDisplay}>
-                      {new Date(editingEntry.date).toLocaleDateString()}
-                    </Text>
-                  </View>
+              <X size={24} color="#6B7280" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Edit Progress Entry</Text>
+            <TouchableOpacity style={styles.modalSaveButton} onPress={saveEditEntry}>
+              <Save size={20} color="#2563EB" />
+            </TouchableOpacity>
+          </View>
 
-                  {/* Pain Level */}
-                  <View style={styles.modalSection}>
-                    <Text style={styles.modalSectionTitle}>Pain Level (0-10)</Text>
-                    <View style={styles.painLevelContainer}>
-                      {[...Array(11)].map((_, i) => (
-                        <TouchableOpacity
-                          key={i}
+          <ScrollView
+            ref={editScrollRef}
+            style={styles.modalContent}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            {editingEntry && (
+              <>
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Date</Text>
+                  <Text style={styles.dateDisplay}>{new Date(editingEntry.date).toLocaleDateString()}</Text>
+                </View>
+
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Pain Level (0-10)</Text>
+                  <View style={styles.painLevelContainer}>
+                    {[...Array(11)].map((_, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={[
+                          styles.painLevelButton,
+                          editingEntry.painLevel === i && styles.painLevelButtonSelected,
+                          i >= 7 && styles.painLevelButtonHigh,
+                        ]}
+                        onPress={() => setEditingEntry((p) => (p ? { ...p, painLevel: i } : p))}
+                      >
+                        <Text
                           style={[
-                            styles.painLevelButton,
-                            editingEntry.painLevel === i && styles.painLevelButtonSelected,
-                            i >= 7 && styles.painLevelButtonHigh,
+                            styles.painLevelText,
+                            editingEntry.painLevel === i && styles.painLevelTextSelected,
                           ]}
-                          onPress={() =>
-                            setEditingEntry((prev) => (prev ? { ...prev, painLevel: i } : null))
-                          }
                         >
-                          <Text
-                            style={[
-                              styles.painLevelText,
-                              editingEntry.painLevel === i && styles.painLevelTextSelected,
-                            ]}
-                          >
-                            {i}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <View style={styles.painLevelLabels}>
-                      <Text style={styles.painLevelLabel}>No Pain</Text>
-                      <Text style={styles.painLevelLabel}>Severe</Text>
-                    </View>
-                  </View>
-
-                  {/* Exercises */}
-                  <View style={styles.modalSection}>
-                    <View style={styles.exerciseHeader}>
-                      <Text style={styles.modalSectionTitle}>Exercises Performed</Text>
-                      <TouchableOpacity style={styles.addExerciseButton} onPress={addEditExerciseField}>
-                        <Plus size={16} color="#2563EB" />
-                        <Text style={styles.addExerciseText}>Add Exercise</Text>
+                          {i}
+                        </Text>
                       </TouchableOpacity>
-                    </View>
-
-                    {(editingEntry.exerciseDetails || []).map((exercise, index) => (
-                      <View key={index} style={styles.exerciseInputGroup}>
-                        <View style={styles.exerciseInputHeader}>
-                          <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
-                          {(editingEntry.exerciseDetails?.length || 0) > 1 && (
-                            <TouchableOpacity
-                              style={styles.removeExerciseButton}
-                              onPress={() => removeEditExerciseField(index)}
-                            >
-                              <X size={16} color="#EF4444" />
-                            </TouchableOpacity>
-                          )}
-                        </View>
-
-                        <TextInput
-                          style={styles.exerciseNameInput}
-                          value={exercise.name}
-                          onChangeText={(v) => updateEditExercise(index, 'name', v)}
-                          placeholder="Exercise name (e.g., Push-ups, Squats)"
-                          placeholderTextColor="#9CA3AF"
-                          onFocus={() => scrollToEndSoon(editScrollRef)}
-                          blurOnSubmit={false}
-                          returnKeyType="next"
-                          autoCorrect={false}
-                          autoCapitalize="words"
-                        />
-
-                        <View style={styles.setsRepsContainer}>
-                          <View style={styles.setsRepsField}>
-                            <Text style={styles.setsRepsLabel}>Sets</Text>
-                            <TextInput
-                              style={styles.setsRepsInput}
-                              value={exercise.sets === 0 ? '' : String(exercise.sets)}
-                              onChangeText={(v) => updateEditExercise(index, 'sets', v)}
-                              placeholder="0"
-                              placeholderTextColor="#9CA3AF"
-                              keyboardType="numeric"
-                              onFocus={() => scrollToEndSoon(editScrollRef)}
-                              blurOnSubmit={false}
-                              returnKeyType="next"
-                            />
-                          </View>
-                          <View style={styles.setsRepsField}>
-                            <Text style={styles.setsRepsLabel}>Reps</Text>
-                            <TextInput
-                              style={styles.setsRepsInput}
-                              value={exercise.reps === 0 ? '' : String(exercise.reps)}
-                              onChangeText={(v) => updateEditExercise(index, 'reps', v)}
-                              placeholder="0"
-                              placeholderTextColor="#9CA3AF"
-                              keyboardType="numeric"
-                              onFocus={() => scrollToEndSoon(editScrollRef)}
-                              blurOnSubmit={false}
-                              returnKeyType="done"
-                            />
-                          </View>
-                        </View>
-                      </View>
                     ))}
                   </View>
-
-                  {/* Notes */}
-                  <View style={styles.modalSection}>
-                    <Text style={styles.modalSectionTitle}>Notes (Optional)</Text>
-                    <TextInput
-                      style={styles.notesInput}
-                      value={editingEntry.notes}
-                      onChangeText={(text) =>
-                        setEditingEntry((prev) => (prev ? { ...prev, notes: text } : null))
-                      }
-                      placeholder="How did you feel? Any observations..."
-                      placeholderTextColor="#9CA3AF"
-                      multiline
-                      numberOfLines={3}
-                      onFocus={() => scrollToEndSoon(editScrollRef)}
-                      blurOnSubmit={false}
-                      returnKeyType="done"
-                    />
+                  <View style={styles.painLevelLabels}>
+                    <Text style={styles.painLevelLabel}>No Pain</Text>
+                    <Text style={styles.painLevelLabel}>Severe</Text>
                   </View>
-                </>
-              )}
+                </View>
 
-              <View style={styles.modalBottomSpacer} />
-            </ScrollView>
-          </SafeAreaView>
-        </TouchableWithoutFeedback>
+                <View style={styles.modalSection}>
+                  <View style={styles.exerciseHeader}>
+                    <Text style={styles.modalSectionTitle}>Exercises Performed</Text>
+                    <TouchableOpacity style={styles.addExerciseButton} onPress={addEditExerciseField}>
+                      <Plus size={16} color="#2563EB" />
+                      <Text style={styles.addExerciseText}>Add Exercise</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {(editingEntry.exerciseDetails || []).map((exercise, index) => (
+                    <View key={`${exercise.name}-${index}`} style={styles.exerciseInputGroup}>
+                      <View style={styles.exerciseInputHeader}>
+                        <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
+                        {(editingEntry.exerciseDetails?.length || 0) > 1 && (
+                          <TouchableOpacity
+                            style={styles.removeExerciseButton}
+                            onPress={() => removeEditExerciseField(index)}
+                          >
+                            <X size={16} color="#EF4444" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      <TextInput
+                        style={styles.exerciseNameInput}
+                        value={exercise.name}
+                        onChangeText={(v) => updateEditExercise(index, 'name', v)}
+                        placeholder="Exercise name (e.g., Squats)"
+                        placeholderTextColor="#9CA3AF"
+                        autoCorrect={false}
+                        autoCapitalize="words"
+                        editable
+                      />
+
+                      <View style={styles.setsRepsContainer}>
+                        <View style={styles.setsRepsField}>
+                          <Text style={styles.setsRepsLabel}>Sets</Text>
+                          <TextInput
+                            style={styles.setsRepsInput}
+                            value={exercise.sets ? String(exercise.sets) : ''}
+                            onChangeText={(v) => updateEditExercise(index, 'sets', v)}
+                            placeholder="0"
+                            placeholderTextColor="#9CA3AF"
+                            keyboardType="numeric"
+                            inputMode="numeric"
+                            autoCorrect={false}
+                            editable
+                          />
+                        </View>
+                        <View style={styles.setsRepsField}>
+                          <Text style={styles.setsRepsLabel}>Reps</Text>
+                          <TextInput
+                            style={styles.setsRepsInput}
+                            value={exercise.reps ? String(exercise.reps) : ''}
+                            onChangeText={(v) => updateEditExercise(index, 'reps', v)}
+                            placeholder="0"
+                            placeholderTextColor="#9CA3AF"
+                            keyboardType="numeric"
+                            inputMode="numeric"
+                            autoCorrect={false}
+                            editable
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Notes (Optional)</Text>
+                  <TextInput
+                    style={styles.notesInput}
+                    value={editingEntry.notes}
+                    onChangeText={(text) =>
+                      setEditingEntry((p) => (p ? { ...p, notes: text } : p))
+                    }
+                    placeholder="How did you feel? Any observations..."
+                    placeholderTextColor="#9CA3AF"
+                    multiline
+                    numberOfLines={3}
+                    editable
+                  />
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -745,13 +679,11 @@ export default function ProgressScreen() {
       <EditEntryModal />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Add Entry Button */}
         <TouchableOpacity style={styles.addEntryButton} onPress={() => setShowAddEntry(true)}>
           <Plus size={20} color="#FFFFFF" />
           <Text style={styles.addEntryButtonText}>Add Entry</Text>
         </TouchableOpacity>
 
-        {/* Period Selector */}
         <View style={styles.periodSelector}>
           {(['week', 'month', 'all'] as const).map((period) => (
             <TouchableOpacity
@@ -771,7 +703,7 @@ export default function ProgressScreen() {
           ))}
         </View>
 
-        {/* Stats Cards */}
+        {/* stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <View style={styles.statHeader}>
@@ -823,19 +755,20 @@ export default function ProgressScreen() {
           </View>
         </View>
 
-        {/* Chart */}
         {renderChart()}
 
-        {/* Recent Entries */}
+        {/* Recent entries title (icon + text in a row to avoid TS errors) */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <Calendar size={18} color="#2563EB" /> Recent Entries
-          </Text>
+          <View style={styles.sectionTitleRow}>
+            <Calendar size={18} color="#2563EB" />
+            <Text style={styles.sectionTitle}>Recent Entries</Text>
+          </View>
+
           {getFilteredData()
             .slice(-5)
             .reverse()
             .map((item, index) => (
-              <View key={index} style={styles.entryCard}>
+              <View key={`${item.date}-${index}`} style={styles.entryCard}>
                 <View style={styles.entryHeader}>
                   <View style={styles.entryDateContainer}>
                     <Text style={styles.entryDate}>{new Date(item.date).toLocaleDateString()}</Text>
@@ -863,13 +796,15 @@ export default function ProgressScreen() {
                     </View>
                   </View>
                 </View>
-                {item.notes && <Text style={styles.entryNotes}>{item.notes}</Text>}
+
+                {item.notes ? <Text style={styles.entryNotes}>{item.notes}</Text> : null}
+
                 {item.exerciseDetails && item.exerciseDetails.length > 0 && (
                   <View style={styles.exerciseDetailsContainer}>
                     <Text style={styles.exerciseDetailsTitle}>Exercises:</Text>
-                    {item.exerciseDetails.map((exercise, i2) => (
-                      <Text key={i2} style={styles.exerciseDetail}>
-                        • {exercise.name}: {exercise.sets} sets × {exercise.reps} reps
+                    {item.exerciseDetails.map((ex, i) => (
+                      <Text key={`${ex.name}-${i}`} style={styles.exerciseDetail}>
+                        • {ex.name}: {ex.sets} sets × {ex.reps} reps
                       </Text>
                     ))}
                   </View>
@@ -904,7 +839,13 @@ const styles = StyleSheet.create({
 
   content: { flex: 1 },
 
-  periodSelector: { flexDirection: 'row', margin: 16, backgroundColor: '#FFFFFF', borderRadius: 8, padding: 4 },
+  periodSelector: {
+    flexDirection: 'row',
+    margin: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 4,
+  },
   periodButton: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 6 },
   periodButtonSelected: { backgroundColor: '#2563EB' },
   periodButtonText: { fontSize: 14, fontWeight: '500', color: '#6B7280' },
@@ -976,14 +917,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
 
   entryCard: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 12, marginBottom: 12 },
   entryHeader: { flexDirection: 'column', gap: 8, marginBottom: 8 },
@@ -1002,7 +937,6 @@ const styles = StyleSheet.create({
   exerciseBadge: { backgroundColor: '#E0E7FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   exerciseBadgeText: { fontSize: 12, fontWeight: '500', color: '#3730A3' },
   entryNotes: { fontSize: 14, color: '#6B7280', fontStyle: 'italic' },
-
   bottomSpacer: { height: 20 },
 
   addEntryButton: {
@@ -1067,8 +1001,8 @@ const styles = StyleSheet.create({
   },
 
   exerciseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  addExerciseButton: { flexDirection: 'row', alignItems: 'center' },
-  addExerciseText: { fontSize: 14, fontWeight: '500', color: '#2563EB', marginLeft: 6 },
+  addExerciseButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  addExerciseText: { fontSize: 14, fontWeight: '500', color: '#2563EB' },
 
   exerciseInputGroup: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 12, marginBottom: 12 },
   exerciseInputHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
@@ -1113,8 +1047,6 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  modalBottomSpacer: { height: 200 },
-
   dateDisplay: {
     fontSize: 16,
     color: '#374151',
@@ -1125,21 +1057,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
 
-  painLevelContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  painLevelContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   painLevelButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
     backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
   },
-  painLevelButtonSelected: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
-  painLevelButtonHigh: { borderColor: '#DC2626' },
-  painLevelText: { fontSize: 14, fontWeight: 'bold', color: '#374151' },
-  painLevelTextSelected: { color: '#FFFFFF' },
+  painLevelButtonSelected: { borderWidth: 2, borderColor: '#2563EB', backgroundColor: '#DBEAFE' },
+  painLevelButtonHigh: { backgroundColor: '#FEE2E2' },
+  painLevelText: { fontSize: 14, color: '#374151', fontWeight: '500', textAlign: 'center' },
+  painLevelTextSelected: { color: '#111827' },
 
   painLevelLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   painLevelLabel: { fontSize: 12, color: '#6B7280' },
