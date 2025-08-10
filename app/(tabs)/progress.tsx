@@ -507,7 +507,10 @@ export default function ProgressScreen() {
   );
 
   const EditEntryModal = () => (
-    <Modal visible={showEditEntry} animationType="slide" presentationStyle="pageSheet">
+    <Modal visible={showEditEntry} animationType="slide"
+    // try fullscreen on iOS to eliminate sheet bounce; keep pageSheet on Android
+    presentationStyle={Platform.OS === 'ios' ? 'fullScreen' : 'pageSheet'}>
+
       <SafeAreaView style={styles.modalContainer}>
         {/* Keep header outside KAV so it doesn't shift with keyboard */}
         <View style={styles.modalHeader}>
@@ -530,7 +533,7 @@ export default function ProgressScreen() {
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={KEYBOARD_VERTICAL_OFFSET}
+          keyboardVerticalOffset={0}
         >
           <ScrollView
             style={styles.modalContent}
@@ -611,7 +614,8 @@ export default function ProgressScreen() {
                         placeholder="Exercise name (e.g., Squats)"
                         placeholderTextColor="#9CA3AF"
                         autoCorrect={false}
-                        autoCapitalize="words"
+                        spellCheck={false}
+                        autoCapitalize="none"
                         returnKeyType="next"
                       />
 
@@ -625,6 +629,8 @@ export default function ProgressScreen() {
                             placeholder="0"
                             placeholderTextColor="#9CA3AF"
                             keyboardType="numeric"
+                            autoCorrect={false}
+                            spellCheck={false}  
                             inputMode="numeric"
                             returnKeyType="next"
                           />
@@ -639,6 +645,8 @@ export default function ProgressScreen() {
                             placeholderTextColor="#9CA3AF"
                             keyboardType="numeric"
                             inputMode="numeric"
+                            autoCorrect={false}
+                            spellCheck={false}
                             returnKeyType="done"
                           />
                         </View>
