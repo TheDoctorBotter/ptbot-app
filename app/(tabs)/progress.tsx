@@ -89,7 +89,7 @@ export default function ProgressScreen() {
 
   const [editingEntry, setEditingEntry] = useState<ProgressData | null>(null);
 
-  // Refs (optional; we’re not attaching them to ScrollViews right now)
+  // Refs to allow smooth scrolling when adding exercise fields
   const addScrollRef = useRef<ScrollView>(null!);
   const editScrollRef = useRef<ScrollView>(null!);
 
@@ -349,30 +349,29 @@ export default function ProgressScreen() {
   // -------- Modals --------
   const AddEntryModal = () => (
     <Modal visible={showAddEntry} animationType="slide" presentationStyle="pageSheet">
-      <SafeAreaView style={styles.modalContainer}>
-        {/* Header (kept outside the KAV so it doesn’t shift with the keyboard) */}
-        <View style={styles.modalHeader}>
-          <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowAddEntry(false)}>
-            <X size={24} color="#6B7280" />
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>Add Progress Entry</Text>
-          <TouchableOpacity style={styles.modalSaveButton} onPress={saveEntry}>
-            <Save size={20} color="#2563EB" />
-          </TouchableOpacity>
-        </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={KEYBOARD_VERTICAL_OFFSET}
+        style={{ flex: 1 }}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowAddEntry(false)}>
+              <X size={24} color="#6B7280" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Add Progress Entry</Text>
+            <TouchableOpacity style={styles.modalSaveButton} onPress={saveEntry}>
+              <Save size={20} color="#2563EB" />
+            </TouchableOpacity>
+          </View>
 
-        {/* Only wrap the scrollable content with KeyboardAvoidingView */}
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={KEYBOARD_VERTICAL_OFFSET}
-        >
           <ScrollView
+            ref={addScrollRef}
             style={styles.modalContent}
-            contentContainerStyle={{ paddingBottom: 80 }}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="always"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           >
             {/* Date */}
             <View style={styles.modalSection}>
@@ -385,6 +384,7 @@ export default function ProgressScreen() {
                 placeholderTextColor="#9CA3AF"
                 autoCorrect={false}
                 autoCapitalize="none"
+                editable
               />
             </View>
 
@@ -403,10 +403,7 @@ export default function ProgressScreen() {
                     onPress={() => setNewEntry((p) => ({ ...p, painLevel: i }))}
                   >
                     <Text
-                      style={[
-                        styles.painLevelText,
-                        newEntry.painLevel === i && styles.painLevelTextSelected,
-                      ]}
+                      style={[styles.painLevelText, newEntry.painLevel === i && styles.painLevelTextSelected]}
                     >
                       {i}
                     </Text>
@@ -430,14 +427,11 @@ export default function ProgressScreen() {
               </View>
 
               {newEntry.exercises.map((exercise, index) => (
-                <View key={`${index}`} style={styles.exerciseInputGroup}>
+                <View key={`${exercise.name}-${index}`} style={styles.exerciseInputGroup}>
                   <View style={styles.exerciseInputHeader}>
                     <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
                     {newEntry.exercises.length > 1 && (
-                      <TouchableOpacity
-                        style={styles.removeExerciseButton}
-                        onPress={() => removeExerciseField(index)}
-                      >
+                      <TouchableOpacity style={styles.removeExerciseButton} onPress={() => removeExerciseField(index)}>
                         <X size={16} color="#EF4444" />
                       </TouchableOpacity>
                     )}
@@ -451,7 +445,7 @@ export default function ProgressScreen() {
                     placeholderTextColor="#9CA3AF"
                     autoCorrect={false}
                     autoCapitalize="words"
-                    returnKeyType="next"
+                    editable
                   />
 
                   <View style={styles.setsRepsContainer}>
@@ -464,8 +458,9 @@ export default function ProgressScreen() {
                         placeholder="0"
                         placeholderTextColor="#9CA3AF"
                         keyboardType="numeric"
+                        autoCorrect={false}
                         inputMode="numeric"
-                        returnKeyType="next"
+                        editable
                       />
                     </View>
                     <View style={styles.setsRepsField}>
@@ -477,8 +472,9 @@ export default function ProgressScreen() {
                         placeholder="0"
                         placeholderTextColor="#9CA3AF"
                         keyboardType="numeric"
+                        autoCorrect={false}
                         inputMode="numeric"
-                        returnKeyType="done"
+                        editable
                       />
                     </View>
                   </View>
@@ -497,187 +493,178 @@ export default function ProgressScreen() {
                 placeholderTextColor="#9CA3AF"
                 multiline
                 numberOfLines={3}
-                textAlignVertical="top"
+                editable
               />
             </View>
           </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
-  const EditEntryModal = () => (
-    <Modal visible={showEditEntry} animationType="slide"
-    // try fullscreen on iOS to eliminate sheet bounce; keep pageSheet on Android
-    presentationStyle={Platform.OS === 'ios' ? 'fullScreen' : 'pageSheet'}>
+const isIOS = Platform.OS === 'ios';
+const KAV_BEHAVIOR: 'padding' | 'height' | undefined = isIOS ? 'padding' : 'height';
+const KAV_OFFSET = isIOS ? 88 : 0;
 
-      <SafeAreaView style={styles.modalContainer}>
-        {/* Keep header outside KAV so it doesn't shift with keyboard */}
-        <View style={styles.modalHeader}>
-          <TouchableOpacity
-            style={styles.modalCloseButton}
-            onPress={() => {
-              setShowEditEntry(false);
-              setEditingEntry(null);
-            }}
-          >
-            <X size={24} color="#6B7280" />
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>Edit Progress Entry</Text>
-          <TouchableOpacity style={styles.modalSaveButton} onPress={saveEditEntry}>
-            <Save size={20} color="#2563EB" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Wrap only the scrolling content */}
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={0}
+const EditEntryModal = () => (
+  <Modal visible={showEditEntry} animationType="slide" presentationStyle="pageSheet">
+    <SafeAreaView style={styles.modalContainer}>
+      {/* Keep header outside KAV so it doesn’t shift */}
+      <View style={styles.modalHeader}>
+        <TouchableOpacity
+          style={styles.modalCloseButton}
+          onPress={() => {
+            setShowEditEntry(false);
+            setEditingEntry(null);
+          }}
         >
-          <ScrollView
-            style={styles.modalContent}
-            contentContainerStyle={{ paddingBottom: 80 }}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="always"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          >
-            {editingEntry && (
-              <>
-                {/* Date */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Date</Text>
-                  <Text style={styles.dateDisplay}>
-                    {new Date(editingEntry.date).toLocaleDateString()}
-                  </Text>
-                </View>
+          <X size={24} color="#6B7280" />
+        </TouchableOpacity>
+        <Text style={styles.modalTitle}>Edit Progress Entry</Text>
+        <TouchableOpacity style={styles.modalSaveButton} onPress={saveEditEntry}>
+          <Save size={20} color="#2563EB" />
+        </TouchableOpacity>
+      </View>
 
-                {/* Pain */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Pain Level (0-10)</Text>
-                  <View style={styles.painLevelContainer}>
-                    {[...Array(11)].map((_, i) => (
-                      <TouchableOpacity
-                        key={i}
-                        style={[
-                          styles.painLevelButton,
-                          editingEntry.painLevel === i && styles.painLevelButtonSelected,
-                          i >= 7 && styles.painLevelButtonHigh,
-                        ]}
-                        onPress={() => setEditingEntry(p => (p ? { ...p, painLevel: i } : p))}
-                      >
-                        <Text
-                          style={[
-                            styles.painLevelText,
-                            editingEntry.painLevel === i && styles.painLevelTextSelected,
-                          ]}
-                        >
-                          {i}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  <View style={styles.painLevelLabels}>
-                    <Text style={styles.painLevelLabel}>No Pain</Text>
-                    <Text style={styles.painLevelLabel}>Severe</Text>
-                  </View>
-                </View>
+      {/* Only the scrolling area avoids the keyboard */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={KAV_BEHAVIOR} keyboardVerticalOffset={KAV_OFFSET}>
+        <ScrollView
+          style={styles.modalContent}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={isIOS ? 'interactive' : 'on-drag'}
+          nestedScrollEnabled
+          scrollEventThrottle={16}
+        >
+          {editingEntry && (
+            <>
+              {/* Date (read-only) */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Date</Text>
+                <Text style={styles.dateDisplay}>{new Date(editingEntry.date).toLocaleDateString()}</Text>
+              </View>
 
-                {/* Exercises */}
-                <View style={styles.modalSection}>
-                  <View style={styles.exerciseHeader}>
-                    <Text style={styles.modalSectionTitle}>Exercises Performed</Text>
-                    <TouchableOpacity style={styles.addExerciseButton} onPress={addEditExerciseField}>
-                      <Plus size={16} color="#2563EB" />
-                      <Text style={styles.addExerciseText}>Add Exercise</Text>
+              {/* Pain */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Pain Level (0-10)</Text>
+                <View style={styles.painLevelContainer}>
+                  {[...Array(11)].map((_, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={[
+                        styles.painLevelButton,
+                        editingEntry.painLevel === i && styles.painLevelButtonSelected,
+                        i >= 7 && styles.painLevelButtonHigh,
+                      ]}
+                      onPress={() => setEditingEntry(p => (p ? { ...p, painLevel: i } : p))}
+                    >
+                      <Text style={[styles.painLevelText, editingEntry.painLevel === i && styles.painLevelTextSelected]}>
+                        {i}
+                      </Text>
                     </TouchableOpacity>
-                  </View>
-
-                  {(editingEntry.exerciseDetails || []).map((exercise, index) => (
-                    <View key={`${index}`} style={styles.exerciseInputGroup}>
-                      <View style={styles.exerciseInputHeader}>
-                        <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
-                        {(editingEntry.exerciseDetails?.length || 0) > 1 && (
-                          <TouchableOpacity
-                            style={styles.removeExerciseButton}
-                            onPress={() => removeEditExerciseField(index)}
-                          >
-                            <X size={16} color="#EF4444" />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-
-                      <TextInput
-                        style={styles.exerciseNameInput}
-                        value={exercise.name}
-                        onChangeText={(v) => updateEditExercise(index, 'name', v)}
-                        placeholder="Exercise name (e.g., Squats)"
-                        placeholderTextColor="#9CA3AF"
-                        autoCorrect={false}
-                        spellCheck={false}
-                        autoCapitalize="none"
-                        returnKeyType="next"
-                      />
-
-                      <View style={styles.setsRepsContainer}>
-                        <View style={styles.setsRepsField}>
-                          <Text style={styles.setsRepsLabel}>Sets</Text>
-                          <TextInput
-                            style={styles.setsRepsInput}
-                            value={exercise.sets ? String(exercise.sets) : ''}
-                            onChangeText={(v) => updateEditExercise(index, 'sets', v)}
-                            placeholder="0"
-                            placeholderTextColor="#9CA3AF"
-                            keyboardType="numeric"
-                            autoCorrect={false}
-                            spellCheck={false}  
-                            inputMode="numeric"
-                            returnKeyType="next"
-                          />
-                        </View>
-                        <View style={styles.setsRepsField}>
-                          <Text style={styles.setsRepsLabel}>Reps</Text>
-                          <TextInput
-                            style={styles.setsRepsInput}
-                            value={exercise.reps ? String(exercise.reps) : ''}
-                            onChangeText={(v) => updateEditExercise(index, 'reps', v)}
-                            placeholder="0"
-                            placeholderTextColor="#9CA3AF"
-                            keyboardType="numeric"
-                            inputMode="numeric"
-                            autoCorrect={false}
-                            spellCheck={false}
-                            returnKeyType="done"
-                          />
-                        </View>
-                      </View>
-                    </View>
                   ))}
                 </View>
-
-                {/* Notes */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Notes (Optional)</Text>
-                  <TextInput
-                    style={styles.notesInput}
-                    value={editingEntry.notes}
-                    onChangeText={(text) => setEditingEntry(p => (p ? { ...p, notes: text } : p))}
-                    placeholder="How did you feel? Any observations..."
-                    placeholderTextColor="#9CA3AF"
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
-                  />
+                <View style={styles.painLevelLabels}>
+                  <Text style={styles.painLevelLabel}>No Pain</Text>
+                  <Text style={styles.painLevelLabel}>Severe</Text>
                 </View>
-              </>
-            )}
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </Modal>
-  );
+              </View>
 
-  // ---------- MAIN RETURN (this was missing) ----------
+              {/* Exercises */}
+              <View style={styles.modalSection}>
+                <View style={styles.exerciseHeader}>
+                  <Text style={styles.modalSectionTitle}>Exercises Performed</Text>
+                  <TouchableOpacity style={styles.addExerciseButton} onPress={addEditExerciseField}>
+                    <Plus size={16} color="#2563EB" />
+                    <Text style={styles.addExerciseText}>Add Exercise</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {(editingEntry.exerciseDetails || []).map((exercise, index) => (
+                  <View key={`${index}`} style={styles.exerciseInputGroup}>
+                    <View style={styles.exerciseInputHeader}>
+                      <Text style={styles.exerciseInputTitle}>Exercise {index + 1}</Text>
+                      {(editingEntry.exerciseDetails?.length || 0) > 1 && (
+                        <TouchableOpacity style={styles.removeExerciseButton} onPress={() => removeEditExerciseField(index)}>
+                          <X size={16} color="#EF4444" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <TextInput
+                      style={styles.exerciseNameInput}
+                      value={exercise.name}
+                      onChangeText={(v) => updateEditExercise(index, 'name', v)}
+                      placeholder="Exercise name (e.g., Squats)"
+                      placeholderTextColor="#9CA3AF"
+                      autoCorrect={false}
+                      autoCapitalize="words"
+                      returnKeyType="next"
+                      blurOnSubmit={false}
+                    />
+
+                    <View style={styles.setsRepsContainer}>
+                      <View style={styles.setsRepsField}>
+                        <Text style={styles.setsRepsLabel}>Sets</Text>
+                        <TextInput
+                          style={styles.setsRepsInput}
+                          value={exercise.sets ? String(exercise.sets) : ''}
+                          onChangeText={(v) => updateEditExercise(index, 'sets', v)}
+                          placeholder="0"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                          inputMode="numeric"
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          autoCorrect={false}
+                        />
+                      </View>
+                      <View style={styles.setsRepsField}>
+                        <Text style={styles.setsRepsLabel}>Reps</Text>
+                        <TextInput
+                          style={styles.setsRepsInput}
+                          value={exercise.reps ? String(exercise.reps) : ''}
+                          onChangeText={(v) => updateEditExercise(index, 'reps', v)}
+                          placeholder="0"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                          inputMode="numeric"
+                          returnKeyType="done"
+                          blurOnSubmit={false}
+                          autoCorrect={false}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* Notes */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Notes (Optional)</Text>
+                <TextInput
+                  style={styles.notesInput}
+                  value={editingEntry.notes}
+                  onChangeText={(text) => setEditingEntry(p => (p ? { ...p, notes: text } : p))}
+                  placeholder="How did you feel? Any observations..."
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  autoCorrect={false}
+                  returnKeyType="default"
+                  blurOnSubmit={false}
+                />
+              </View>
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  </Modal>
+);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -691,18 +678,15 @@ export default function ProgressScreen() {
         <Text style={styles.headerSubtitle}>Monitor your recovery journey</Text>
       </View>
 
-      {/* Modals */}
       <AddEntryModal />
       <EditEntryModal />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Add Entry Button */}
         <TouchableOpacity style={styles.addEntryButton} onPress={() => setShowAddEntry(true)}>
           <Plus size={20} color="#FFFFFF" />
           <Text style={styles.addEntryButtonText}>Add Entry</Text>
         </TouchableOpacity>
 
-        {/* Period Selector */}
         <View style={styles.periodSelector}>
           {(['week', 'month', 'all'] as const).map((period) => (
             <TouchableOpacity
@@ -711,7 +695,10 @@ export default function ProgressScreen() {
               onPress={() => setSelectedPeriod(period)}
             >
               <Text
-                style={[styles.periodButtonText, selectedPeriod === period && styles.periodButtonTextSelected]}
+                style={[
+                  styles.periodButtonText,
+                  selectedPeriod === period && styles.periodButtonTextSelected,
+                ]}
               >
                 {period === 'week' ? 'Week' : period === 'month' ? 'Month' : 'All Time'}
               </Text>
@@ -719,7 +706,7 @@ export default function ProgressScreen() {
           ))}
         </View>
 
-        {/* Stats */}
+        {/* stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <View style={styles.statHeader}>
@@ -771,10 +758,9 @@ export default function ProgressScreen() {
           </View>
         </View>
 
-        {/* Chart */}
         {renderChart()}
 
-        {/* Recent Entries */}
+        {/* Recent entries title (icon + text in a row to avoid TS errors) */}
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
             <Calendar size={18} color="#2563EB" />
