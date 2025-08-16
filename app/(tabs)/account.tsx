@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus } from 'lucide-react-native';
 import { EmailService, generateVerificationToken, isValidEmail } from '@/services/emailService';
+import ProfileTabs from '@/components/ProfileTabs';
 
 interface UserAccount {
   email: string;
@@ -20,6 +21,29 @@ interface UserAccount {
   lastName: string;
   isVerified: boolean;
   createdAt: Date;
+}
+
+interface UserProfile {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  dateOfBirth: string;
+  location: string;
+  emergencyContact: string;
+  emergencyPhone: string;
+  medicalConditions: string;
+  currentMedications: string;
+  preferredLanguage: string;
+}
+
+interface EmailPreferences {
+  exerciseReminders: boolean;
+  progressUpdates: boolean;
+  appointmentReminders: boolean;
+  marketingEmails: boolean;
+  redFlagAlerts: boolean;
+  weeklyReports: boolean;
 }
 
 export default function AccountScreen() {
@@ -34,13 +58,17 @@ export default function AccountScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [user, setUser] = useState<UserAccount | null>(null);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [showProfileTabs, setShowProfileTabs] = useState(false);
   const [emailService] = useState(() => {
     const apiKey = process.env.EXPO_PUBLIC_RESEND_API_KEY;
-    const fromEmail = process.env.EXPO_PUBLIC_FROM_EMAIL || 'noreply@ptbot.app';
+    const fromEmail = process.env.EXPO_PUBLIC_FROM_EMAIL || 'noreply@justinlemmodpt.com';
+    const appUrl = process.env.EXPO_PUBLIC_APP_URL || 'https://ptbot-app.vercel.app';
     console.log('Email service config:', { 
       hasApiKey: !!apiKey, 
       fromEmail,
-      apiKeyLength: apiKey?.length 
+      apiKeyLength: apiKey?.length,
+      appUrl,
+      apiKeyPrefix: apiKey?.substring(0, 8) + '...'
     });
     return apiKey ? new EmailService(apiKey, fromEmail) : null;
   });
@@ -66,7 +94,14 @@ export default function AccountScreen() {
 
     try {
       const verificationToken = generateVerificationToken();
-      const appUrl = process.env.EXPO_PUBLIC_APP_URL || 'https://your-ptbot-app.vercel.app';
+      const appUrl = process.env.EXPO_PUBLIC_APP_URL || 'https://ptbot-app.vercel.app';
+      
+      console.log('🔄 Attempting to send verification email...', {
+        to: userEmail,
+        firstName: userName,
+        hasToken: !!verificationToken,
+        appUrl
+      });
       
       const success = await emailService.sendVerificationEmail({
         to: userEmail,
@@ -85,10 +120,21 @@ export default function AccountScreen() {
       
       return success;
     } catch (error) {
-      console.error('Failed to send verification email:', error);
+      let errorMessage = 'Unknown error';
+      let errorStack = '';
+      if (typeof error === 'object' && error !== null) {
+        errorMessage = (error as { message?: string }).message ?? 'Unknown error';
+        errorStack = (error as { stack?: string }).stack ?? '';
+      }
+      console.error('❌ Email sending error details:', {
+        error: errorMessage,
+        stack: errorStack,
+        userEmail,
+        hasEmailService: !!emailService
+      });
       Alert.alert(
         'Email Error',
-        'Failed to send verification email. Please check your internet connection and try again.',
+        `Failed to send verification email: ${errorMessage}. Please check the console for details.`,
         [{ text: 'OK' }]
       );
       return false;
@@ -204,6 +250,7 @@ export default function AccountScreen() {
           onPress: () => {
             setUser(null);
             setVerificationSent(false);
+            setShowProfileTabs(false);
             setEmail('');
             setPassword('');
             setConfirmPassword('');
@@ -233,6 +280,70 @@ export default function AccountScreen() {
     
     setIsLoading(false);
   };
+
+  const handleProfileUpdate = async (updatedProfile: Partial<UserProfile>) => {
+    // In real app, this would be an API call to update user profile
+    console.log('Updating profile:', updatedProfile);
+    
+    // Update local user state
+    setUser(prev => prev ? {
+      ...prev,
+      firstName: updatedProfile.firstName || prev.firstName,
+      lastName: updatedProfile.lastName || prev.lastName,
+    } : null);
+    
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  };
+
+  const handlePasswordChange = async (oldPassword: string, newPassword: string) => {
+    // In real app, this would be an API call to change password
+    console.log('Changing password for user:', user?.email);
+    
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // In real implementation, verify old password and update to new one
+  };
+
+  const handleEmailPreferencesUpdate = async (preferences: EmailPreferences) => {
+    // In real app, this would be an API call to update email preferences
+    console.log('Updating email preferences:', preferences);
+    
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  };
+
+  // If showing profile tabs, render the ProfileTabs component
+  if (user && showProfileTabs) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => setShowProfileTabs(false)}
+          >
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+          <View style={styles.headerLogo}>
+            <View style={styles.logoContainer}>
+              <User size={28} color="#FFFFFF" />
+              <Text style={styles.logoText}>PTBOT</Text>
+            </View>
+            <Text style={styles.headerTitle}>Profile Settings</Text>
+          </View>
+          <Text style={styles.headerSubtitle}>Manage your account information</Text>
+        </View>
+
+        <ProfileTabs
+          user={user}
+          onProfileUpdate={handleProfileUpdate}
+          onPasswordChange={handlePasswordChange}
+          onEmailPreferencesUpdate={handleEmailPreferencesUpdate}
+        />
+      </SafeAreaView>
+    );
+  }
 
   // If user is signed in, show account dashboard
   if (user) {
@@ -311,19 +422,37 @@ export default function AccountScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Account Settings</Text>
             
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => setShowProfileTabs(true)}
+            >
               <User size={20} color="#2563EB" />
               <Text style={styles.actionButtonText}>Edit Profile</Text>
+              <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => {
+                setShowProfileTabs(true);
+                // Note: In the ProfileTabs component, we'd need to set the active tab to 'password'
+              }}
+            >
               <Lock size={20} color="#2563EB" />
               <Text style={styles.actionButtonText}>Change Password</Text>
+              <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => {
+                setShowProfileTabs(true);
+                // Note: In the ProfileTabs component, we'd need to set the active tab to 'email'
+              }}
+            >
               <Mail size={20} color="#2563EB" />
               <Text style={styles.actionButtonText}>Email Preferences</Text>
+              <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
           </View>
 
@@ -811,6 +940,7 @@ const styles = StyleSheet.create({
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderWidth: 1,
@@ -822,6 +952,12 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 16,
     color: '#374151',
+    flex: 1,
+  },
+  actionButtonArrow: {
+    fontSize: 18,
+    color: '#9CA3AF',
+    fontWeight: 'bold',
   },
   signOutButton: {
     margin: 16,
@@ -837,5 +973,14 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 20,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: '#BFDBFE',
+    fontWeight: '500',
   },
 });

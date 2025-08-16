@@ -10,7 +10,6 @@ import {
   TextInput,
   Alert,
   KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TrendingUp, ChartBar as BarChart3, TrendingDown, Minus, Calendar, Activity, Target, Award, Plus, X, Save } from 'lucide-react-native';
@@ -364,11 +363,6 @@ export default function ProgressScreen() {
       presentationStyle="pageSheet"
     >
       <SafeAreaView style={styles.modalContainer}>
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalKeyboardContainer}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-        >
         <View style={styles.modalHeader}>
           <TouchableOpacity
             style={styles.modalCloseButton}
@@ -508,7 +502,6 @@ export default function ProgressScreen() {
 
           <View style={styles.modalBottomSpacer} />
         </ScrollView>
-        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -520,11 +513,6 @@ export default function ProgressScreen() {
       presentationStyle="pageSheet"
     >
       <SafeAreaView style={styles.modalContainer}>
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalKeyboardContainer}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-        >
         <View style={styles.modalHeader}>
           <TouchableOpacity
             style={styles.modalCloseButton}
@@ -621,6 +609,8 @@ export default function ProgressScreen() {
                       placeholderTextColor="#9CA3AF"
                       autoCorrect={false}
                       autoCapitalize="words"
+                      autoCorrect={false}
+                      autoCapitalize="words"
                     />
                     
                     <View style={styles.setsRepsContainer}>
@@ -634,6 +624,7 @@ export default function ProgressScreen() {
                           placeholderTextColor="#9CA3AF"
                           keyboardType="numeric"
                           autoCorrect={false}
+                          autoCorrect={false}
                         />
                       </View>
                       <View style={styles.setsRepsField}>
@@ -645,6 +636,7 @@ export default function ProgressScreen() {
                           placeholder="0"
                           placeholderTextColor="#9CA3AF"
                           keyboardType="numeric"
+                          autoCorrect={false}
                           autoCorrect={false}
                         />
                       </View>
@@ -671,7 +663,6 @@ export default function ProgressScreen() {
 
           <View style={styles.modalBottomSpacer} />
         </ScrollView>
-        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -1324,9 +1315,6 @@ const styles = StyleSheet.create({
   },
   modalBottomSpacer: {
     height: 100,
-  },
-  modalKeyboardContainer: {
-    flex: 1,
   },
   dateDisplay: {
     fontSize: 16,
