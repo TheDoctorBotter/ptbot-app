@@ -120,21 +120,15 @@ export default function AccountScreen() {
       
       return success;
     } catch (error) {
-      let errorMessage = 'Unknown error';
-      let errorStack = '';
-      if (typeof error === 'object' && error !== null) {
-        errorMessage = (error as { message?: string }).message ?? 'Unknown error';
-        errorStack = (error as { stack?: string }).stack ?? '';
-      }
       console.error('❌ Email sending error details:', {
-        error: errorMessage,
-        stack: errorStack,
+        error: error.message,
+        stack: error.stack,
         userEmail,
         hasEmailService: !!emailService
       });
       Alert.alert(
         'Email Error',
-        `Failed to send verification email: ${errorMessage}. Please check the console for details.`,
+        `Failed to send verification email: ${error.message}. Please check the console for details.`,
         [{ text: 'OK' }]
       );
       return false;
@@ -281,6 +275,37 @@ export default function AccountScreen() {
     setIsLoading(false);
   };
 
+  // If showing profile tabs, render the ProfileTabs component
+  if (user && showProfileTabs) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => setShowProfileTabs(false)}
+          >
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+          <View style={styles.headerLogo}>
+            <View style={styles.logoContainer}>
+              <User size={28} color="#FFFFFF" />
+              <Text style={styles.logoText}>PTBOT</Text>
+            </View>
+            <Text style={styles.headerTitle}>Profile Settings</Text>
+          </View>
+          <Text style={styles.headerSubtitle}>Manage your account information</Text>
+        </View>
+
+        <ProfileTabs
+          user={user}
+          onProfileUpdate={handleProfileUpdate}
+          onPasswordChange={handlePasswordChange}
+          onEmailPreferencesUpdate={handleEmailPreferencesUpdate}
+        />
+      </SafeAreaView>
+    );
+  }
+
   const handleProfileUpdate = async (updatedProfile: Partial<UserProfile>) => {
     // In real app, this would be an API call to update user profile
     console.log('Updating profile:', updatedProfile);
@@ -313,37 +338,6 @@ export default function AccountScreen() {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1000));
   };
-
-  // If showing profile tabs, render the ProfileTabs component
-  if (user && showProfileTabs) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => setShowProfileTabs(false)}
-          >
-            <Text style={styles.backButtonText}>← Back</Text>
-          </TouchableOpacity>
-          <View style={styles.headerLogo}>
-            <View style={styles.logoContainer}>
-              <User size={28} color="#FFFFFF" />
-              <Text style={styles.logoText}>PTBOT</Text>
-            </View>
-            <Text style={styles.headerTitle}>Profile Settings</Text>
-          </View>
-          <Text style={styles.headerSubtitle}>Manage your account information</Text>
-        </View>
-
-        <ProfileTabs
-          user={user}
-          onProfileUpdate={handleProfileUpdate}
-          onPasswordChange={handlePasswordChange}
-          onEmailPreferencesUpdate={handleEmailPreferencesUpdate}
-        />
-      </SafeAreaView>
-    );
-  }
 
   // If user is signed in, show account dashboard
   if (user) {

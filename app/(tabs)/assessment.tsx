@@ -26,8 +26,8 @@ interface SymptomData {
 }
 
 const painLocations = [
-  'Neck', 'Upper Back', 'Lower Back', 'Middle Back', 'Shoulder', 'Elbow', 
-  'Wrist', 'Hand', 'Hip', 'Groin', 'Knee', 'Ankle', 'Foot'
+  'Neck', 'Upper Back', 'Lower Back', 'Shoulder', 'Elbow', 
+  'Wrist/Hand', 'Hip', 'Knee', 'Ankle/Foot', 'Other'
 ];
 
 const painTypes = [
@@ -36,9 +36,9 @@ const painTypes = [
 ];
 
 const commonSymptoms = [
-  'Morning stiffness', 'Pain with Standing', 'Pain with Sitting', 'Pain with Stairs', 'Pain at rest',
+  'Morning stiffness', 'Pain with movement', 'Pain at rest',
   'Swelling', 'Weakness', 'Limited range of motion',
-  'Muscle spasms', 'Radiating/Shooting pain'
+  'Muscle spasms', 'Radiating pain'
 ];
 
 const redFlagSymptoms = [

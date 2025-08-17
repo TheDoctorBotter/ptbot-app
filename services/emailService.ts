@@ -17,7 +17,7 @@ export class EmailService {
   private fromEmail: string;
   private fromName: string;
 
-  constructor(apiKey: string, fromEmail: string = 'noreply@ptbot.justinlemmodpt.com', fromName: string = 'PTBot Team') {
+  constructor(apiKey: string, fromEmail: string = 'noreply@justinlemmodpt.com', fromName: string = 'PTBot Team') {
     this.resend = new Resend(apiKey);
     this.fromEmail = fromEmail;
     this.fromName = fromName;
@@ -106,8 +106,8 @@ export class EmailService {
       return true;
     } catch (error) {
       console.error('❌ Email service exception:', {
-        error: typeof error === 'object' && error !== null && 'message' in error ? (error as any).message : String(error),
-        stack: typeof error === 'object' && error !== null && 'stack' in error ? (error as any).stack : undefined,
+        error: error.message,
+        stack: error.stack,
         apiKeyConfigured: !!this.resend
       });
       return false;

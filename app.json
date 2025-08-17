@@ -11,11 +11,6 @@
     "ios": {
       "supportsTablet": true
     },
-    "android": {
-      "windowSoftInputMode": "adjustResize",
-      "softwareKeyboardLayoutMode": "pan",
-      "package": "com.jlemmo06.ptbotapp"
-    },
     "web": {
       "bundler": "metro",
       "output": "static",
