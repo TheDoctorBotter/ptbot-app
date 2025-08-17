@@ -684,14 +684,6 @@ export default function ProgressScreen() {
       <EditEntryModal />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Add Entry Button */}
-        <TouchableOpacity 
-          style={styles.addEntryButton}
-          onPress={() => setShowAddEntry(true)}
-        >
-          <Plus size={20} color="#FFFFFF" />
-          <Text style={styles.addEntryButtonText}>Add Entry</Text>
-        </TouchableOpacity>
 
         {/* Period Selector */}
         <View style={styles.periodSelector}>
