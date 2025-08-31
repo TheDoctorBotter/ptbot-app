@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Send, Bot, User, Activity } from 'lucide-react-native';
+import Constants from 'expo-constants';
 
 interface Message {
   id: string;
@@ -74,7 +75,7 @@ export default function HomeScreen() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${Constants.expoConfig?.extra?.openaiApiKey || process.env.EXPO_PUBLIC_OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
           model: 'gpt-3.5-turbo',

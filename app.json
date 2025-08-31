@@ -29,6 +29,9 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "openaiApiKey": "sk-proj-sn7lFwXYf1CuM-_zvxmZUKUiGRw6d-lyOMafO__LoWiCyxT3BlbkFJVAMx-NP14HMLzvr_QfncrmmZmdZHbbgrPhpvA28-1NTSKh7bzsNK5zW2-dDzLtAlcs5bhi6s4A"
     }
   }
 }
