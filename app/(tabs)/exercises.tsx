@@ -93,7 +93,7 @@ export default function ExercisesScreen() {
   };
 
   const bookConsultation = () => {
-    const consultationUrl = 'https://justinlemmodpt.com';
+    const consultationUrl = 'https://www.justinlemmodpt.com';
     
     Linking.canOpenURL(consultationUrl)
       .then((supported) => {
@@ -110,7 +110,7 @@ export default function ExercisesScreen() {
         console.error('Failed to open consultation URL:', error);
         Alert.alert(
           'Open Website',
-          'Please visit justinlemmodpt.com in your browser to book a consultation.',
+          'Please visit www.justinlemmodpt.com in your browser to book a consultation.',
           [{ text: 'OK' }]
         );
       });
