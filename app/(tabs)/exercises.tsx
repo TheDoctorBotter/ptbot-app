@@ -93,38 +93,27 @@ export default function ExercisesScreen() {
   };
 
   const bookConsultation = () => {
-    Alert.alert(
-      'Virtual Consultation',
-      'Book a personalized virtual consultation with Dr. Justin Lemmo, PT, DPT to discuss your specific condition and get customized exercise recommendations.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Book Now', onPress: () => {
-          const consultationUrl = 'https://justinlemmodpt.com';
-          console.log('Opening URL:', consultationUrl);
-          
-          Linking.canOpenURL(consultationUrl)
-            .then((supported) => {
-              console.log('URL supported:', supported);
-              if (supported) {
-                return Linking.openURL(consultationUrl);
-              } else {
-                throw new Error('URL not supported');
-              }
-            })
-            .then(() => {
-              console.log('URL opened successfully');
-            })
-            .catch((error) => {
-              console.error('Failed to open URL:', error);
-              Alert.alert(
-                'Open Website',
-                'Please visit justinlemmodpt.com in your browser to book a consultation.',
-                [{ text: 'OK' }]
-              );
-            });
-        }}
-      ]
-    );
+    const consultationUrl = 'https://www.justinlemmodpt.com';
+    
+    Linking.canOpenURL(consultationUrl)
+      .then((supported) => {
+        if (supported) {
+          return Linking.openURL(consultationUrl);
+        } else {
+          throw new Error('URL not supported');
+        }
+      })
+      .then(() => {
+        console.log('Successfully opened consultation website');
+      })
+      .catch((error) => {
+        console.error('Failed to open consultation URL:', error);
+        Alert.alert(
+          'Open Website',
+          'Please visit www.justinlemmodpt.com in your browser to book a consultation.',
+          [{ text: 'OK' }]
+        );
+      });
   };
 
   const getDifficultyColor = (difficulty: string) => {
