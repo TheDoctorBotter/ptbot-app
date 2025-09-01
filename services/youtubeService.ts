@@ -58,7 +58,7 @@ export class YouTubeService {
         url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
         thumbnailUrl: item.snippet.thumbnails.medium.url,
         publishedAt: item.snippet.publishedAt,
-        duration: 'Unknown', // Will be populated by separate API call if needed
+        duration: 'Unknown',
       }));
     } catch (error) {
       console.error('Error fetching YouTube videos:', error);
@@ -87,20 +87,14 @@ export class YouTubeService {
               content: `You are analyzing a YouTube video from Dr. Justin Lemmo's physical therapy channel. Extract detailed exercise information.
 
 Return ONLY a JSON object with this exact structure:
-
-Return ONLY a JSON object with this exact structure:
 {
   "isExerciseVideo": boolean (true only if this is an exercise, stretch, or rehabilitation video),
-  "bodyParts": ["specific body parts targeted - be precise"],
-  "conditions": ["specific medical conditions this helps: herniated disc, sciatica, etc."],
   "bodyParts": ["specific body parts: neck, upper back, lower back, shoulder, elbow, wrist, hip, knee, ankle, etc."],
   "conditions": ["specific conditions: herniated disc, sciatica, rotator cuff, plantar fasciitis, etc."],
   "difficulty": "Beginner|Intermediate|Advanced",
   "keywords": ["terms patients would search for"],
   "painTypes": ["types of pain addressed"],
   "targetAudience": ["who this is designed for"],
-  "contraindications": ["when NOT to do this"],
-  "estimatedDuration": "duration in minutes if mentioned, otherwise estimate"
   "contraindications": ["when NOT to do this exercise"],
   "estimatedDuration": "estimated time in minutes"
 }
@@ -120,17 +114,10 @@ Only return isExerciseVideo: true if this is actually a physical therapy, exerci
       const data = await response.json();
       
       if (!response.ok) {
-        console.error('OpenAI error analyzing video:', data);
-        return null;
-      }
-      
-      
-      if (!response.ok) {
         console.error('OpenAI API error during video analysis:', data);
-        console.error('OpenAI API error:', data);
         return null;
       }
-
+      
       const analysis = JSON.parse(data.choices[0].message.content);
       
       if (!analysis.isExerciseVideo) {
@@ -142,19 +129,14 @@ Only return isExerciseVideo: true if this is actually a physical therapy, exerci
       
       return {
         id: video.id,
-        thumbnailUrl: video.snippet.thumbnails.medium.url,
-        duration: analysis.estimatedDuration || 'Unknown',
-        bodyParts: analysis.bodyParts || [],
-        conditions: analysis.conditions || [],
+        title: video.title,
+        description: video.description,
+        url: video.url,
         thumbnailUrl: video.thumbnailUrl,
         duration: analysis.estimatedDuration || 'Unknown',
         bodyParts: analysis.bodyParts || [],
         conditions: analysis.conditions || [],
         difficulty: analysis.difficulty || 'Beginner',
-        keywords: analysis.keywords || [],
-        painTypes: analysis.painTypes || [],
-        targetAudience: analysis.targetAudience || [],
-        contraindications: analysis.contraindications || [],
         keywords: analysis.keywords || [],
         painTypes: analysis.painTypes || [],
         targetAudience: analysis.targetAudience || [],
