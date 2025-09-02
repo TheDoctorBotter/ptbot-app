@@ -5,401 +5,609 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   Alert,
-  Linking,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Calendar, DollarSign, Dumbbell, Search } from 'lucide-react-native';
-import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
-import { AnalyzedExercise } from '@/services/youtubeService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Activity, MapPin, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Calendar, Stethoscope, Brain, Heart, Shield } from 'lucide-react-native';
+import { AssessmentService } from '@/services/assessmentService';
+import type { AssessmentData, AssessmentResult } from '@/services/assessmentService';
+import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
 
-interface Exercise {
-  id: string;
-  title: string;
-  bodyPart: string;
-  duration: string;
-  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
-  description: string;
-  completed?: boolean;
-}
-
-// Sample exercises - in real app these would be fetched from your YouTube channel
-const sampleExercises: Exercise[] = [
-  {
-    id: '1',
-    title: 'Lower Back Stretches for Pain Relief',
-    bodyPart: 'Lower Back',
-    duration: '10 min',
-    difficulty: 'Beginner',
-    description: 'Gentle stretches to relieve lower back tension and improve mobility.',
-  },
-  {
-    id: '2',
-    title: 'Neck Pain Relief Exercises',
-    bodyPart: 'Neck',
-    duration: '8 min',
-    difficulty: 'Beginner',
-    description: 'Simple exercises to reduce neck stiffness and improve range of motion.',
-  },
-  {
-    id: '3',
-    title: 'Shoulder Strengthening Routine',
-    bodyPart: 'Shoulder',
-    duration: '15 min',
-    difficulty: 'Intermediate',
-    description: 'Build shoulder strength and stability with these targeted exercises.',
-  },
-  {
-    id: '4',
-    title: 'Knee Rehabilitation Exercises',
-    bodyPart: 'Knee',
-    duration: '12 min',
-    difficulty: 'Beginner',
-    description: 'Safe exercises to strengthen the knee and surrounding muscles.',
-  },
-  {
-    id: '5',
-    title: 'Hip Mobility and Strengthening',
-    bodyPart: 'Hip',
-    duration: '20 min',
-    difficulty: 'Intermediate',
-    description: 'Comprehensive hip exercises for better mobility and strength.',
-  },
+const redFlagSymptoms = [
+  'Bowel or bladder dysfunction',
+  'Progressive neurological deficits',
+  'Saddle anesthesia',
+  'Severe night pain',
+  'Fever with back pain',
+  'Recent significant trauma',
+  'History of cancer',
+  'Unexplained weight loss',
+  'Weakness in both legs',
+  'Loss of reflexes',
 ];
 
-export default function ExercisesScreen() {
-  const [exercises, setExercises] = useState<Exercise[]>(sampleExercises);
-  const [selectedBodyPart, setSelectedBodyPart] = useState<string>('All');
-  const [aiExercises, setAiExercises] = useState<AnalyzedExercise[]>([]);
-  const [isLoadingExercises, setIsLoadingExercises] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [assessmentRecommendations, setAssessmentRecommendations] = useState<AnalyzedExercise[]>([]);
-  const [exerciseService] = useState(() => {
-    const openAIKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-    const youtubeKey = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
-    const channelId = process.env.EXPO_PUBLIC_YOUTUBE_CHANNEL_ID;
-    
-    if (openAIKey && youtubeKey && channelId) {
-      return new ExerciseRecommendationService(openAIKey, youtubeKey, channelId);
-    }
-    return null;
+const additionalSymptoms = [
+  'Numbness or tingling',
+  'Muscle weakness',
+  'Stiffness in the morning',
+  'Pain with movement',
+  'Pain at rest',
+  'Swelling',
+  'Limited range of motion',
+  'Muscle spasms',
+  'Headaches',
+  'Dizziness',
+];
+
+export default function AssessmentScreen() {
+  const [currentStep, setCurrentStep] = useState(1);
+  const [assessmentData, setAssessmentData] = useState<Partial<AssessmentData>>({
+    painLevel: 0,
+    painLocation: '',
+    painDuration: '',
+    painType: '',
+    mechanismOfInjury: '',
+    medications: '',
+    additionalSymptoms: [],
+    redFlags: [],
+    location: '',
   });
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
 
-  // Load assessment-based recommendations on component mount
-  useEffect(() => {
-    loadAssessmentRecommendations();
-  }, []);
+  const assessmentService = new AssessmentService(
+    process.env.EXPO_PUBLIC_OPENAI_API_KEY || '',
+    process.env.EXPO_PUBLIC_YOUTUBE_API_KEY || '',
+    process.env.EXPO_PUBLIC_YOUTUBE_CHANNEL_ID || ''
+  );
 
-  const loadAssessmentRecommendations = async () => {
-    try {
-      const savedAssessment = await AsyncStorage.getItem('lastAssessment');
-      if (savedAssessment && exerciseService) {
-        const assessment = JSON.parse(savedAssessment);
-        console.log('Loading recommendations for saved assessment:', assessment);
-        
-        // Create a description from the assessment data
-        const painDescription = `${assessment.painLocation} pain, level ${assessment.painLevel}/10, ${assessment.painType} pain, duration: ${assessment.painDuration}. Additional symptoms: ${assessment.additionalSymptoms.join(', ')}`;
-        
-        const matches = await exerciseService.getExerciseRecommendationsFromChat(painDescription);
-        if (matches.length > 0) {
-          setAssessmentRecommendations(matches.map(match => match.exercise));
-        }
-      }
-    } catch (error) {
-      console.error('Error loading assessment recommendations:', error);
+  const totalSteps = 7;
+
+  const nextStep = () => {
+    if (currentStep < totalSteps) {
+      setCurrentStep(currentStep + 1);
     }
   };
 
-  const bodyParts = ['All', 'Lower Back', 'Neck', 'Shoulder', 'Knee', 'Hip'];
+  const prevStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+    }
+  };
 
-  const filteredExercises = selectedBodyPart === 'All' 
-    ? exercises 
-    : exercises.filter(ex => ex.bodyPart === selectedBodyPart);
+  const updateAssessmentData = (field: keyof AssessmentData, value: any) => {
+    setAssessmentData(prev => ({ ...prev, [field]: value }));
+  };
 
-  const searchExercises = async () => {
-    if (!exerciseService || !searchQuery.trim()) {
-      Alert.alert('Missing Information', 'Please describe your pain or symptoms to get personalized exercise recommendations.');
+  const toggleSymptom = (symptom: string, isRedFlag: boolean = false) => {
+    const field = isRedFlag ? 'redFlags' : 'additionalSymptoms';
+    const currentSymptoms = assessmentData[field] || [];
+    
+    if (currentSymptoms.includes(symptom)) {
+      updateAssessmentData(field, currentSymptoms.filter(s => s !== symptom));
+    } else {
+      updateAssessmentData(field, [...currentSymptoms, symptom]);
+    }
+  };
+
+  const processAssessment = async () => {
+    if (!assessmentData.painLevel || !assessmentData.painLocation || !assessmentData.painDuration) {
+      Alert.alert('Incomplete Assessment', 'Please complete all required fields before submitting.');
       return;
     }
 
-    setIsLoadingExercises(true);
-    
+    setIsProcessing(true);
+
     try {
-      console.log('🔍 Analyzing user message for exercise recommendations...');
-      const matches = await exerciseService.getExerciseRecommendationsFromChat(searchQuery);
-      console.log(`Found ${matches.length} matching exercises`);
-      
-      if (matches.length > 0) {
-        setAiExercises(matches.map(match => match.exercise));
-        Alert.alert(
-          'Exercises Found',
-          `Found ${matches.length} exercises that match your symptoms. Scroll down to see the AI-recommended exercises.`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'No Match Found',
-          'No specific exercises found for your symptoms. Try describing your pain differently or check the general exercises below.',
-          [{ text: 'OK' }]
-        );
+      // Check for red flags first
+      if (assessmentData.redFlags && assessmentData.redFlags.length > 0) {
+        showRedFlagWarning(assessmentData.redFlags);
+        
+        // Send alert to medical professional
+        await sendRedFlagAlert({
+          symptoms: assessmentData.redFlags,
+          painLevel: assessmentData.painLevel!,
+          location: assessmentData.location || 'Unknown',
+          timestamp: new Date().toISOString(),
+        });
       }
-    } catch (error) {
-      console.error('Exercise search error:', error);
+
+      // Process the assessment
+      const result = await assessmentService.processAssessment(assessmentData as AssessmentData);
+      
+      // Save the result
+      assessmentService.saveAssessmentResult(result);
+      
+      setAssessmentResult(result);
+      setCurrentStep(totalSteps + 1); // Go to results step
+
       Alert.alert(
-        'Search Error',
-        'Unable to search exercises right now. Please try again later or browse the general exercises below.',
+        'Assessment Complete',
+        `Your assessment has been processed. ${result.recommendations.length} personalized exercises have been found for your condition. Check the Exercises tab to see your recommendations!`,
+        [{ text: 'OK' }]
+      );
+
+    } catch (error) {
+      console.error('Assessment processing error:', error);
+      Alert.alert(
+        'Processing Error',
+        'Unable to process your assessment right now. Please try again later.',
         [{ text: 'OK' }]
       );
     } finally {
-      setIsLoadingExercises(false);
+      setIsProcessing(false);
     }
   };
 
-  const openYouTubeChannel = () => {
-    Linking.openURL('http://www.youtube.com/@justinlemmodpt').catch(() => {
-      Alert.alert('Error', 'Unable to open YouTube channel. Please try again later.');
+  const resetAssessment = () => {
+    setCurrentStep(1);
+    setAssessmentData({
+      painLevel: 0,
+      painLocation: '',
+      painDuration: '',
+      painType: '',
+      mechanismOfInjury: '',
+      medications: '',
+      additionalSymptoms: [],
+      redFlags: [],
+      location: '',
     });
+    setAssessmentResult(null);
   };
 
-  const toggleExerciseCompletion = (exerciseId: string) => {
-    setExercises(prev => 
-      prev.map(ex => 
-        ex.id === exerciseId 
-          ? { ...ex, completed: !ex.completed }
-          : ex
-      )
+  const renderProgressBar = () => (
+    <View style={styles.progressContainer}>
+      <View style={styles.progressBar}>
+        <View 
+          style={[
+            styles.progressFill, 
+            { width: `${(currentStep / totalSteps) * 100}%` }
+          ]} 
+        />
+      </View>
+      <Text style={styles.progressText}>
+        Step {Math.min(currentStep, totalSteps)} of {totalSteps}
+      </Text>
+    </View>
+  );
+
+  const renderStep = () => {
+    switch (currentStep) {
+      case 1:
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Pain Level Assessment</Text>
+            <Text style={styles.stepDescription}>
+              On a scale of 0-10, how would you rate your current pain level?
+            </Text>
+            
+            <View style={styles.painLevelContainer}>
+              {[...Array(11)].map((_, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[
+                    styles.painLevelButton,
+                    assessmentData.painLevel === i && styles.painLevelButtonSelected,
+                    i >= 7 && styles.painLevelButtonHigh,
+                  ]}
+                  onPress={() => updateAssessmentData('painLevel', i)}
+                >
+                  <Text
+                    style={[
+                      styles.painLevelText,
+                      assessmentData.painLevel === i && styles.painLevelTextSelected,
+                    ]}
+                  >
+                    {i}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <View style={styles.painLevelLabels}>
+              <Text style={styles.painLevelLabel}>No Pain</Text>
+              <Text style={styles.painLevelLabel}>Worst Possible</Text>
+            </View>
+          </View>
+        );
+
+      case 2:
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Pain Location</Text>
+            <Text style={styles.stepDescription}>
+              Where is your pain located? Select the primary area.
+            </Text>
+            
+            <View style={styles.locationGrid}>
+              {[
+                'Neck', 'Upper Back', 'Lower Back', 'Shoulder',
+                'Elbow', 'Wrist', 'Hip', 'Knee', 'Ankle', 'Other'
+              ].map((location) => (
+                <TouchableOpacity
+                  key={location}
+                  style={[
+                    styles.locationButton,
+                    assessmentData.painLocation === location && styles.locationButtonSelected,
+                  ]}
+                  onPress={() => updateAssessmentData('painLocation', location)}
+                >
+                  <Text
+                    style={[
+                      styles.locationButtonText,
+                      assessmentData.painLocation === location && styles.locationButtonTextSelected,
+                    ]}
+                  >
+                    {location}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        );
+
+      case 3:
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Pain Duration</Text>
+            <Text style={styles.stepDescription}>
+              How long have you been experiencing this pain?
+            </Text>
+            
+            <View style={styles.durationContainer}>
+              {[
+                'Less than 1 week',
+                '1-4 weeks',
+                '1-3 months',
+                '3-6 months',
+                'More than 6 months'
+              ].map((duration) => (
+                <TouchableOpacity
+                  key={duration}
+                  style={[
+                    styles.durationButton,
+                    assessmentData.painDuration === duration && styles.durationButtonSelected,
+                  ]}
+                  onPress={() => updateAssessmentData('painDuration', duration)}
+                >
+                  <Text
+                    style={[
+                      styles.durationButtonText,
+                      assessmentData.painDuration === duration && styles.durationButtonTextSelected,
+                    ]}
+                  >
+                    {duration}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        );
+
+      case 4:
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Pain Type</Text>
+            <Text style={styles.stepDescription}>
+              How would you describe your pain?
+            </Text>
+            
+            <View style={styles.painTypeContainer}>
+              {[
+                'Sharp/Stabbing',
+                'Dull/Aching',
+                'Burning',
+                'Throbbing',
+                'Tingling/Numbness',
+                'Stiffness'
+              ].map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.painTypeButton,
+                    assessmentData.painType === type && styles.painTypeButtonSelected,
+                  ]}
+                  onPress={() => updateAssessmentData('painType', type)}
+                >
+                  <Text
+                    style={[
+                      styles.painTypeButtonText,
+                      assessmentData.painType === type && styles.painTypeButtonTextSelected,
+                    ]}
+                  >
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        );
+
+      case 5:
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>How did this start?</Text>
+            <Text style={styles.stepDescription}>
+              Describe what caused your pain or how it began.
+            </Text>
+            
+            <TextInput
+              style={styles.textAreaInput}
+              value={assessmentData.mechanismOfInjury}
+              onChangeText={(text) => updateAssessmentData('mechanismOfInjury', text)}
+              placeholder="e.g., Lifted heavy box, fell down stairs, gradual onset while working at desk..."
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={4}
+            />
+          </View>
+        );
+
+      case 6:
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Additional Symptoms</Text>
+            <Text style={styles.stepDescription}>
+              Select any additional symptoms you're experiencing:
+            </Text>
+            
+            <View style={styles.symptomsContainer}>
+              {additionalSymptoms.map((symptom) => (
+                <TouchableOpacity
+                  key={symptom}
+                  style={[
+                    styles.symptomButton,
+                    assessmentData.additionalSymptoms?.includes(symptom) && styles.symptomButtonSelected,
+                  ]}
+                  onPress={() => toggleSymptom(symptom)}
+                >
+                  <Text
+                    style={[
+                      styles.symptomButtonText,
+                      assessmentData.additionalSymptoms?.includes(symptom) && styles.symptomButtonTextSelected,
+                    ]}
+                  >
+                    {symptom}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        );
+
+      case 7:
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>⚠️ Red Flag Screening</Text>
+            <Text style={styles.stepDescription}>
+              Please check any of the following that apply to you. These symptoms may require immediate medical attention:
+            </Text>
+            
+            <View style={styles.redFlagsContainer}>
+              {redFlagSymptoms.map((symptom) => (
+                <TouchableOpacity
+                  key={symptom}
+                  style={[
+                    styles.redFlagButton,
+                    assessmentData.redFlags?.includes(symptom) && styles.redFlagButtonSelected,
+                  ]}
+                  onPress={() => toggleSymptom(symptom, true)}
+                >
+                  <View style={styles.redFlagContent}>
+                    <AlertTriangle 
+                      size={16} 
+                      color={assessmentData.redFlags?.includes(symptom) ? "#FFFFFF" : "#EF4444"} 
+                    />
+                    <Text
+                      style={[
+                        styles.redFlagButtonText,
+                        assessmentData.redFlags?.includes(symptom) && styles.redFlagButtonTextSelected,
+                      ]}
+                    >
+                      {symptom}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.redFlagNote}>
+              <Shield size={16} color="#F59E0B" />
+              <Text style={styles.redFlagNoteText}>
+                If you select any red flag symptoms, a medical professional will be notified immediately.
+              </Text>
+            </View>
+          </View>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const renderResults = () => {
+    if (!assessmentResult) return null;
+
+    const getRiskColor = (risk: string) => {
+      switch (risk) {
+        case 'low': return '#10B981';
+        case 'moderate': return '#F59E0B';
+        case 'high': return '#EF4444';
+        case 'critical': return '#DC2626';
+        default: return '#6B7280';
+      }
+    };
+
+    const getRiskIcon = (risk: string) => {
+      switch (risk) {
+        case 'low': return <CheckCircle size={20} color="#10B981" />;
+        case 'moderate': return <Clock size={20} color="#F59E0B" />;
+        case 'high': return <AlertTriangle size={20} color="#EF4444" />;
+        case 'critical': return <AlertTriangle size={20} color="#DC2626" />;
+        default: return <Activity size={20} color="#6B7280" />;
+      }
+    };
+
+    return (
+      <View style={styles.resultsContainer}>
+        <Text style={styles.resultsTitle}>Assessment Complete</Text>
+        
+        {/* Risk Level */}
+        <View style={[styles.riskCard, { borderColor: getRiskColor(assessmentResult.riskLevel) }]}>
+          <View style={styles.riskHeader}>
+            {getRiskIcon(assessmentResult.riskLevel)}
+            <Text style={[styles.riskLevel, { color: getRiskColor(assessmentResult.riskLevel) }]}>
+              {assessmentResult.riskLevel.toUpperCase()} RISK
+            </Text>
+          </View>
+          <Text style={styles.riskDescription}>
+            Based on your symptoms and assessment responses
+          </Text>
+        </View>
+
+        {/* Exercise Recommendations */}
+        {assessmentResult.recommendations.length > 0 && (
+          <View style={styles.recommendationsCard}>
+            <Text style={styles.recommendationsTitle}>
+              🎯 Personalized Exercise Recommendations
+            </Text>
+            <Text style={styles.recommendationsCount}>
+              {assessmentResult.recommendations.length} exercises found for your condition
+            </Text>
+            <TouchableOpacity 
+              style={styles.viewExercisesButton}
+              onPress={() => {
+                Alert.alert(
+                  'View Exercises',
+                  'Your personalized exercises are now available in the Exercises tab.',
+                  [{ text: 'OK' }]
+                );
+              }}
+            >
+              <Text style={styles.viewExercisesText}>View My Exercises</Text>
+              <ArrowRight size={16} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Next Steps */}
+        <View style={styles.nextStepsCard}>
+          <Text style={styles.nextStepsTitle}>Recommended Next Steps</Text>
+          {assessmentResult.nextSteps.map((step, index) => (
+            <View key={index} style={styles.nextStepItem}>
+              <Text style={styles.nextStepNumber}>{index + 1}</Text>
+              <Text style={styles.nextStepText}>{step}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity style={styles.newAssessmentButton} onPress={resetAssessment}>
+            <Text style={styles.newAssessmentText}>Take New Assessment</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     );
   };
 
-  const bookConsultation = () => {
-    const consultationUrl = 'https://www.justinlemmodpt.com';
-    
-    Linking.canOpenURL(consultationUrl)
-      .then((supported) => {
-        if (supported) {
-          return Linking.openURL(consultationUrl);
-        } else {
-          throw new Error('URL not supported');
-        }
-      })
-      .then(() => {
-        console.log('Successfully opened consultation website');
-      })
-      .catch((error) => {
-        console.error('Failed to open consultation URL:', error);
-        Alert.alert(
-          'Open Website',
-          'Please visit www.justinlemmodpt.com in your browser to book a consultation.',
-          [{ text: 'OK' }]
-        );
-      });
-  };
-
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'Beginner': return '#10B981';
-      case 'Intermediate': return '#F59E0B';
-      case 'Advanced': return '#EF4444';
-      default: return '#6B7280';
+  const canProceed = () => {
+    switch (currentStep) {
+      case 1: return assessmentData.painLevel !== undefined && assessmentData.painLevel > 0;
+      case 2: return !!assessmentData.painLocation;
+      case 3: return !!assessmentData.painDuration;
+      case 4: return !!assessmentData.painType;
+      case 5: return !!assessmentData.mechanismOfInjury?.trim();
+      case 6: return true; // Additional symptoms are optional
+      case 7: return true; // Red flags are optional but important
+      default: return false;
     }
   };
+
+  // Show results if assessment is complete
+  if (currentStep > totalSteps) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.headerLogo}>
+            <View style={styles.logoContainer}>
+              <Stethoscope size={28} color="#FFFFFF" />
+              <Text style={styles.logoText}>PTBOT</Text>
+            </View>
+            <Text style={styles.headerTitle}>Assessment Results</Text>
+          </View>
+          <Text style={styles.headerSubtitle}>Your personalized recovery plan</Text>
+        </View>
+
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {renderResults()}
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerLogo}>
           <View style={styles.logoContainer}>
-            <Dumbbell size={28} color="#FFFFFF" />
+            <Brain size={28} color="#FFFFFF" />
             <Text style={styles.logoText}>PTBOT</Text>
           </View>
-          <Text style={styles.headerTitle}>Exercise Library</Text>
+          <Text style={styles.headerTitle}>Symptom Assessment</Text>
         </View>
-        <Text style={styles.headerSubtitle}>Guided exercises for your recovery</Text>
+        <Text style={styles.headerSubtitle}>Help us understand your condition</Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* AI Exercise Search */}
-        {exerciseService && (
-          <View style={styles.aiSearchCard}>
-            <View style={styles.aiSearchHeader}>
-              <Search size={20} color="#0EA5E9" />
-              <Text style={styles.aiSearchTitle}>AI Exercise Finder</Text>
-            </View>
-            <Text style={styles.aiSearchDescription}>
-              Describe your pain or symptoms and I'll find the most relevant exercises from Dr. Lemmo's YouTube channel
-            </Text>
-            <TextInput
-              style={styles.searchInput}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Describe your pain or symptoms..."
-              placeholderTextColor="#9CA3AF"
-              multiline
-            />
-            <TouchableOpacity 
-              style={[styles.searchButton, isLoadingExercises && styles.searchButtonDisabled]}
-              onPress={searchExercises}
-              disabled={isLoadingExercises}
-            >
-              <Search size={16} color="#FFFFFF" />
-              <Text style={styles.searchButtonText}>
-        {/* YouTube Channel Link */}
-        <TouchableOpacity style={styles.youtubeCard} onPress={openYouTubeChannel}>
-          <View style={styles.youtubeHeader}>
-            <Youtube size={24} color="#FF0000" />
-            <Text style={styles.youtubeTitle}>Dr. Justin Lemmo, PT, DPT</Text>
-            <ExternalLink size={16} color="#6B7280" />
-          </View>
-          <Text style={styles.youtubeDescription}>
-            Visit my YouTube channel for complete exercise videos and detailed instructions
-          </Text>
-          <View style={styles.youtubeStats}>
-            <View style={styles.youtubeStat}>
-              <Play size={16} color="#6B7280" />
-              <Text style={styles.youtubeStatText}>Professional PT Videos</Text>
-            </View>
-            <View style={styles.youtubeStat}>
-              <Star size={16} color="#F59E0B" />
-              <Text style={styles.youtubeStatText}>Expert Guidance</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
+      <View style={styles.content}>
+        {renderProgressBar()}
+        
+        <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+          {renderStep()}
+        </ScrollView>
 
-        {/* Texas Consultation Offer */}
-        <TouchableOpacity style={styles.consultationCard} onPress={bookConsultation}>
-          <View style={styles.consultationHeader}>
-            <MapPin size={20} color="#2563EB" />
-            <Text style={styles.consultationTitle}>Texas Residents</Text>
-          </View>
-          <Text style={styles.consultationDescription}>
-            Book a virtual consultation with Dr. Justin Lemmo, PT, DPT for personalized exercise recommendations
-          </Text>
-          <Text style={styles.consultationCta}>Book Virtual Consult</Text>
-        </TouchableOpacity>
-
-        {/* Body Part Filter */}
-        <View style={styles.filterContainer}>
-          <Text style={styles.filterTitle}>Filter by Body Part</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-            {bodyParts.map((bodyPart) => (
-              <TouchableOpacity
-                key={bodyPart}
-                style={[
-                  styles.filterButton,
-                  selectedBodyPart === bodyPart && styles.filterButtonSelected,
-                ]}
-                onPress={() => setSelectedBodyPart(bodyPart)}
-              >
-                <Text
-                  style={[
-                    styles.filterButtonText,
-                    selectedBodyPart === bodyPart && styles.filterButtonTextSelected,
-                  ]}
-                >
-                  {bodyPart}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Exercise List */}
-        <View style={styles.exerciseContainer}>
-          <Text style={styles.exerciseTitle}>
-            {selectedBodyPart === 'All' 
-              ? `All Exercises (${filteredExercises.length})` 
-              : `${selectedBodyPart} Exercises (${filteredExercises.length})`
-            }
-          </Text>
+        {/* Navigation Buttons */}
+        <View style={styles.navigationContainer}>
+          {currentStep > 1 && (
+            <TouchableOpacity style={styles.backButton} onPress={prevStep}>
+              <Text style={styles.backButtonText}>Back</Text>
+            </TouchableOpacity>
+          )}
           
-          {filteredExercises.length === 0 ? (
-            <View style={styles.noResultsContainer}>
-              <Text style={styles.noResultsText}>
-                No exercises available yet for {selectedBodyPart}.
-              </Text>
-              <Text style={styles.noResultsSubtext}>
-                Check back soon or visit the YouTube channel for updates!
-              </Text>
-              <TouchableOpacity style={styles.visitChannelButton} onPress={openYouTubeChannel}>
-                <Youtube size={16} color="#FFFFFF" />
-                <Text style={styles.visitChannelText}>Visit YouTube Channel</Text>
-              </TouchableOpacity>
-            </View>
+          <View style={styles.navigationSpacer} />
+          
+          {currentStep < totalSteps ? (
+            <TouchableOpacity
+              style={[
+                styles.nextButton,
+                !canProceed() && styles.nextButtonDisabled,
+              ]}
+              onPress={nextStep}
+              disabled={!canProceed()}
+            >
+              <Text style={styles.nextButtonText}>Next</Text>
+              <ArrowRight size={16} color="#FFFFFF" />
+            </TouchableOpacity>
           ) : (
-            filteredExercises.map((exercise) => (
-              <View key={exercise.id} style={styles.exerciseCard}>
-                <View style={styles.exerciseHeader}>
-                  <View style={styles.exerciseInfo}>
-                    <Text style={styles.exerciseCardTitle}>{exercise.title}</Text>
-                    <View style={styles.exerciseMeta}>
-                      <View style={styles.exerciseMetaItem}>
-                        <Clock size={14} color="#6B7280" />
-                        <Text style={styles.exerciseMetaText}>{exercise.duration}</Text>
-                      </View>
-                      <View 
-                        style={[
-                          styles.difficultyBadge,
-                          { backgroundColor: getDifficultyColor(exercise.difficulty) + '20' }
-                        ]}
-                      >
-                        <Text 
-                          style={[
-                            styles.difficultyText,
-                            { color: getDifficultyColor(exercise.difficulty) }
-                          ]}
-                        >
-                          {exercise.difficulty}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.completeButton}
-                    onPress={() => toggleExerciseCompletion(exercise.id)}
-                  >
-                    <CheckCircle 
-                      size={24} 
-                      color={exercise.completed ? '#10B981' : '#D1D5DB'} 
-                    />
-                  </TouchableOpacity>
-                </View>
-                
-                <Text style={styles.exerciseDescription}>{exercise.description}</Text>
-                
-                <TouchableOpacity 
-                  style={styles.watchVideoButton}
-                  onPress={openYouTubeChannel}
-                >
-                  <Play size={16} color="#FFFFFF" />
-                  <Text style={styles.watchVideoText}>Watch on YouTube</Text>
-                </TouchableOpacity>
-              </View>
-            ))
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                (!canProceed() || isProcessing) && styles.submitButtonDisabled,
+              ]}
+              onPress={processAssessment}
+              disabled={!canProceed() || isProcessing}
+            >
+              <Heart size={16} color="#FFFFFF" />
+              <Text style={styles.submitButtonText}>
+                {isProcessing ? 'Processing...' : 'Complete Assessment'}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
-
-        {/* Progress Summary */}
-        <View style={styles.progressSummary}>
-          <Text style={styles.progressTitle}>Today's Progress</Text>
-          <View style={styles.progressStats}>
-            <View style={styles.progressStat}>
-              <CheckCircle size={20} color="#10B981" />
-              <Text style={styles.progressStatText}>
-                {exercises.filter(ex => ex.completed).length} completed
-              </Text>
-            </View>
-            <View style={styles.progressStat}>
-              <Calendar size={20} color="#2563EB" />
-              <Text style={styles.progressStatText}>
-                {exercises.length} total exercises
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -446,318 +654,423 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  youtubeCard: {
-    margin: 16,
+  progressContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderWidth: 2,
-    borderColor: '#FF0000',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  youtubeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  progressBar: {
+    height: 4,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 2,
     marginBottom: 8,
   },
-  youtubeTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    flex: 1,
-    marginLeft: 8,
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#2563EB',
+    borderRadius: 2,
   },
-  youtubeDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  youtubeStats: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  youtubeStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  youtubeStatText: {
+  progressText: {
     fontSize: 12,
     color: '#6B7280',
-    marginLeft: 4,
-  },
-  consultationCard: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    backgroundColor: '#EBF4FF',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: '#2563EB',
-  },
-  consultationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  consultationTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2563EB',
-    flex: 1,
-    marginLeft: 8,
-  },
-  consultationDescription: {
-    fontSize: 14,
-    color: '#374151',
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  consultationCta: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2563EB',
     textAlign: 'center',
   },
-  filterContainer: {
-    marginHorizontal: 16,
-    marginBottom: 16,
+  stepContent: {
+    flex: 1,
   },
-  filterTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
+  stepContainer: {
+    padding: 20,
+  },
+  stepTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
     marginBottom: 8,
   },
-  filterScroll: {
-    flexDirection: 'row',
+  stepDescription: {
+    fontSize: 16,
+    color: '#6B7280',
+    lineHeight: 24,
+    marginBottom: 24,
   },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+  painLevelContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  painLevelButton: {
+    width: 40,
+    height: 40,
     borderRadius: 20,
     backgroundColor: '#F3F4F6',
-    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
     borderColor: '#E5E7EB',
-    marginRight: 8,
   },
-  filterButtonSelected: {
+  painLevelButtonSelected: {
     backgroundColor: '#2563EB',
     borderColor: '#2563EB',
   },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
+  painLevelButtonHigh: {
+    borderColor: '#DC2626',
   },
-  filterButtonTextSelected: {
-    color: '#FFFFFF',
-  },
-  exerciseContainer: {
-    marginHorizontal: 16,
-  },
-  exerciseTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 16,
-  },
-  noResultsContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  noResultsText: {
+  painLevelText: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: 'bold',
     color: '#374151',
-    textAlign: 'center',
-    marginBottom: 8,
   },
-  noResultsSubtext: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  visitChannelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FF0000',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 8,
-  },
-  visitChannelText: {
-    fontSize: 14,
-    fontWeight: '600',
+  painLevelTextSelected: {
     color: '#FFFFFF',
   },
-  exerciseCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  exerciseHeader: {
+  painLevelLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+    paddingHorizontal: 20,
   },
-  exerciseInfo: {
-    flex: 1,
-    marginRight: 12,
+  painLevelLabel: {
+    fontSize: 12,
+    color: '#6B7280',
   },
-  exerciseCardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 6,
-  },
-  exerciseMeta: {
+  locationGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 12,
   },
-  exerciseMetaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  exerciseMetaText: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  difficultyBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  difficultyText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  completeButton: {
-    padding: 4,
-  },
-  exerciseDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  watchVideoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF0000',
-    paddingVertical: 10,
+  locationButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    minWidth: '45%',
+  },
+  locationButtonSelected: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  locationButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+    textAlign: 'center',
+  },
+  locationButtonTextSelected: {
+    color: '#FFFFFF',
+  },
+  durationContainer: {
+    gap: 12,
+  },
+  durationButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  durationButtonSelected: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  durationButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#374151',
+    textAlign: 'center',
+  },
+  durationButtonTextSelected: {
+    color: '#FFFFFF',
+  },
+  painTypeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  painTypeButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    minWidth: '45%',
+  },
+  painTypeButtonSelected: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  painTypeButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+    textAlign: 'center',
+  },
+  painTypeButtonTextSelected: {
+    color: '#FFFFFF',
+  },
+  textAreaInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: '#FFFFFF',
+    minHeight: 120,
+    textAlignVertical: 'top',
+  },
+  symptomsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
-  watchVideoText: {
+  symptomButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  symptomButtonSelected: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  symptomButtonText: {
     fontSize: 14,
+    color: '#374151',
+  },
+  symptomButtonTextSelected: {
+    color: '#FFFFFF',
+  },
+  redFlagsContainer: {
+    gap: 8,
+  },
+  redFlagButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  redFlagButtonSelected: {
+    backgroundColor: '#EF4444',
+    borderColor: '#EF4444',
+  },
+  redFlagContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  redFlagButtonText: {
+    fontSize: 14,
+    color: '#DC2626',
+    flex: 1,
+  },
+  redFlagButtonTextSelected: {
+    color: '#FFFFFF',
+  },
+  redFlagNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    gap: 8,
+  },
+  redFlagNoteText: {
+    fontSize: 12,
+    color: '#92400E',
+    flex: 1,
+    lineHeight: 16,
+  },
+  navigationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  backButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  backButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  navigationSpacer: {
+    flex: 1,
+  },
+  nextButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#2563EB',
+    gap: 8,
+  },
+  nextButtonDisabled: {
+    backgroundColor: '#D1D5DB',
+  },
+  nextButtonText: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  progressSummary: {
-    margin: 16,
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#10B981',
+    gap: 8,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#D1D5DB',
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  resultsContainer: {
+    padding: 20,
+  },
+  resultsTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  riskCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  progressTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 12,
-  },
-  progressStats: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  progressStat: {
+  riskHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 8,
   },
-  progressStatText: {
+  riskLevel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  riskDescription: {
     fontSize: 14,
     color: '#6B7280',
   },
-  bottomSpacer: {
-    height: 20,
-  },
-  aiSearchCard: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    backgroundColor: '#F0F9FF',
+  recommendationsCard: {
+    backgroundColor: '#F0FDF4',
     borderRadius: 12,
     padding: 16,
+    marginBottom: 16,
     borderWidth: 2,
-    borderColor: '#0EA5E9',
+    borderColor: '#10B981',
   },
-  aiSearchTitle: {
-    fontSize: 16,
+  recommendationsTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#0C4A6E',
+    color: '#065F46',
     marginBottom: 8,
   },
-  aiSearchDescription: {
+  recommendationsCount: {
     fontSize: 14,
     color: '#374151',
     marginBottom: 12,
-    lineHeight: 20,
   },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: '#0EA5E9',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    backgroundColor: '#FFFFFF',
-    marginBottom: 12,
-    minHeight: 60,
-    textAlignVertical: 'top',
-  },
-  searchButton: {
+  viewExercisesButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0EA5E9',
+    backgroundColor: '#10B981',
     paddingVertical: 12,
     borderRadius: 8,
     gap: 8,
   },
-  searchButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-  },
-  searchButtonText: {
-    fontSize: 14,
+  viewExercisesText: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  nextStepsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  nextStepsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  nextStepItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  nextStepNumber: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2563EB',
+    backgroundColor: '#EBF4FF',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginRight: 12,
+  },
+  nextStepText: {
+    fontSize: 14,
+    color: '#374151',
+    flex: 1,
+    lineHeight: 20,
+  },
+  actionButtons: {
+    gap: 12,
+  },
+  newAssessmentButton: {
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  newAssessmentText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  bottomSpacer: {
+    height: 20,
   },
 });
