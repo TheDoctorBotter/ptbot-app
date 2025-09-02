@@ -123,11 +123,6 @@ export default function AssessmentScreen() {
       setAssessmentResult(result);
       setCurrentStep(totalSteps + 1); // Go to results step
 
-      Alert.alert(
-        'Assessment Complete',
-        `Your assessment has been processed. ${result.recommendations.length} personalized exercises have been found for your condition. Check the Exercises tab to see your recommendations!`,
-        [{ text: 'OK' }]
-      );
 
     } catch (error) {
       console.error('Assessment processing error:', error);
@@ -291,7 +286,7 @@ export default function AssessmentScreen() {
           <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>Pain Type</Text>
             <Text style={styles.stepDescription}>
-              How would you describe your pain?
+              How would you describe your pain? (Select all that apply)
             </Text>
             
             <View style={styles.painTypeContainer}>
@@ -307,14 +302,22 @@ export default function AssessmentScreen() {
                   key={type}
                   style={[
                     styles.painTypeButton,
-                    assessmentData.painType === type && styles.painTypeButtonSelected,
+                    assessmentData.painType?.includes(type) && styles.painTypeButtonSelected,
                   ]}
-                  onPress={() => updateAssessmentData('painType', type)}
+                  onPress={() => {
+                    const currentTypes = assessmentData.painType ? assessmentData.painType.split(', ') : [];
+                    if (currentTypes.includes(type)) {
+                      const newTypes = currentTypes.filter(t => t !== type);
+                      updateAssessmentData('painType', newTypes.join(', '));
+                    } else {
+                      updateAssessmentData('painType', [...currentTypes, type].join(', '));
+                    }
+                  }}
                 >
                   <Text
                     style={[
                       styles.painTypeButtonText,
-                      assessmentData.painType === type && styles.painTypeButtonTextSelected,
+                      assessmentData.painType?.includes(type) && styles.painTypeButtonTextSelected,
                     ]}
                   >
                     {type}
@@ -507,6 +510,20 @@ export default function AssessmentScreen() {
         <View style={styles.actionButtons}>
           <TouchableOpacity style={styles.newAssessmentButton} onPress={resetAssessment}>
             <Text style={styles.newAssessmentText}>Take New Assessment</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.viewExercisesButton}
+            onPress={() => {
+              Alert.alert(
+                'View Your Exercises',
+                'Your personalized exercise recommendations are available in the Exercises tab.',
+                [{ text: 'OK' }]
+              );
+            }}
+          >
+            <Text style={styles.viewExercisesButtonText}>View My Exercises</Text>
+            <ArrowRight size={16} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       </View>
@@ -1069,6 +1086,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
+  },
+  viewExercisesButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    borderRadius: 8,
+    gap: 8,
+  },
+  viewExercisesButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   bottomSpacer: {
     height: 20,

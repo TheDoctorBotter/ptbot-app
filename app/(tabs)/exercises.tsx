@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,9 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Calendar, Dumbbell, Search, Sparkles } from 'lucide-react-native';
+import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Calendar, Dumbbell, Search, Sparkles, Target } from 'lucide-react-native';
 import { useAssessmentResults } from '@/hooks/useAssessmentResults';
+import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
 import type { ExerciseRecommendation } from '@/services/assessmentService';
 
 interface Exercise {
@@ -21,66 +22,107 @@ interface Exercise {
   duration: string;
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
   description: string;
+  url: string;
   completed?: boolean;
 }
 
-// Sample exercises - in real app these would be fetched from your YouTube channel
-const sampleExercises: Exercise[] = [
+// Preview exercises - these will be replaced by real YouTube data when APIs are configured
+const previewExercises: Exercise[] = [
   {
-    id: '1',
-    title: 'Lower Back Stretches for Pain Relief',
+    id: 'preview-1',
+    title: 'Lower Back Pain Relief Stretches',
     bodyPart: 'Lower Back',
     duration: '10 min',
     difficulty: 'Beginner',
-    description: 'Gentle stretches to relieve lower back tension and improve mobility.',
+    description: 'Gentle stretches to relieve lower back tension and improve mobility. Perfect for morning stiffness or after sitting.',
+    url: 'https://youtube.com/@justinlemmodpt',
   },
   {
-    id: '2',
-    title: 'Neck Pain Relief Exercises',
+    id: 'preview-2',
+    title: 'Neck and Shoulder Tension Release',
     bodyPart: 'Neck',
     duration: '8 min',
     difficulty: 'Beginner',
-    description: 'Simple exercises to reduce neck stiffness and improve range of motion.',
+    description: 'Simple exercises to reduce neck stiffness and shoulder tension from desk work.',
+    url: 'https://youtube.com/@justinlemmodpt',
   },
   {
-    id: '3',
-    title: 'Shoulder Strengthening Routine',
+    id: 'preview-3',
+    title: 'Hip Flexor Stretches for Tight Hips',
+    bodyPart: 'Hip',
+    duration: '12 min',
+    difficulty: 'Beginner',
+    description: 'Essential stretches for hip flexor tightness from prolonged sitting.',
+    url: 'https://youtube.com/@justinlemmodpt',
+  },
+  {
+    id: 'preview-4',
+    title: 'Shoulder Strengthening for Rotator Cuff',
     bodyPart: 'Shoulder',
     duration: '15 min',
     difficulty: 'Intermediate',
-    description: 'Build shoulder strength and stability with these targeted exercises.',
+    description: 'Build shoulder strength and stability with these targeted rotator cuff exercises.',
+    url: 'https://youtube.com/@justinlemmodpt',
   },
   {
-    id: '4',
-    title: 'Knee Rehabilitation Exercises',
+    id: 'preview-5',
+    title: 'Knee Pain Relief and Strengthening',
     bodyPart: 'Knee',
     duration: '12 min',
     difficulty: 'Beginner',
-    description: 'Safe exercises to strengthen the knee and surrounding muscles.',
+    description: 'Safe exercises to strengthen the knee and surrounding muscles for better support.',
+    url: 'https://youtube.com/@justinlemmodpt',
   },
   {
-    id: '5',
-    title: 'Hip Mobility and Strengthening',
-    bodyPart: 'Hip',
-    duration: '20 min',
+    id: 'preview-6',
+    title: 'Sciatica Relief Exercises',
+    bodyPart: 'Lower Back',
+    duration: '14 min',
+    difficulty: 'Beginner',
+    description: 'Specific exercises to relieve sciatic nerve pain and improve mobility.',
+    url: 'https://youtube.com/@justinlemmodpt',
+  },
+  {
+    id: 'preview-7',
+    title: 'Upper Back and Posture Correction',
+    bodyPart: 'Upper Back',
+    duration: '10 min',
     difficulty: 'Intermediate',
-    description: 'Comprehensive hip exercises for better mobility and strength.',
+    description: 'Strengthen your upper back and improve posture with these targeted exercises.',
+    url: 'https://youtube.com/@justinlemmodpt',
+  },
+  {
+    id: 'preview-8',
+    title: 'Ankle Mobility and Strengthening',
+    bodyPart: 'Ankle',
+    duration: '8 min',
+    difficulty: 'Beginner',
+    description: 'Improve ankle flexibility and strength for better balance and injury prevention.',
+    url: 'https://youtube.com/@justinlemmodpt',
   },
 ];
 
 export default function ExercisesScreen() {
-  const [exercises, setExercises] = useState<Exercise[]>(sampleExercises);
+  const [exercises, setExercises] = useState<Exercise[]>(previewExercises);
   const [selectedBodyPart, setSelectedBodyPart] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const { latestAssessment, isLoading: assessmentLoading, refreshAssessment } = useAssessmentResults();
 
-  const bodyParts = ['All', 'Lower Back', 'Neck', 'Shoulder', 'Knee', 'Hip'];
+  const bodyParts = ['All', 'Lower Back', 'Upper Back', 'Neck', 'Shoulder', 'Hip', 'Knee', 'Ankle'];
 
-  const filteredExercises = selectedBodyPart === 'All' 
-    ? exercises 
-    : exercises.filter(ex => ex.bodyPart === selectedBodyPart);
+  const filteredExercises = exercises.filter(ex => {
+    const matchesBodyPart = selectedBodyPart === 'All' || ex.bodyPart === selectedBodyPart;
+    const matchesSearch = !searchQuery || 
+      ex.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ex.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ex.bodyPart.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    return matchesBodyPart && matchesSearch;
+  });
 
   const openYouTubeChannel = () => {
-    Linking.openURL('http://www.youtube.com/@justinlemmodpt').catch(() => {
+    Linking.openURL('https://youtube.com/@justinlemmodpt').catch(() => {
       Alert.alert('Error', 'Unable to open YouTube channel. Please try again later.');
     });
   };
@@ -129,10 +171,65 @@ export default function ExercisesScreen() {
   };
 
   const openExerciseVideo = (url?: string) => {
-    const videoUrl = url || 'http://www.youtube.com/@justinlemmodpt';
+    const videoUrl = url || 'https://youtube.com/@justinlemmodpt';
     Linking.openURL(videoUrl).catch(() => {
       Alert.alert('Error', 'Unable to open video. Please try again later.');
     });
+  };
+
+  const searchExercises = async () => {
+    if (!searchQuery.trim()) {
+      Alert.alert('Search Required', 'Please enter a description of your pain or symptoms.');
+      return;
+    }
+
+    const openAIApiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+    const youtubeApiKey = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+    const channelId = process.env.EXPO_PUBLIC_YOUTUBE_CHANNEL_ID;
+
+    if (!openAIApiKey) {
+      Alert.alert(
+        'AI Search Unavailable',
+        'AI exercise search requires API configuration. For now, browse the exercises below or complete an assessment for personalized recommendations.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setIsSearching(true);
+
+    try {
+      const exerciseService = new ExerciseRecommendationService(
+        openAIApiKey,
+        youtubeApiKey || '',
+        channelId || ''
+      );
+
+      const matches = await exerciseService.getExerciseRecommendationsFromChat(searchQuery);
+      
+      if (matches.length > 0) {
+        Alert.alert(
+          'Exercises Found',
+          `Found ${matches.length} exercises matching your description. These would appear as personalized recommendations when the YouTube API is configured.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'No Matches',
+          'No specific exercises found for your description. Try browsing the exercises below or complete a full assessment.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Exercise search error:', error);
+      Alert.alert(
+        'Search Error',
+        'Unable to search exercises right now. Please try browsing the exercises below.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   const hasRecommendations = latestAssessment?.recommendations && latestAssessment.recommendations.length > 0;
@@ -151,6 +248,36 @@ export default function ExercisesScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* AI Exercise Search */}
+        <View style={styles.aiSearchCard}>
+          <View style={styles.aiSearchHeader}>
+            <Target size={20} color="#0EA5E9" />
+            <Text style={styles.aiSearchTitle}>AI Exercise Finder</Text>
+          </View>
+          <Text style={styles.aiSearchDescription}>
+            Describe your pain or symptoms and I'll find the most relevant exercises from Dr. Lemmo's library.
+          </Text>
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="e.g., 'I have lower back pain when sitting' or 'neck stiffness in the morning'"
+            placeholderTextColor="#9CA3AF"
+            multiline
+            numberOfLines={3}
+          />
+          <TouchableOpacity 
+            style={[styles.searchButton, (!searchQuery.trim() || isSearching) && styles.searchButtonDisabled]}
+            onPress={searchExercises}
+            disabled={!searchQuery.trim() || isSearching}
+          >
+            <Search size={16} color="#FFFFFF" />
+            <Text style={styles.searchButtonText}>
+              {isSearching ? 'Searching...' : 'Find My Exercises'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Assessment-Based Recommendations */}
         {hasRecommendations && (
           <View style={styles.recommendationsContainer}>
@@ -199,7 +326,7 @@ export default function ExercisesScreen() {
                   {recommendation.reasoning}
                 </Text>
                 
-                {recommendation.safetyNotes.length > 0 && (
+                {recommendation.safetyNotes && recommendation.safetyNotes.length > 0 && (
                   <View style={styles.safetyNotesContainer}>
                     <Text style={styles.safetyNotesTitle}>⚠️ Safety Notes:</Text>
                     {recommendation.safetyNotes.map((note, noteIndex) => (
@@ -227,7 +354,6 @@ export default function ExercisesScreen() {
                   [
                     { text: 'Cancel' },
                     { text: 'Go to Assessment', onPress: () => {
-                      // In a real app, this would navigate to the assessment tab
                       console.log('Navigate to assessment tab');
                     }}
                   ]
@@ -257,14 +383,13 @@ export default function ExercisesScreen() {
                   [
                     { text: 'Cancel' },
                     { text: 'Start Assessment', onPress: () => {
-                      // In a real app, this would navigate to the assessment tab
                       console.log('Navigate to assessment tab');
                     }}
                   ]
                 );
               }}
             >
-              <Activity size={16} color="#FFFFFF" />
+              <Target size={16} color="#FFFFFF" />
               <Text style={styles.assessmentButtonText}>Start Assessment</Text>
             </TouchableOpacity>
           </View>
@@ -342,10 +467,10 @@ export default function ExercisesScreen() {
           {filteredExercises.length === 0 ? (
             <View style={styles.noResultsContainer}>
               <Text style={styles.noResultsText}>
-                No exercises available yet for {selectedBodyPart}.
+                No exercises found matching your criteria.
               </Text>
               <Text style={styles.noResultsSubtext}>
-                Check back soon or visit the YouTube channel for updates!
+                Try adjusting your filters or search terms.
               </Text>
               <TouchableOpacity style={styles.visitChannelButton} onPress={openYouTubeChannel}>
                 <Youtube size={16} color="#FFFFFF" />
@@ -395,7 +520,7 @@ export default function ExercisesScreen() {
                 
                 <TouchableOpacity 
                   style={styles.watchVideoButton}
-                  onPress={openYouTubeChannel}
+                  onPress={() => openExerciseVideo(exercise.url)}
                 >
                   <Play size={16} color="#FFFFFF" />
                   <Text style={styles.watchVideoText}>Watch on YouTube</Text>
@@ -601,12 +726,6 @@ const styles = StyleSheet.create({
   reasoningLabel: {
     fontWeight: '600',
     color: '#065F46',
-  },
-  recommendationDescription: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 12,
-    lineHeight: 18,
   },
   watchRecommendedButton: {
     flexDirection: 'row',
@@ -954,5 +1073,8 @@ const styles = StyleSheet.create({
   progressStatText: {
     fontSize: 14,
     color: '#6B7280',
+  },
+  bottomSpacer: {
+    height: 20,
   },
 });
