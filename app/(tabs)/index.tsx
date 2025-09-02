@@ -1,170 +1,149 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
   Alert,
   Linking,
-  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Calendar, DollarSign, Dumbbell } from 'lucide-react-native';
-import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
-import { AnalyzedExercise } from '@/services/youtubeService';
+import { MessageCircle, Send, Bot, User, ExternalLink, MapPin, Youtube } from 'lucide-react-native';
 
-interface Exercise {
+interface ChatMessage {
   id: string;
-  title: string;
-  bodyPart: string;
-  duration: string;
-  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
-  description: string;
-  completed?: boolean;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
 }
 
-// Sample exercises - in real app these would be fetched from your YouTube channel
-const sampleExercises: Exercise[] = [
-  {
-    id: '1',
-    title: 'Lower Back Stretches for Pain Relief',
-    bodyPart: 'Lower Back',
-    duration: '10 min',
-    difficulty: 'Beginner',
-    description: 'Gentle stretches to relieve lower back tension and improve mobility.',
-  },
-  {
-    id: '2',
-    title: 'Neck Pain Relief Exercises',
-    bodyPart: 'Neck',
-    duration: '8 min',
-    difficulty: 'Beginner',
-    description: 'Simple exercises to reduce neck stiffness and improve range of motion.',
-  },
-  {
-    id: '3',
-    title: 'Shoulder Strengthening Routine',
-    bodyPart: 'Shoulder',
-    duration: '15 min',
-    difficulty: 'Intermediate',
-    description: 'Build shoulder strength and stability with these targeted exercises.',
-  },
-  {
-    id: '4',
-    title: 'Knee Rehabilitation Exercises',
-    bodyPart: 'Knee',
-    duration: '12 min',
-    difficulty: 'Beginner',
-    description: 'Safe exercises to strengthen the knee and surrounding muscles.',
-  },
-  {
-    id: '5',
-    title: 'Hip Mobility and Strengthening',
-    bodyPart: 'Hip',
-    duration: '20 min',
-    difficulty: 'Intermediate',
-    description: 'Comprehensive hip exercises for better mobility and strength.',
-  },
-];
+export default function HomeScreen() {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      text: "Hi! I'm PTBot, your virtual physical therapy assistant created by Dr. Justin Lemmo, PT, DPT. I can help you understand your symptoms, recommend exercises, and guide your recovery. How are you feeling today?",
+      isUser: false,
+      timestamp: new Date(),
+    },
+  ]);
+  const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
-export default function ExercisesScreen() {
-  const [exercises, setExercises] = useState<Exercise[]>(sampleExercises);
-  const [selectedBodyPart, setSelectedBodyPart] = useState<string>('All');
-  const [isTexasResident, setIsTexasResident] = useState<boolean>(false);
-  const [aiExercises, setAiExercises] = useState<AnalyzedExercise[]>([]);
-  const [isLoadingExercises, setIsLoadingExercises] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [exerciseService] = useState(() => {
-    const openAIKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-    const youtubeKey = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
-    const channelId = process.env.EXPO_PUBLIC_YOUTUBE_CHANNEL_ID;
-    
-    if (openAIKey && youtubeKey && channelId) {
-      return new ExerciseRecommendationService(openAIKey, youtubeKey, channelId);
+  const openAIApiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+
+  useEffect(() => {
+    // Auto-scroll to bottom when new messages are added
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  }, [messages]);
+
+  const sendMessage = async () => {
+    if (!inputText.trim()) return;
+
+    if (!openAIApiKey) {
+      Alert.alert(
+        'Configuration Required',
+        'OpenAI API key is not configured. Please add EXPO_PUBLIC_OPENAI_API_KEY to your environment variables.',
+        [{ text: 'OK' }]
+      );
+      return;
     }
-    return null;
-  });
 
-  const bodyParts = ['All', 'Lower Back', 'Neck', 'Shoulder', 'Knee', 'Hip'];
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      text: inputText.trim(),
+      isUser: true,
+      timestamp: new Date(),
+    };
 
-  const filteredExercises = selectedBodyPart === 'All' 
-    ? exercises 
-    : exercises.filter(ex => ex.bodyPart === selectedBodyPart);
+    setMessages(prev => [...prev, userMessage]);
+    setInputText('');
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openAIApiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: `You are PTBot, a helpful virtual physical therapy assistant created by Dr. Justin Lemmo, PT, DPT. You provide educational information about physical therapy, exercises, and general wellness.
+
+IMPORTANT GUIDELINES:
+- Always emphasize that you provide educational information, not medical diagnosis
+- Recommend users complete the Assessment tab for personalized exercise recommendations
+- For Texas residents, mention they can book virtual consultations with Dr. Lemmo at justinlemmodpt.com
+- Direct users to the Exercises tab to find specific exercise videos from Dr. Lemmo's YouTube channel
+- If users describe pain or symptoms, suggest they use the Assessment tab for proper evaluation
+- Be encouraging and supportive about their recovery journey
+- Keep responses concise and actionable
+- Always remind users to consult healthcare providers for serious concerns
+
+NEVER:
+- Provide specific medical diagnoses
+- Recommend prescription medications
+- Replace professional medical advice
+- Give advice for serious injuries without proper assessment
+
+Your goal is to guide users through the app features while providing helpful, safe, and educational physical therapy information.`
+            },
+            ...messages.slice(-5).map(msg => ({
+              role: msg.isUser ? 'user' as const : 'assistant' as const,
+              content: msg.text,
+            })),
+            {
+              role: 'user',
+              content: inputText.trim(),
+            },
+          ],
+          max_tokens: 300,
+          temperature: 0.7,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Failed to get response');
+      }
+
+      const botMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        text: data.choices[0].message.content,
+        isUser: false,
+        timestamp: new Date(),
+      };
+
+      setMessages(prev => [...prev, botMessage]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        text: "I'm sorry, I'm having trouble responding right now. Please try again in a moment, or use the Assessment tab to get personalized exercise recommendations.",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const openYouTubeChannel = () => {
     Linking.openURL('http://www.youtube.com/@justinlemmodpt').catch(() => {
       Alert.alert('Error', 'Unable to open YouTube channel. Please try again later.');
     });
-  };
-
-  const searchExercises = async () => {
-    if (!exerciseService || !searchQuery.trim()) {
-      Alert.alert('Missing Information', 'Please describe your pain or symptoms to get personalized exercise recommendations.');
-      return;
-    }
-
-    setIsLoadingExercises(true);
-    
-    try {
-      const userPainProfile = {
-        description: searchQuery,
-        painLevel: 5, // Default
-        location: 'unknown',
-        duration: 'unknown',
-      };
-
-      console.log('🔍 Analyzing user message for exercise recommendations...');
-      const matches = await exerciseService.getExerciseRecommendationsFromChat(searchQuery);
-      console.log(`Found ${matches.length} matching exercises`);
-      
-      if (matches.length > 0) {
-        setAiExercises(matches.map(match => match.exercise));
-        let exerciseRecommendations = `Found ${matches.length} exercises that match your symptoms. Scroll down to see the AI-recommended exercises.`;
-        exerciseRecommendations += `   📋 ${match.reasoning}\n`;
-        exerciseRecommendations += `   🎥 Difficulty: ${match.exercise.difficulty}\n`;
-        exerciseRecommendations += `   ⏱️ Duration: ${match.exercise.duration}\n`;
-        exerciseRecommendations += `   🔗 Watch: ${match.exercise.url}\n\n`;
-        exerciseRecommendations += `💡 These exercises are AI-selected from Dr. Lemmo's YouTube channel based on your specific symptoms. Visit the Exercises tab to mark them as completed!`;
-        Alert.alert(
-          'Exercises Found',
-          exerciseRecommendations
-        );
-      } else {
-        let exerciseRecommendations = `\n\n💡 I can analyze Dr. Lemmo's YouTube videos to recommend specific exercises! The system is currently loading - try asking again in a moment, or visit the Exercises tab to browse manually.`;
-        Alert.alert(
-          'No Match Found',
-          'No specific exercises found for your symptoms. Try describing your pain differently or check the general exercises below.',
-          [{ text: 'OK' }]
-        );
-        exerciseRecommendations = `\n\n💡 To get AI-powered exercise recommendations from Dr. Lemmo's YouTube channel, please configure your API keys in the environment variables.`;
-      }
-    } catch (error) {
-      console.error('Exercise search error:', error);
-      Alert.alert(
-        'Search Error',
-        'Unable to search exercises right now. Please try again later or browse the general exercises below.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsLoadingExercises(false);
-    }
-  };
-
-  const openYouTubeVideo = (url: string) => {
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Error', 'Unable to open YouTube video. Please try again later.');
-    });
-  };
-
-  const toggleExerciseCompletion = (exerciseId: string) => {
-    setExercises(prev => 
-      prev.map(ex => 
-        ex.id === exerciseId 
-          ? { ...ex, completed: !ex.completed }
-          : ex
-      )
-    );
   };
 
   const bookConsultation = () => {
@@ -191,211 +170,135 @@ export default function ExercisesScreen() {
       });
   };
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'Beginner': return '#10B981';
-      case 'Intermediate': return '#F59E0B';
-      case 'Advanced': return '#EF4444';
-      default: return '#6B7280';
-    }
-  };
+  const renderMessage = (message: ChatMessage) => (
+    <View
+      key={message.id}
+      style={[
+        styles.messageContainer,
+        message.isUser ? styles.userMessageContainer : styles.botMessageContainer,
+      ]}
+    >
+      <View style={styles.messageHeader}>
+        {message.isUser ? (
+          <User size={16} color="#2563EB" />
+        ) : (
+          <Bot size={16} color="#10B981" />
+        )}
+        <Text style={styles.messageAuthor}>
+          {message.isUser ? 'You' : 'PTBot'}
+        </Text>
+        <Text style={styles.messageTime}>
+          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+      </View>
+      <View
+        style={[
+          styles.messageBubble,
+          message.isUser ? styles.userMessageBubble : styles.botMessageBubble,
+        ]}
+      >
+        <Text
+          style={[
+            styles.messageText,
+            message.isUser ? styles.userMessageText : styles.botMessageText,
+          ]}
+        >
+          {message.text}
+        </Text>
+      </View>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerLogo}>
           <View style={styles.logoContainer}>
-            <Dumbbell size={28} color="#FFFFFF" />
+            <MessageCircle size={28} color="#FFFFFF" />
             <Text style={styles.logoText}>PTBOT</Text>
           </View>
-          <Text style={styles.headerTitle}>Exercise Library</Text>
+          <Text style={styles.headerTitle}>AI Physical Therapy Assistant</Text>
         </View>
-        <Text style={styles.headerSubtitle}>Guided exercises for your recovery</Text>
+        <Text style={styles.headerSubtitle}>Chat with PTBot for personalized guidance</Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* AI Exercise Search */}
-        {exerciseService && (
-          <View style={styles.aiSearchCard}>
-            <Text style={styles.aiSearchTitle}>🤖 AI Exercise Finder</Text>
-            <Text style={styles.aiSearchDescription}>
-              Describe your pain or symptoms and I'll find the most relevant exercises from Dr. Lemmo's YouTube channel
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity style={styles.youtubeCard} onPress={openYouTubeChannel}>
+            <View style={styles.quickActionHeader}>
+              <Youtube size={20} color="#FF0000" />
+              <Text style={styles.quickActionTitle}>Dr. Lemmo's Channel</Text>
+              <ExternalLink size={14} color="#6B7280" />
+            </View>
+            <Text style={styles.quickActionDescription}>
+              Professional PT videos and exercise demonstrations
             </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.consultationCard} onPress={bookConsultation}>
+            <View style={styles.quickActionHeader}>
+              <MapPin size={20} color="#2563EB" />
+              <Text style={styles.quickActionTitle}>Texas Consultations</Text>
+            </View>
+            <Text style={styles.quickActionDescription}>
+              Book virtual sessions with Dr. Lemmo
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Chat Messages */}
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.chatContainer}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.chatContent}
+        >
+          {messages.map(renderMessage)}
+          
+          {isLoading && (
+            <View style={styles.loadingContainer}>
+              <View style={styles.loadingBubble}>
+                <Text style={styles.loadingText}>PTBot is typing...</Text>
+              </View>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Chat Input */}
+        <View style={styles.inputContainer}>
+          <View style={styles.inputWrapper}>
             <TextInput
-              style={styles.searchInput}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Describe your pain or symptoms..."
+              style={styles.textInput}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Ask PTBot about your symptoms, exercises, or recovery..."
+              placeholderTextColor="#9CA3AF"
               multiline
+              maxLength={500}
+              onSubmitEditing={sendMessage}
+              blurOnSubmit={false}
             />
-            <TouchableOpacity 
-              style={[styles.searchButton, isLoadingExercises && styles.searchButtonDisabled]}
-              onPress={searchExercises}
-              disabled={isLoadingExercises}
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                (!inputText.trim() || isLoading) && styles.sendButtonDisabled,
+              ]}
+              onPress={sendMessage}
+              disabled={!inputText.trim() || isLoading}
             >
-              <Text style={styles.searchButtonText}>
-                {isLoadingExercises ? 'Searching...' : 'Find Exercises'}
-              </Text>
+              <Send size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
-        )}
-
-        {/* YouTube Channel Link */}
-        <TouchableOpacity style={styles.youtubeCard} onPress={openYouTubeChannel}>
-          <View style={styles.youtubeHeader}>
-            <Youtube size={24} color="#FF0000" />
-            <Text style={styles.youtubeTitle}>Dr. Justin Lemmo, PT, DPT</Text>
-            <ExternalLink size={16} color="#6B7280" />
-          </View>
-          <Text style={styles.youtubeDescription}>
-            Visit my YouTube channel for complete exercise videos and detailed instructions
+          <Text style={styles.inputHint}>
+            💡 Try: "I have lower back pain" or "What exercises help with neck stiffness?"
           </Text>
-          <View style={styles.youtubeStats}>
-            <View style={styles.youtubeStat}>
-              <Play size={16} color="#6B7280" />
-              <Text style={styles.youtubeStatText}>Professional PT Videos</Text>
-            </View>
-            <View style={styles.youtubeStat}>
-              <Star size={16} color="#F59E0B" />
-              <Text style={styles.youtubeStatText}>Expert Guidance</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Texas Consultation Offer */}
-        <TouchableOpacity style={styles.consultationCard} onPress={bookConsultation}>
-          <View style={styles.consultationHeader}>
-            <MapPin size={20} color="#2563EB" />
-            <Text style={styles.consultationTitle}>Texas Residents</Text>
-          </View>
-          <Text style={styles.consultationDescription}>
-            Book a virtual consultation with Dr. Justin Lemmo, PT, DPT for personalized exercise recommendations
-          </Text>
-          <Text style={styles.consultationCta}>Book Virtual Consult</Text>
-        </TouchableOpacity>
-
-        {/* Body Part Filter */}
-        <View style={styles.filterContainer}>
-          <Text style={styles.filterTitle}>Filter by Body Part</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-            {bodyParts.map((bodyPart) => (
-              <TouchableOpacity
-                key={bodyPart}
-                style={[
-                  styles.filterButton,
-                  selectedBodyPart === bodyPart && styles.filterButtonSelected,
-                ]}
-                onPress={() => setSelectedBodyPart(bodyPart)}
-              >
-                <Text
-                  style={[
-                    styles.filterButtonText,
-                    selectedBodyPart === bodyPart && styles.filterButtonTextSelected,
-                  ]}
-                >
-                  {bodyPart}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
         </View>
-
-        {/* Exercise List */}
-        <View style={styles.exerciseContainer}>
-          <Text style={styles.exerciseTitle}>
-            {selectedBodyPart === 'All' 
-              ? `All Exercises (${filteredExercises.length})` 
-              : `${selectedBodyPart} Exercises (${filteredExercises.length})`
-            }
-          </Text>
-          
-          {filteredExercises.length === 0 ? (
-            <View style={styles.noResultsContainer}>
-              <Text style={styles.noResultsText}>
-                No exercises available yet for {selectedBodyPart}.
-              </Text>
-              <Text style={styles.noResultsSubtext}>
-                Check back soon or visit the YouTube channel for updates!
-              </Text>
-              <TouchableOpacity style={styles.visitChannelButton} onPress={openYouTubeChannel}>
-                <Youtube size={16} color="#FFFFFF" />
-                <Text style={styles.visitChannelText}>Visit YouTube Channel</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            filteredExercises.map((exercise) => (
-              <View key={exercise.id} style={styles.exerciseCard}>
-                <View style={styles.exerciseHeader}>
-                  <View style={styles.exerciseInfo}>
-                    <Text style={styles.exerciseCardTitle}>{exercise.title}</Text>
-                    <View style={styles.exerciseMeta}>
-                      <View style={styles.exerciseMetaItem}>
-                        <Clock size={14} color="#6B7280" />
-                        <Text style={styles.exerciseMetaText}>{exercise.duration}</Text>
-                      </View>
-                      <View 
-                        style={[
-                          styles.difficultyBadge,
-                          { backgroundColor: getDifficultyColor(exercise.difficulty) + '20' }
-                        ]}
-                      >
-                        <Text 
-                          style={[
-                            styles.difficultyText,
-                            { color: getDifficultyColor(exercise.difficulty) }
-                          ]}
-                        >
-                          {exercise.difficulty}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.completeButton}
-                    onPress={() => toggleExerciseCompletion(exercise.id)}
-                  >
-                    <CheckCircle 
-                      size={24} 
-                      color={exercise.completed ? '#10B981' : '#D1D5DB'} 
-                    />
-                  </TouchableOpacity>
-                </View>
-                
-                <Text style={styles.exerciseDescription}>{exercise.description}</Text>
-                
-                <TouchableOpacity 
-                  style={styles.watchVideoButton}
-                  onPress={openYouTubeChannel}
-                >
-                  <Play size={16} color="#FFFFFF" />
-                  <Text style={styles.watchVideoText}>Watch on YouTube</Text>
-                </TouchableOpacity>
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* Progress Summary */}
-        <View style={styles.progressSummary}>
-          <Text style={styles.progressTitle}>Today's Progress</Text>
-          <View style={styles.progressStats}>
-            <View style={styles.progressStat}>
-              <CheckCircle size={20} color="#10B981" />
-              <Text style={styles.progressStatText}>
-                {exercises.filter(ex => ex.completed).length} completed
-              </Text>
-            </View>
-            <View style={styles.progressStat}>
-              <Calendar size={20} color="#2563EB" />
-              <Text style={styles.progressStatText}>
-                {exercises.length} total exercises
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -439,321 +342,161 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#BFDBFE',
   },
-  content: {
+  keyboardContainer: {
     flex: 1,
   },
-  youtubeCard: {
-    margin: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderWidth: 2,
-    borderColor: '#FF0000',
-  },
-  youtubeHeader: {
+  quickActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  youtubeTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    flex: 1,
-    marginLeft: 8,
-  },
-  youtubeDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  youtubeStats: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  youtubeStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  youtubeStatText: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginLeft: 4,
-  },
-  consultationCard: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    backgroundColor: '#EBF4FF',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: '#2563EB',
-  },
-  consultationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  consultationTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2563EB',
-    flex: 1,
-    marginLeft: 8,
-  },
-  consultationDescription: {
-    fontSize: 14,
-    color: '#374151',
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  consultationCta: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2563EB',
-    textAlign: 'center',
-  },
-  filterContainer: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-  },
-  filterTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  filterScroll: {
-    flexDirection: 'row',
-  },
-  filterButton: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginRight: 8,
-  },
-  filterButtonSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
-  },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
-  },
-  filterButtonTextSelected: {
-    color: '#FFFFFF',
-  },
-  exerciseContainer: {
-    marginHorizontal: 16,
-  },
-  exerciseTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 16,
-  },
-  noResultsContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  noResultsText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#374151',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  noResultsSubtext: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  visitChannelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FF0000',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 8,
-  },
-  visitChannelText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  exerciseCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  exerciseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  exerciseInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  exerciseCardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 6,
-  },
-  exerciseMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingVertical: 12,
     gap: 12,
   },
-  exerciseMetaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  exerciseMetaText: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  difficultyBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  difficultyText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  completeButton: {
-    padding: 4,
-  },
-  exerciseDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  watchVideoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF0000',
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 8,
-  },
-  watchVideoText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  progressSummary: {
-    margin: 16,
+  youtubeCard: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FF0000',
   },
-  progressTitle: {
-    fontSize: 16,
+  consultationCard: {
+    flex: 1,
+    backgroundColor: '#EBF4FF',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#2563EB',
+  },
+  quickActionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  quickActionTitle: {
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#1F2937',
-    marginBottom: 12,
+    flex: 1,
+    marginLeft: 6,
   },
-  progressStats: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  progressStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  progressStatText: {
-    fontSize: 14,
+  quickActionDescription: {
+    fontSize: 12,
     color: '#6B7280',
+    lineHeight: 16,
   },
-  bottomSpacer: {
-    height: 20,
+  chatContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
   },
-  aiSearchCard: {
-    marginHorizontal: 16,
+  chatContent: {
+    paddingVertical: 16,
+  },
+  messageContainer: {
     marginBottom: 16,
-    backgroundColor: '#F0F9FF',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: '#0EA5E9',
   },
-  aiSearchTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#0C4A6E',
-    marginBottom: 8,
+  userMessageContainer: {
+    alignItems: 'flex-end',
   },
-  aiSearchDescription: {
-    fontSize: 14,
-    color: '#374151',
-    marginBottom: 12,
-    lineHeight: 20,
+  botMessageContainer: {
+    alignItems: 'flex-start',
   },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: '#0EA5E9',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    backgroundColor: '#FFFFFF',
-    marginBottom: 12,
-    minHeight: 60,
-    textAlignVertical: 'top',
-  },
-  searchButton: {
+  messageHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0EA5E9',
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  messageAuthor: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginLeft: 4,
+    marginRight: 8,
+  },
+  messageTime: {
+    fontSize: 11,
+    color: '#9CA3AF',
+  },
+  messageBubble: {
+    maxWidth: '80%',
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
+    borderRadius: 16,
   },
-  searchButtonDisabled: {
-    backgroundColor: '#9CA3AF',
+  userMessageBubble: {
+    backgroundColor: '#2563EB',
+    borderBottomRightRadius: 4,
   },
-  searchButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
+  botMessageBubble: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderBottomLeftRadius: 4,
+  },
+  messageText: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  userMessageText: {
     color: '#FFFFFF',
+  },
+  botMessageText: {
+    color: '#374151',
+  },
+  loadingContainer: {
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  loadingBubble: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderBottomLeftRadius: 4,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
+  inputContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  textInput: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    maxHeight: 100,
+    minHeight: 44,
+  },
+  sendButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 16,
+    padding: 10,
+    marginLeft: 8,
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#D1D5DB',
+  },
+  inputHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });
