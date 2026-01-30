@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus } from 'lucide-react-native';
 import { EmailService, generateVerificationToken, isValidEmail } from '@/services/emailService';
 import ProfileTabs from '@/components/ProfileTabs';
+import { colors } from '@/constants/theme';
 
 interface UserAccount {
   email: string;
@@ -402,7 +403,7 @@ export default function AccountScreen() {
                     onPress={resendVerification}
                     disabled={isLoading}
                   >
-                    <Mail size={16} color="#2563EB" />
+                    <Mail size={16} color={colors.primary[500]} />
                     <Text style={styles.resendButtonText}>
                       {isLoading ? 'Sending...' : 'Resend Verification Email'}
                     </Text>
@@ -420,7 +421,7 @@ export default function AccountScreen() {
               style={styles.actionButton}
               onPress={() => setShowProfileTabs(true)}
             >
-              <User size={20} color="#2563EB" />
+              <User size={20} color={colors.primary[500]} />
               <Text style={styles.actionButtonText}>Edit Profile</Text>
               <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
@@ -432,7 +433,7 @@ export default function AccountScreen() {
                 // Note: In the ProfileTabs component, we'd need to set the active tab to 'password'
               }}
             >
-              <Lock size={20} color="#2563EB" />
+              <Lock size={20} color={colors.primary[500]} />
               <Text style={styles.actionButtonText}>Change Password</Text>
               <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
@@ -444,7 +445,7 @@ export default function AccountScreen() {
                 // Note: In the ProfileTabs component, we'd need to set the active tab to 'email'
               }}
             >
-              <Mail size={20} color="#2563EB" />
+              <Mail size={20} color={colors.primary[500]} />
               <Text style={styles.actionButtonText}>Email Preferences</Text>
               <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
@@ -646,7 +647,7 @@ export default function AccountScreen() {
               {/* Email Verification Notice */}
               {isSignUp && (
                 <View style={styles.verificationNotice}>
-                  <Mail size={16} color="#2563EB" />
+                  <Mail size={16} color={colors.primary[500]} />
                   <Text style={styles.verificationNoticeText}>
                     You'll receive an email verification link after creating your account
                   </Text>
@@ -665,10 +666,10 @@ export default function AccountScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.neutral[50],
   },
   header: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     paddingHorizontal: 20,
     paddingVertical: 20,
   },
@@ -680,7 +681,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1D4ED8',
+    backgroundColor: colors.primary[600],
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -689,17 +690,17 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.white,
     marginLeft: 4,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.white,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#BFDBFE',
+    color: colors.primary[200],
   },
   keyboardContainer: {
     flex: 1,
@@ -735,7 +736,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   toggleButtonActive: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
   },
   toggleButtonText: {
     fontSize: 14,
@@ -797,7 +798,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     paddingVertical: 14,
     borderRadius: 8,
     gap: 8,
@@ -814,14 +815,14 @@ const styles = StyleSheet.create({
   verificationNotice: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EBF4FF',
+    backgroundColor: colors.primary[50],
     padding: 12,
     borderRadius: 8,
     gap: 8,
   },
   verificationNoticeText: {
     fontSize: 12,
-    color: '#2563EB',
+    color: colors.primary[500],
     flex: 1,
   },
   section: {
@@ -929,7 +930,7 @@ const styles = StyleSheet.create({
   resendButtonText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#2563EB',
+    color: colors.primary[500],
   },
   actionButton: {
     flexDirection: 'row',

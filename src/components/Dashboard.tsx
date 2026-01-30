@@ -167,7 +167,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading your dashboard...</p>
         </div>
       </div>
@@ -257,7 +257,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-lg p-8 mb-8">
               <div className="flex items-center mb-6">
-                <Package className="h-8 w-8 text-blue-600 mr-3" />
+                <Package className="h-8 w-8 text-primary-500 mr-3" />
                 <h2 className="text-2xl font-bold text-gray-900">Choose Your Service</h2>
               </div>
 
@@ -266,12 +266,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                   <div
                     key={pkg!.priceId}
                     className={`relative bg-white rounded-xl border-2 transition-all duration-300 hover:shadow-lg ${
-                      pkg!.name === '12 Week Guided Program' ? 'border-blue-500' : 'border-gray-200 hover:border-blue-300'
+                      pkg!.name === '12 Week Guided Program' ? 'border-primary-500' : 'border-gray-200 hover:border-primary-300'
                     }`}
                   >
                     {pkg!.name === '12 Week Guided Program' && (
                       <div className="absolute -top-3 left-6">
-                        <span className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-semibold">
+                        <span className="bg-primary-500 text-white px-3 py-1 rounded-full text-sm font-semibold">
                           Most Popular
                         </span>
                       </div>
@@ -281,7 +281,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center space-x-4">
                           <div className={`inline-flex p-3 rounded-lg ${
-                            pkg!.name === '12 Week Guided Program' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                            pkg!.name === '12 Week Guided Program' ? 'bg-primary-100 text-primary-500' : 'bg-gray-100 text-gray-600'
                           }`}>
                             {getPackageIcon(pkg!.name)}
                           </div>
@@ -297,7 +297,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                           disabled={checkoutLoading === pkg!.priceId}
                           className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
                             pkg!.name === '12 Week Guided Program'
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
+                              ? 'bg-primary-500 text-white hover:bg-primary-600'
                               : 'bg-gray-900 text-white hover:bg-gray-800'
                           } flex items-center space-x-2`}
                         >
@@ -379,14 +379,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-2xl p-6 border border-blue-200">
-              <h3 className="text-lg font-semibold text-blue-900 mb-2">Need Help?</h3>
-              <p className="text-blue-800 text-sm mb-4">
+            <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-2xl p-6 border border-primary-200">
+              <h3 className="text-lg font-semibold text-primary-900 mb-2">Need Help?</h3>
+              <p className="text-primary-800 text-sm mb-4">
                 Have questions about which service is right for you? Contact Dr. Lemmo directly for personalized guidance.
               </p>
               <a
                 href="mailto:justinlemmodpt@gmail.com?subject=Service Selection Help"
-                className="inline-flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                className="inline-flex items-center bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-600 transition-colors"
               >
                 Get Guidance
               </a>
@@ -419,7 +419,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                       required
                       value={successStoryData.name}
                       onChange={(e) => setSuccessStoryData({ ...successStoryData, name: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       placeholder="e.g., Sarah M."
                     />
                   </div>
@@ -433,7 +433,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                       required
                       value={successStoryData.condition}
                       onChange={(e) => setSuccessStoryData({ ...successStoryData, condition: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       placeholder="e.g., Lower Back Pain, Shoulder Injury"
                     />
                   </div>
@@ -447,7 +447,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                       rows={4}
                       value={successStoryData.story}
                       onChange={(e) => setSuccessStoryData({ ...successStoryData, story: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       placeholder="Tell us about your experience with Dr. Lemmo's virtual PT services and how it helped your recovery..."
                     />
                   </div>
@@ -460,7 +460,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                       required
                       value={successStoryData.timeframe}
                       onChange={(e) => setSuccessStoryData({ ...successStoryData, timeframe: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     >
                       <option value="">Select timeframe</option>
                       <option value="1 week ago">1 week ago</option>
@@ -473,8 +473,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                     </select>
                   </div>
                   
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <p className="text-blue-800 text-sm">
+                  <div className="bg-primary-50 p-4 rounded-lg">
+                    <p className="text-primary-800 text-sm">
                       <strong>Note:</strong> Your story will be reviewed before appearing on the website. 
                       We may edit for length and clarity while preserving your message.
                     </p>
@@ -491,7 +491,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                     <button
                       type="submit"
                       disabled={submittingStory}
-                      className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+                      className="flex-1 bg-primary-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
                     >
                       {submittingStory ? (
                         <>

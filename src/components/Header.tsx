@@ -43,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onSignOut, onShowAuth, onS
             onClick={handleLogoClick}
             className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
           >
-            <Stethoscope className="h-8 w-8 text-blue-600" />
+            <Stethoscope className="h-8 w-8 text-primary-500" />
             <div>
               <h1 className="text-xl font-bold text-gray-900">Dr. Justin Lemmo</h1>
               <p className="text-sm text-gray-600">Doctor of Physical Therapy</p>
@@ -88,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onSignOut, onShowAuth, onS
                 {onShowDashboard && (
                   <button
                     onClick={onShowDashboard}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                    className="bg-primary-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-600 transition-colors"
                   >
                     Dashboard
                   </button>
@@ -108,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onSignOut, onShowAuth, onS
             ) : (
               <button
                 onClick={onShowAuth}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                className="bg-primary-500 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-600 transition-colors"
               >
                 Sign In
               </button>
@@ -149,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onSignOut, onShowAuth, onS
               {user && onShowDashboard && (
                 <button
                   onClick={onShowDashboard}
-                  className="text-left bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                  className="text-left bg-primary-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-600 transition-colors"
                 >
                   Dashboard
                 </button>

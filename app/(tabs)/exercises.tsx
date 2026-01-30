@@ -14,6 +14,7 @@ import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckC
 import { useAssessmentResults } from '@/hooks/useAssessmentResults';
 import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
 import type { ExerciseRecommendation } from '@/services/assessmentService';
+import { colors } from '@/constants/theme';
 
 interface Exercise {
   id: string;
@@ -360,7 +361,7 @@ export default function ExercisesScreen() {
                 );
               }}
             >
-              <Sparkles size={16} color="#2563EB" />
+              <Sparkles size={16} color={colors.primary[500]} />
               <Text style={styles.newAssessmentText}>Take New Assessment</Text>
             </TouchableOpacity>
           </View>
@@ -420,7 +421,7 @@ export default function ExercisesScreen() {
         {/* Texas Consultation Offer */}
         <TouchableOpacity style={styles.consultationCard} onPress={bookConsultation}>
           <View style={styles.consultationHeader}>
-            <MapPin size={20} color="#2563EB" />
+            <MapPin size={20} color={colors.primary[500]} />
             <Text style={styles.consultationTitle}>Texas Residents</Text>
           </View>
           <Text style={styles.consultationDescription}>
@@ -541,7 +542,7 @@ export default function ExercisesScreen() {
               </Text>
             </View>
             <View style={styles.progressStat}>
-              <Calendar size={20} color="#2563EB" />
+              <Calendar size={20} color={colors.primary[500]} />
               <Text style={styles.progressStatText}>
                 {exercises.length} total exercises
               </Text>
@@ -561,7 +562,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   header: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     paddingHorizontal: 20,
     paddingVertical: 20,
   },
@@ -573,7 +574,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1D4ED8',
+    backgroundColor: colors.primary[600],
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -592,7 +593,7 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#BFDBFE',
+    color: colors.primary[200],
   },
   content: {
     flex: 1,
@@ -764,7 +765,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 2,
-    borderColor: '#2563EB',
+    borderColor: colors.primary[500],
     paddingVertical: 12,
     borderRadius: 8,
     gap: 8,
@@ -773,7 +774,7 @@ const styles = StyleSheet.create({
   newAssessmentText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2563EB',
+    color: colors.primary[500],
   },
   noAssessmentCard: {
     margin: 16,
@@ -864,7 +865,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     borderWidth: 2,
-    borderColor: '#2563EB',
+    borderColor: colors.primary[500],
   },
   consultationHeader: {
     flexDirection: 'row',
@@ -874,7 +875,7 @@ const styles = StyleSheet.create({
   consultationTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2563EB',
+    color: colors.primary[500],
     flex: 1,
     marginLeft: 8,
   },
@@ -887,7 +888,7 @@ const styles = StyleSheet.create({
   consultationCta: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2563EB',
+    color: colors.primary[500],
     textAlign: 'center',
   },
   filterContainer: {
@@ -913,8 +914,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   filterButtonSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: colors.primary[500],
+    borderColor: colors.primary[500],
   },
   filterButtonText: {
     fontSize: 14,
@@ -1034,7 +1035,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     paddingVertical: 10,
     borderRadius: 8,
     gap: 8,

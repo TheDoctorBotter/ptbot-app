@@ -59,9 +59,9 @@ export const SuccessPage: React.FC<SuccessPageProps> = ({ onContinue }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-primary-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading your purchase details...</p>
         </div>
       </div>
@@ -69,7 +69,7 @@ export const SuccessPage: React.FC<SuccessPageProps> = ({ onContinue }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-primary-50 flex items-center justify-center p-4">
       <div className="max-w-2xl mx-auto text-center">
         <div className="bg-white rounded-3xl shadow-2xl p-12">
           <div className="mb-8">
@@ -85,18 +85,18 @@ export const SuccessPage: React.FC<SuccessPageProps> = ({ onContinue }) => {
             </p>
           </div>
 
-          <div className="bg-blue-50 rounded-2xl p-6 mb-8">
+          <div className="bg-primary-50 rounded-2xl p-6 mb-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">What happens next?</h3>
             <div className="space-y-4 text-left">
               <div className="flex items-start space-x-3">
-                <Calendar className="h-6 w-6 text-blue-600 mt-0.5" />
+                <Calendar className="h-6 w-6 text-primary-500 mt-0.5" />
                 <div>
                   <p className="font-medium text-gray-900">Schedule Your Session</p>
                   <p className="text-gray-600 text-sm">Dr. Lemmo will reach out to schedule your virtual consultation</p>
                 </div>
               </div>
               <div className="flex items-start space-x-3">
-                <MessageCircle className="h-6 w-6 text-blue-600 mt-0.5" />
+                <MessageCircle className="h-6 w-6 text-primary-500 mt-0.5" />
                 <div>
                   <p className="font-medium text-gray-900">Prepare for Your Consultation</p>
                   <p className="text-gray-600 text-sm">Gather any relevant medical history or PTBot recommendations</p>
@@ -108,7 +108,7 @@ export const SuccessPage: React.FC<SuccessPageProps> = ({ onContinue }) => {
           <div className="space-y-4">
             <button
               onClick={onContinue}
-              className="w-full bg-blue-600 text-white py-4 px-8 rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2"
+              className="w-full bg-primary-500 text-white py-4 px-8 rounded-lg font-semibold hover:bg-primary-600 transition-colors flex items-center justify-center space-x-2"
             >
               <span>Continue to Dashboard</span>
               <ArrowRight className="h-5 w-5" />

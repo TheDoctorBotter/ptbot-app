@@ -107,7 +107,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ id, user, onShowAuth
               className="bg-white rounded-2xl p-8 shadow-lg hover:shadow-xl transition-shadow duration-300"
             >
               <div className="flex items-center mb-4">
-                <Quote className="h-8 w-8 text-blue-500 mr-3" />
+                <Quote className="h-8 w-8 text-primary-500 mr-3" />
                 <div className="flex">
                   {[...Array(testimonial.rating)].map((_, i) => (
                     <Star
@@ -142,7 +142,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ id, user, onShowAuth
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a
               href="#services"
-              className="inline-flex items-center bg-blue-600 text-white px-8 py-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+              className="inline-flex items-center bg-primary-500 text-white px-8 py-4 rounded-lg font-semibold hover:bg-primary-600 transition-colors"
             >
               Choose Your Package
             </a>
@@ -191,7 +191,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ id, user, onShowAuth
                   required
                   value={successStoryData.name}
                   onChange={(e) => setSuccessStoryData({ ...successStoryData, name: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   placeholder="e.g., Sarah M."
                 />
               </div>
@@ -205,7 +205,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ id, user, onShowAuth
                   required
                   value={successStoryData.condition}
                   onChange={(e) => setSuccessStoryData({ ...successStoryData, condition: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   placeholder="e.g., Lower Back Pain, Shoulder Injury"
                 />
               </div>
@@ -219,7 +219,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ id, user, onShowAuth
                   rows={4}
                   value={successStoryData.story}
                   onChange={(e) => setSuccessStoryData({ ...successStoryData, story: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   placeholder="Tell us about your experience with Dr. Lemmo's virtual PT services and how it helped your recovery..."
                 />
               </div>
@@ -232,7 +232,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ id, user, onShowAuth
                   required
                   value={successStoryData.timeframe}
                   onChange={(e) => setSuccessStoryData({ ...successStoryData, timeframe: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 >
                   <option value="">Select timeframe</option>
                   <option value="1 week ago">1 week ago</option>
@@ -245,8 +245,8 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ id, user, onShowAuth
                 </select>
               </div>
               
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <p className="text-blue-800 text-sm">
+              <div className="bg-primary-50 p-4 rounded-lg">
+                <p className="text-primary-800 text-sm">
                   <strong>Note:</strong> Your story will be reviewed before appearing on the website. 
                   We may edit for length and clarity while preserving your message.
                 </p>
@@ -263,7 +263,7 @@ export const Testimonials: React.FC<TestimonialsProps> = ({ id, user, onShowAuth
                 <button
                   type="submit"
                   disabled={submittingStory}
-                  className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+                  className="flex-1 bg-primary-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
                 >
                   {submittingStory ? (
                     <>
