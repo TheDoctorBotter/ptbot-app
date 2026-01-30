@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,20 +9,14 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus } from 'lucide-react-native';
-import { EmailService, generateVerificationToken, isValidEmail } from '@/services/emailService';
+import { supabase } from '@/lib/supabase';
 import ProfileTabs from '@/components/ProfileTabs';
 import { colors } from '@/constants/theme';
-
-interface UserAccount {
-  email: string;
-  firstName: string;
-  lastName: string;
-  isVerified: boolean;
-  createdAt: Date;
-}
+import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 interface UserProfile {
   firstName: string;
@@ -48,6 +42,12 @@ interface EmailPreferences {
 }
 
 export default function AccountScreen() {
+  // Auth state
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  // Form state
   const [isSignUp, setIsSignUp] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -57,231 +57,406 @@ export default function AccountScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [user, setUser] = useState<UserAccount | null>(null);
-  const [verificationSent, setVerificationSent] = useState(false);
-  const [showProfileTabs, setShowProfileTabs] = useState(false);
-  const [emailService] = useState(() => {
-    const apiKey = process.env.EXPO_PUBLIC_RESEND_API_KEY;
-    const fromEmail = process.env.EXPO_PUBLIC_FROM_EMAIL || 'noreply@justinlemmodpt.com';
-    const appUrl = process.env.EXPO_PUBLIC_APP_URL || 'https://ptbot-app.vercel.app';
-    console.log('Email service config:', { 
-      hasApiKey: !!apiKey, 
-      fromEmail,
-      apiKeyLength: apiKey?.length,
-      appUrl,
-      apiKeyPrefix: apiKey?.substring(0, 8) + '...'
-    });
-    return apiKey ? new EmailService(apiKey, fromEmail) : null;
-  });
+  const [authError, setAuthError] = useState<string | null>(null);
 
+  // UI state
+  const [showProfileTabs, setShowProfileTabs] = useState(false);
+
+  // Check for existing session on mount and subscribe to auth changes
+  useEffect(() => {
+    if (!supabase) {
+      console.warn('Supabase not configured - auth features disabled');
+      setIsInitializing(false);
+      return;
+    }
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setIsInitializing(false);
+    });
+
+    // Subscribe to auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Form validation
   const validateEmail = (email: string) => {
-    return isValidEmail(email);
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
   };
 
   const validatePassword = (password: string) => {
     return password.length >= 8;
   };
 
-  const sendVerificationEmail = async (userEmail: string, userName: string) => {
-    if (!emailService) {
-      console.warn('Email service not configured - missing EXPO_PUBLIC_RESEND_API_KEY');
-      Alert.alert(
-        'Email Service Not Available',
-        'Email verification is not configured. Please contact support.',
-        [{ text: 'OK' }]
-      );
-      return false;
-    }
-
-    try {
-      const verificationToken = generateVerificationToken();
-      const appUrl = process.env.EXPO_PUBLIC_APP_URL || 'https://ptbot-app.vercel.app';
-      
-      console.log('🔄 Attempting to send verification email...', {
-        to: userEmail,
-        firstName: userName,
-        hasToken: !!verificationToken,
-        appUrl
-      });
-      
-      const success = await emailService.sendVerificationEmail({
-        to: userEmail,
-        firstName: userName,
-        verificationToken,
-        appUrl,
-      });
-      
-      if (success) {
-        // Store verification token (in real app, save to database)
-        console.log('✅ Verification email sent successfully to:', userEmail);
-        console.log('Verification token:', verificationToken);
-      } else {
-        console.error('❌ Failed to send verification email');
-      }
-      
-      return success;
-    } catch (error) {
-      console.error('❌ Email sending error details:', {
-        error: error.message,
-        stack: error.stack,
-        userEmail,
-        hasEmailService: !!emailService
-      });
-      Alert.alert(
-        'Email Error',
-        `Failed to send verification email: ${error.message}. Please check the console for details.`,
-        [{ text: 'OK' }]
-      );
-      return false;
-    }
+  // Clear form and errors
+  const clearForm = () => {
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setFirstName('');
+    setLastName('');
+    setAuthError(null);
   };
 
+  // Handle Sign Up
   const handleSignUp = async () => {
+    setAuthError(null);
+
+    if (!supabase) {
+      setAuthError('Authentication service not available. Please check configuration.');
+      return;
+    }
+
     if (!validateEmail(email)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      setAuthError('Please enter a valid email address.');
       return;
     }
 
     if (!validatePassword(password)) {
-      Alert.alert('Weak Password', 'Password must be at least 8 characters long.');
+      setAuthError('Password must be at least 8 characters long.');
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      setAuthError('Passwords do not match.');
       return;
     }
 
     if (!firstName.trim() || !lastName.trim()) {
-      Alert.alert('Missing Information', 'Please enter your first and last name.');
+      setAuthError('Please enter your first and last name.');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Create user account (in real app, this would be an API call)
-      const newUser: UserAccount = {
-        email,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        isVerified: false,
-        createdAt: new Date(),
-      };
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: {
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+            full_name: `${firstName.trim()} ${lastName.trim()}`,
+          },
+        },
+      });
 
-      // Send verification email
-      const emailSent = await sendVerificationEmail(email, firstName);
-      
-      if (emailSent) {
-        setUser(newUser);
-        setVerificationSent(true);
-        
-        Alert.alert(
-          'Account Created!',
-          `Welcome ${firstName}! We've sent a verification email to ${email}. Please check your inbox (and spam folder) and click the verification link to activate your account.`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Email Service Error', 
-          'Account created but verification email could not be sent. Please contact support or try signing in.'
-        );
+      if (error) {
+        // Handle specific error cases
+        if (error.message.includes('already registered')) {
+          setAuthError('An account with this email already exists. Please sign in instead.');
+        } else if (error.message.includes('weak password')) {
+          setAuthError('Password is too weak. Please use a stronger password with letters, numbers, and symbols.');
+        } else {
+          setAuthError(error.message);
+        }
+        return;
       }
-    } catch (error) {
+
+      if (data.user) {
+        // Check if email confirmation is required
+        if (data.user.email_confirmed_at === null) {
+          Alert.alert(
+            'Verification Email Sent',
+            `Welcome ${firstName}! We've sent a verification email to ${email}. Please check your inbox and click the link to activate your account.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Account Created!',
+            `Welcome to PTBot, ${firstName}! Your account has been created successfully.`,
+            [{ text: 'OK' }]
+          );
+        }
+        clearForm();
+      }
+    } catch (error: any) {
       console.error('Sign up error:', error);
-      Alert.alert('Error', 'Failed to create account. Please try again.');
+      setAuthError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Handle Sign In
   const handleSignIn = async () => {
+    setAuthError(null);
+
+    if (!supabase) {
+      setAuthError('Authentication service not available. Please check configuration.');
+      return;
+    }
+
     if (!validateEmail(email)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      setAuthError('Please enter a valid email address.');
       return;
     }
 
     if (!password) {
-      Alert.alert('Missing Password', 'Please enter your password.');
+      setAuthError('Please enter your password.');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Simulate sign in (in real app, this would be an API call)
-      const mockUser: UserAccount = {
-        email,
-        firstName: 'John',
-        lastName: 'Doe',
-        isVerified: true,
-        createdAt: new Date('2024-01-01'),
-      };
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-      setUser(mockUser);
-      
-      Alert.alert(
-        'Welcome Back!',
-        `Successfully signed in as ${mockUser.firstName} ${mockUser.lastName}`,
-        [{ text: 'OK' }]
-      );
-    } catch (error) {
+      if (error) {
+        // Handle specific error cases
+        if (error.message.includes('Invalid login credentials')) {
+          setAuthError('Invalid email or password. Please check your credentials and try again.');
+        } else if (error.message.includes('Email not confirmed')) {
+          setAuthError('Please verify your email address before signing in. Check your inbox for the verification link.');
+        } else {
+          setAuthError(error.message);
+        }
+        return;
+      }
+
+      if (data.user) {
+        const displayName = data.user.user_metadata?.first_name || data.user.email;
+        Alert.alert(
+          'Welcome Back!',
+          `Successfully signed in as ${displayName}`,
+          [{ text: 'OK' }]
+        );
+        clearForm();
+      }
+    } catch (error: any) {
       console.error('Sign in error:', error);
-      Alert.alert('Error', 'Invalid email or password. Please try again.');
+      setAuthError('An unexpected error occurred. Please check your connection and try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Handle Sign Out
   const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Sign Out', 
+        {
+          text: 'Sign Out',
           style: 'destructive',
-          onPress: () => {
-            setUser(null);
-            setVerificationSent(false);
-            setShowProfileTabs(false);
-            setEmail('');
-            setPassword('');
-            setConfirmPassword('');
-            setFirstName('');
-            setLastName('');
-          }
-        }
+          onPress: async () => {
+            if (!supabase) return;
+
+            setIsLoading(true);
+            try {
+              const { error } = await supabase.auth.signOut();
+              if (error) {
+                Alert.alert('Error', 'Failed to sign out. Please try again.');
+              } else {
+                setShowProfileTabs(false);
+                clearForm();
+              }
+            } catch (error) {
+              console.error('Sign out error:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
       ]
     );
   };
 
-  const resendVerification = async () => {
-    if (!user) return;
+  // Handle password reset
+  const handleForgotPassword = async () => {
+    if (!supabase) {
+      Alert.alert('Error', 'Authentication service not available.');
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      Alert.alert('Email Required', 'Please enter your email address to reset your password.');
+      return;
+    }
 
     setIsLoading(true);
-    const emailSent = await sendVerificationEmail(user.email, user.firstName);
-    
-    if (emailSent) {
-      Alert.alert(
-        'Verification Email Sent',
-        `We've sent another verification email to ${user.email}. Please check your inbox and spam folder.`,
-        [{ text: 'OK' }]
-      );
-    } else {
-      Alert.alert('Email Error', 'Failed to send verification email. Please check your internet connection and try again.');
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${process.env.EXPO_PUBLIC_APP_URL}/reset-password`,
+      });
+
+      if (error) {
+        Alert.alert('Error', error.message);
+      } else {
+        Alert.alert(
+          'Password Reset Email Sent',
+          `If an account exists with ${email}, you'll receive a password reset link shortly.`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Password reset error:', error);
+      Alert.alert('Error', 'Failed to send password reset email. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
+
+  // Resend verification email
+  const resendVerification = async () => {
+    if (!supabase || !user) return;
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: user.email!,
+      });
+
+      if (error) {
+        Alert.alert('Error', error.message);
+      } else {
+        Alert.alert(
+          'Verification Email Sent',
+          'We\'ve sent another verification email. Please check your inbox and spam folder.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Resend verification error:', error);
+      Alert.alert('Error', 'Failed to resend verification email. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Profile update handlers
+  const handleProfileUpdate = async (updatedProfile: Partial<UserProfile>) => {
+    if (!supabase || !user) return;
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          first_name: updatedProfile.firstName,
+          last_name: updatedProfile.lastName,
+          full_name: `${updatedProfile.firstName} ${updatedProfile.lastName}`,
+        },
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Profile update error:', error);
+      throw error;
+    }
+  };
+
+  const handlePasswordChange = async (oldPassword: string, newPassword: string) => {
+    if (!supabase) return;
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Password change error:', error);
+      throw error;
+    }
+  };
+
+  const handleEmailPreferencesUpdate = async (preferences: EmailPreferences) => {
+    if (!supabase || !user) return;
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          email_preferences: preferences,
+        },
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Email preferences update error:', error);
+      throw error;
+    }
+  };
+
+  // Get display name from user metadata
+  const getDisplayName = () => {
+    if (!user) return '';
+    const firstName = user.user_metadata?.first_name || '';
+    const lastName = user.user_metadata?.last_name || '';
+    if (firstName || lastName) {
+      return `${firstName} ${lastName}`.trim();
+    }
+    return user.email?.split('@')[0] || 'User';
+  };
+
+  // Check if email is verified
+  const isEmailVerified = () => {
+    return user?.email_confirmed_at !== null;
+  };
+
+  // Show loading screen while initializing
+  if (isInitializing) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary[500]} />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Show configuration error if Supabase is not set up
+  if (!supabase) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.headerLogo}>
+            <View style={styles.logoContainer}>
+              <User size={28} color="#FFFFFF" />
+              <Text style={styles.logoText}>PTBOT</Text>
+            </View>
+            <Text style={styles.headerTitle}>Account</Text>
+          </View>
+          <Text style={styles.headerSubtitle}>Authentication Setup Required</Text>
+        </View>
+        <View style={styles.errorContainer}>
+          <AlertCircle size={48} color={colors.error[500]} />
+          <Text style={styles.errorTitle}>Configuration Required</Text>
+          <Text style={styles.errorText}>
+            Authentication is not configured. Please add the following to your .env file:
+          </Text>
+          <View style={styles.codeBlock}>
+            <Text style={styles.codeText}>EXPO_PUBLIC_SUPABASE_URL=your-url</Text>
+            <Text style={styles.codeText}>EXPO_PUBLIC_SUPABASE_ANON_KEY=your-key</Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // If showing profile tabs, render the ProfileTabs component
   if (user && showProfileTabs) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButton}
             onPress={() => setShowProfileTabs(false)}
           >
@@ -298,7 +473,13 @@ export default function AccountScreen() {
         </View>
 
         <ProfileTabs
-          user={user}
+          user={{
+            email: user.email || '',
+            firstName: user.user_metadata?.first_name || '',
+            lastName: user.user_metadata?.last_name || '',
+            isVerified: isEmailVerified(),
+            createdAt: new Date(user.created_at),
+          }}
           onProfileUpdate={handleProfileUpdate}
           onPasswordChange={handlePasswordChange}
           onEmailPreferencesUpdate={handleEmailPreferencesUpdate}
@@ -306,39 +487,6 @@ export default function AccountScreen() {
       </SafeAreaView>
     );
   }
-
-  const handleProfileUpdate = async (updatedProfile: Partial<UserProfile>) => {
-    // In real app, this would be an API call to update user profile
-    console.log('Updating profile:', updatedProfile);
-    
-    // Update local user state
-    setUser(prev => prev ? {
-      ...prev,
-      firstName: updatedProfile.firstName || prev.firstName,
-      lastName: updatedProfile.lastName || prev.lastName,
-    } : null);
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  };
-
-  const handlePasswordChange = async (oldPassword: string, newPassword: string) => {
-    // In real app, this would be an API call to change password
-    console.log('Changing password for user:', user?.email);
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // In real implementation, verify old password and update to new one
-  };
-
-  const handleEmailPreferencesUpdate = async (preferences: EmailPreferences) => {
-    // In real app, this would be an API call to update email preferences
-    console.log('Updating email preferences:', preferences);
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  };
 
   // If user is signed in, show account dashboard
   if (user) {
@@ -361,31 +509,35 @@ export default function AccountScreen() {
             <Text style={styles.sectionTitle}>Account Status</Text>
             <View style={styles.statusCard}>
               <View style={styles.statusHeader}>
-                <Text style={styles.userName}>{user.firstName} {user.lastName}</Text>
-                <View style={[
-                  styles.verificationBadge,
-                  user.isVerified ? styles.verifiedBadge : styles.unverifiedBadge
-                ]}>
-                  {user.isVerified ? (
+                <Text style={styles.userName}>{getDisplayName()}</Text>
+                <View
+                  style={[
+                    styles.verificationBadge,
+                    isEmailVerified() ? styles.verifiedBadge : styles.unverifiedBadge,
+                  ]}
+                >
+                  {isEmailVerified() ? (
                     <CheckCircle size={16} color="#10B981" />
                   ) : (
                     <AlertCircle size={16} color="#F59E0B" />
                   )}
-                  <Text style={[
-                    styles.verificationText,
-                    user.isVerified ? styles.verifiedText : styles.unverifiedText
-                  ]}>
-                    {user.isVerified ? 'Verified' : 'Unverified'}
+                  <Text
+                    style={[
+                      styles.verificationText,
+                      isEmailVerified() ? styles.verifiedText : styles.unverifiedText,
+                    ]}
+                  >
+                    {isEmailVerified() ? 'Verified' : 'Unverified'}
                   </Text>
                 </View>
               </View>
               <Text style={styles.userEmail}>{user.email}</Text>
               <Text style={styles.memberSince}>
-                Member since {user.createdAt.toLocaleDateString()}
+                Member since {new Date(user.created_at).toLocaleDateString()}
               </Text>
             </View>
 
-            {!user.isVerified && (
+            {!isEmailVerified() && (
               <View style={styles.verificationAlert}>
                 <AlertCircle size={20} color="#F59E0B" />
                 <View style={styles.verificationAlertContent}>
@@ -395,10 +547,7 @@ export default function AccountScreen() {
                   <Text style={styles.verificationAlertText}>
                     Please check your email and click the verification link to activate your account.
                   </Text>
-                  <Text style={styles.verificationAlertNote}>
-                    Don't see the email? Check your spam folder or click below to resend.
-                  </Text>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.resendButton}
                     onPress={resendVerification}
                     disabled={isLoading}
@@ -416,8 +565,8 @@ export default function AccountScreen() {
           {/* Account Actions */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Account Settings</Text>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.actionButton}
               onPress={() => setShowProfileTabs(true)}
             >
@@ -426,24 +575,18 @@ export default function AccountScreen() {
               <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => {
-                setShowProfileTabs(true);
-                // Note: In the ProfileTabs component, we'd need to set the active tab to 'password'
-              }}
+              onPress={() => setShowProfileTabs(true)}
             >
               <Lock size={20} color={colors.primary[500]} />
               <Text style={styles.actionButtonText}>Change Password</Text>
               <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => {
-                setShowProfileTabs(true);
-                // Note: In the ProfileTabs component, we'd need to set the active tab to 'email'
-              }}
+              onPress={() => setShowProfileTabs(true)}
             >
               <Mail size={20} color={colors.primary[500]} />
               <Text style={styles.actionButtonText}>Email Preferences</Text>
@@ -452,8 +595,14 @@ export default function AccountScreen() {
           </View>
 
           {/* Sign Out */}
-          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-            <Text style={styles.signOutButtonText}>Sign Out</Text>
+          <TouchableOpacity
+            style={styles.signOutButton}
+            onPress={handleSignOut}
+            disabled={isLoading}
+          >
+            <Text style={styles.signOutButtonText}>
+              {isLoading ? 'Signing Out...' : 'Sign Out'}
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.bottomSpacer} />
@@ -476,14 +625,13 @@ export default function AccountScreen() {
           </Text>
         </View>
         <Text style={styles.headerSubtitle}>
-          {isSignUp 
-            ? 'Join PTBot to track your recovery journey' 
-            : 'Welcome back to PTBot'
-          }
+          {isSignUp
+            ? 'Join PTBot to track your recovery journey'
+            : 'Welcome back to PTBot'}
         </Text>
       </View>
 
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardContainer}
       >
@@ -492,81 +640,102 @@ export default function AccountScreen() {
             {/* Toggle Sign Up / Sign In */}
             <View style={styles.toggleContainer}>
               <TouchableOpacity
-                style={[
-                  styles.toggleButton,
-                  isSignUp && styles.toggleButtonActive,
-                ]}
-                onPress={() => setIsSignUp(true)}
+                style={[styles.toggleButton, isSignUp && styles.toggleButtonActive]}
+                onPress={() => {
+                  setIsSignUp(true);
+                  setAuthError(null);
+                }}
               >
-                <UserPlus size={16} color={isSignUp ? "#FFFFFF" : "#6B7280"} />
-                <Text style={[
-                  styles.toggleButtonText,
-                  isSignUp && styles.toggleButtonTextActive,
-                ]}>
+                <UserPlus size={20} color={isSignUp ? '#FFFFFF' : '#6B7280'} />
+                <Text
+                  style={[
+                    styles.toggleButtonText,
+                    isSignUp && styles.toggleButtonTextActive,
+                  ]}
+                >
                   Sign Up
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.toggleButton,
-                  !isSignUp && styles.toggleButtonActive,
-                ]}
-                onPress={() => setIsSignUp(false)}
+                style={[styles.toggleButton, !isSignUp && styles.toggleButtonActive]}
+                onPress={() => {
+                  setIsSignUp(false);
+                  setAuthError(null);
+                }}
               >
-                <LogIn size={16} color={!isSignUp ? "#FFFFFF" : "#6B7280"} />
-                <Text style={[
-                  styles.toggleButtonText,
-                  !isSignUp && styles.toggleButtonTextActive,
-                ]}>
+                <LogIn size={20} color={!isSignUp ? '#FFFFFF' : '#6B7280'} />
+                <Text
+                  style={[
+                    styles.toggleButtonText,
+                    !isSignUp && styles.toggleButtonTextActive,
+                  ]}
+                >
                   Sign In
                 </Text>
               </TouchableOpacity>
             </View>
 
-            {/* Form Fields */}
+            {/* Error message */}
+            {authError && (
+              <View style={styles.errorAlert}>
+                <AlertCircle size={20} color={colors.error[500]} />
+                <Text style={styles.errorAlertText}>{authError}</Text>
+              </View>
+            )}
+
+            {/* Form fields */}
             <View style={styles.form}>
               {isSignUp && (
-                <>
-                  <View style={styles.nameRow}>
-                    <View style={styles.nameField}>
-                      <Text style={styles.inputLabel}>First Name</Text>
+                <View style={styles.nameRow}>
+                  <View style={[styles.inputGroup, styles.nameField]}>
+                    <Text style={styles.inputLabel}>First Name</Text>
+                    <View style={styles.inputContainer}>
+                      <User size={20} color="#9CA3AF" style={styles.inputIcon} />
                       <TextInput
-                        style={styles.textInput}
+                        style={styles.textInputWithIcon}
                         value={firstName}
                         onChangeText={setFirstName}
-                        placeholder="John"
-                        placeholderTextColor="#9CA3AF"
+                        placeholder="First name"
                         autoCapitalize="words"
-                      />
-                    </View>
-                    <View style={styles.nameField}>
-                      <Text style={styles.inputLabel}>Last Name</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={lastName}
-                        onChangeText={setLastName}
-                        placeholder="Doe"
-                        placeholderTextColor="#9CA3AF"
-                        autoCapitalize="words"
+                        autoComplete="given-name"
+                        editable={!isLoading}
                       />
                     </View>
                   </View>
-                </>
+                  <View style={[styles.inputGroup, styles.nameField]}>
+                    <Text style={styles.inputLabel}>Last Name</Text>
+                    <View style={styles.inputContainer}>
+                      <User size={20} color="#9CA3AF" style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.textInputWithIcon}
+                        value={lastName}
+                        onChangeText={setLastName}
+                        placeholder="Last name"
+                        autoCapitalize="words"
+                        autoComplete="family-name"
+                        editable={!isLoading}
+                      />
+                    </View>
+                  </View>
+                </View>
               )}
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Email Address</Text>
                 <View style={styles.inputContainer}>
-                  <Mail size={20} color="#6B7280" style={styles.inputIcon} />
+                  <Mail size={20} color="#9CA3AF" style={styles.inputIcon} />
                   <TextInput
                     style={styles.textInputWithIcon}
                     value={email}
-                    onChangeText={setEmail}
-                    placeholder="your.email@example.com"
-                    placeholderTextColor="#9CA3AF"
+                    onChangeText={(text) => {
+                      setEmail(text);
+                      setAuthError(null);
+                    }}
+                    placeholder="you@example.com"
                     keyboardType="email-address"
                     autoCapitalize="none"
-                    autoCorrect={false}
+                    autoComplete="email"
+                    editable={!isLoading}
                   />
                 </View>
               </View>
@@ -574,24 +743,27 @@ export default function AccountScreen() {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Password</Text>
                 <View style={styles.inputContainer}>
-                  <Lock size={20} color="#6B7280" style={styles.inputIcon} />
+                  <Lock size={20} color="#9CA3AF" style={styles.inputIcon} />
                   <TextInput
                     style={styles.textInputWithIcon}
                     value={password}
-                    onChangeText={setPassword}
-                    placeholder="Enter your password"
-                    placeholderTextColor="#9CA3AF"
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      setAuthError(null);
+                    }}
+                    placeholder={isSignUp ? 'At least 8 characters' : 'Enter your password'}
                     secureTextEntry={!showPassword}
-                    autoCapitalize="none"
+                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                    editable={!isLoading}
                   />
                   <TouchableOpacity
                     style={styles.eyeButton}
                     onPress={() => setShowPassword(!showPassword)}
                   >
                     {showPassword ? (
-                      <EyeOff size={20} color="#6B7280" />
+                      <EyeOff size={20} color="#9CA3AF" />
                     ) : (
-                      <Eye size={20} color="#6B7280" />
+                      <Eye size={20} color="#9CA3AF" />
                     )}
                   </TouchableOpacity>
                 </View>
@@ -601,62 +773,76 @@ export default function AccountScreen() {
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Confirm Password</Text>
                   <View style={styles.inputContainer}>
-                    <Lock size={20} color="#6B7280" style={styles.inputIcon} />
+                    <Lock size={20} color="#9CA3AF" style={styles.inputIcon} />
                     <TextInput
                       style={styles.textInputWithIcon}
                       value={confirmPassword}
-                      onChangeText={setConfirmPassword}
+                      onChangeText={(text) => {
+                        setConfirmPassword(text);
+                        setAuthError(null);
+                      }}
                       placeholder="Confirm your password"
-                      placeholderTextColor="#9CA3AF"
                       secureTextEntry={!showConfirmPassword}
-                      autoCapitalize="none"
+                      autoComplete="new-password"
+                      editable={!isLoading}
                     />
                     <TouchableOpacity
                       style={styles.eyeButton}
                       onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                     >
                       {showConfirmPassword ? (
-                        <EyeOff size={20} color="#6B7280" />
+                        <EyeOff size={20} color="#9CA3AF" />
                       ) : (
-                        <Eye size={20} color="#6B7280" />
+                        <Eye size={20} color="#9CA3AF" />
                       )}
                     </TouchableOpacity>
                   </View>
                 </View>
               )}
 
-              {/* Submit Button */}
+              {/* Forgot Password link (sign in only) */}
+              {!isSignUp && (
+                <TouchableOpacity
+                  onPress={handleForgotPassword}
+                  disabled={isLoading}
+                  style={styles.forgotPasswordButton}
+                >
+                  <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Submit button */}
               <TouchableOpacity
                 style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
                 onPress={isSignUp ? handleSignUp : handleSignIn}
                 disabled={isLoading}
               >
-                {isSignUp ? (
-                  <UserPlus size={20} color="#FFFFFF" />
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : isSignUp ? (
+                  <>
+                    <UserPlus size={20} color="#FFFFFF" />
+                    <Text style={styles.submitButtonText}>Create Account</Text>
+                  </>
                 ) : (
-                  <LogIn size={20} color="#FFFFFF" />
+                  <>
+                    <LogIn size={20} color="#FFFFFF" />
+                    <Text style={styles.submitButtonText}>Sign In</Text>
+                  </>
                 )}
-                <Text style={styles.submitButtonText}>
-                  {isLoading 
-                    ? (isSignUp ? 'Creating Account...' : 'Signing In...') 
-                    : (isSignUp ? 'Create Account' : 'Sign In')
-                  }
-                </Text>
               </TouchableOpacity>
 
-              {/* Email Verification Notice */}
+              {/* Email verification notice */}
               {isSignUp && (
                 <View style={styles.verificationNotice}>
                   <Mail size={16} color={colors.primary[500]} />
                   <Text style={styles.verificationNoticeText}>
-                    You'll receive an email verification link after creating your account
+                    You'll receive a verification email to confirm your account.
                   </Text>
                 </View>
               )}
             </View>
           </View>
-
-          <View style={styles.bottomSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -667,6 +853,47 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.neutral[50],
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: colors.neutral[600],
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.neutral[900],
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    color: colors.neutral[600],
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  codeBlock: {
+    backgroundColor: colors.neutral[800],
+    padding: 16,
+    borderRadius: 8,
+    width: '100%',
+  },
+  codeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
+    color: colors.neutral[100],
+    marginBottom: 4,
   },
   header: {
     backgroundColor: colors.primary[500],
@@ -702,6 +929,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.primary[200],
   },
+  backButton: {
+    marginBottom: 8,
+  },
+  backButtonText: {
+    color: colors.white,
+    fontSize: 16,
+  },
   keyboardContainer: {
     flex: 1,
   },
@@ -710,7 +944,7 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     margin: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.white,
     borderRadius: 12,
     padding: 20,
     shadowColor: '#000',
@@ -721,7 +955,7 @@ const styles = StyleSheet.create({
   },
   toggleContainer: {
     flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.neutral[100],
     borderRadius: 8,
     padding: 4,
     marginBottom: 24,
@@ -741,10 +975,24 @@ const styles = StyleSheet.create({
   toggleButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#6B7280',
+    color: colors.neutral[500],
   },
   toggleButtonTextActive: {
-    color: '#FFFFFF',
+    color: colors.white,
+  },
+  errorAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.error[50],
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  errorAlertText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.error[700],
   },
   form: {
     gap: 16,
@@ -762,28 +1010,18 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#374151',
+    color: colors.neutral[700],
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: colors.neutral[300],
     borderRadius: 8,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.neutral[50],
   },
   inputIcon: {
     marginLeft: 12,
-  },
-  textInput: {
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    backgroundColor: '#F9FAFB',
   },
   textInputWithIcon: {
     flex: 1,
@@ -793,6 +1031,13 @@ const styles = StyleSheet.create({
   },
   eyeButton: {
     padding: 12,
+  },
+  forgotPasswordButton: {
+    alignSelf: 'flex-end',
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: colors.primary[500],
   },
   submitButton: {
     flexDirection: 'row',
@@ -805,12 +1050,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   submitButtonDisabled: {
-    backgroundColor: '#9CA3AF',
+    backgroundColor: colors.neutral[400],
   },
   submitButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.white,
   },
   verificationNotice: {
     flexDirection: 'row',
@@ -827,7 +1072,7 @@ const styles = StyleSheet.create({
   },
   section: {
     margin: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.white,
     borderRadius: 12,
     padding: 16,
     shadowColor: '#000',
@@ -839,12 +1084,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: colors.neutral[800],
     marginBottom: 16,
   },
   statusCard: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.neutral[200],
     borderRadius: 8,
     padding: 16,
   },
@@ -857,7 +1102,7 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: colors.neutral[900],
   },
   verificationBadge: {
     flexDirection: 'row',
@@ -868,37 +1113,35 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   verifiedBadge: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: colors.success[50],
   },
   unverifiedBadge: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: colors.warning[50],
   },
   verificationText: {
     fontSize: 12,
     fontWeight: '500',
   },
   verifiedText: {
-    color: '#065F46',
+    color: colors.success[600],
   },
   unverifiedText: {
-    color: '#92400E',
+    color: colors.warning[600],
   },
   userEmail: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.neutral[600],
     marginBottom: 4,
   },
   memberSince: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: colors.neutral[500],
   },
   verificationAlert: {
     flexDirection: 'row',
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-    borderRadius: 8,
+    backgroundColor: colors.warning[50],
     padding: 12,
+    borderRadius: 8,
     marginTop: 12,
     gap: 12,
   },
@@ -908,55 +1151,44 @@ const styles = StyleSheet.create({
   verificationAlertTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#92400E',
+    color: colors.warning[700],
     marginBottom: 4,
   },
   verificationAlertText: {
-    fontSize: 12,
-    color: '#92400E',
+    fontSize: 13,
+    color: colors.warning[700],
     marginBottom: 8,
-  },
-  verificationAlertNote: {
-    fontSize: 11,
-    color: '#92400E',
-    marginBottom: 8,
-    fontStyle: 'italic',
   },
   resendButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
   resendButtonText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '500',
     color: colors.primary[500],
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    marginBottom: 8,
-    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral[200],
   },
   actionButtonText: {
-    fontSize: 16,
-    color: '#374151',
     flex: 1,
+    fontSize: 16,
+    color: colors.neutral[700],
+    marginLeft: 12,
   },
   actionButtonArrow: {
     fontSize: 18,
-    color: '#9CA3AF',
-    fontWeight: 'bold',
+    color: colors.neutral[400],
   },
   signOutButton: {
     margin: 16,
-    backgroundColor: '#EF4444',
+    backgroundColor: colors.error[500],
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
@@ -964,18 +1196,9 @@ const styles = StyleSheet.create({
   signOutButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.white,
   },
   bottomSpacer: {
-    height: 20,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#BFDBFE',
-    fontWeight: '500',
+    height: 40,
   },
 });
