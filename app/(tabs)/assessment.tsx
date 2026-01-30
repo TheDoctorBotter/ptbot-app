@@ -7,12 +7,11 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
-  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Activity, MapPin, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Calendar, Stethoscope, Brain, Heart, Shield } from 'lucide-react-native';
+import { Activity, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Stethoscope, Brain, Heart, Shield, Dumbbell, Target, Info } from 'lucide-react-native';
 import { AssessmentService } from '@/services/assessmentService';
-import type { AssessmentData, AssessmentResult } from '@/services/assessmentService';
+import type { AssessmentData, AssessmentResult, ExerciseRecommendation } from '@/services/assessmentService';
 import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
 import { colors } from '@/constants/theme';
 
@@ -57,12 +56,21 @@ export default function AssessmentScreen() {
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
+  const [expandedExercises, setExpandedExercises] = useState<Set<string>>(new Set());
 
-  const assessmentService = new AssessmentService(
-    process.env.EXPO_PUBLIC_OPENAI_API_KEY || '',
-    process.env.EXPO_PUBLIC_YOUTUBE_API_KEY || '',
-    process.env.EXPO_PUBLIC_YOUTUBE_CHANNEL_ID || ''
-  );
+  const assessmentService = new AssessmentService();
+
+  const toggleExerciseExpanded = (exerciseId: string) => {
+    setExpandedExercises(prev => {
+      const next = new Set(prev);
+      if (next.has(exerciseId)) {
+        next.delete(exerciseId);
+      } else {
+        next.add(exerciseId);
+      }
+      return next;
+    });
+  };
 
   const totalSteps = 7;
 
@@ -117,10 +125,10 @@ export default function AssessmentScreen() {
 
       // Process the assessment
       const result = await assessmentService.processAssessment(assessmentData as AssessmentData);
-      
-      // Save the result
-      assessmentService.saveAssessmentResult(result);
-      
+
+      // Save the result (async)
+      await assessmentService.saveAssessmentResult(result);
+
       setAssessmentResult(result);
       setCurrentStep(totalSteps + 1); // Go to results step
 
@@ -151,6 +159,7 @@ export default function AssessmentScreen() {
       location: '',
     });
     setAssessmentResult(null);
+    setExpandedExercises(new Set());
   };
 
   const renderProgressBar = () => (
@@ -431,6 +440,103 @@ export default function AssessmentScreen() {
     }
   };
 
+  const formatDosage = (rec: ExerciseRecommendation): string => {
+    const { dosage } = rec;
+    const parts: string[] = [];
+
+    if (dosage.sets) parts.push(`${dosage.sets} sets`);
+    if (dosage.reps) parts.push(`${dosage.reps} reps`);
+    if (dosage.duration) parts.push(dosage.duration);
+    if (dosage.holdTime) parts.push(`Hold: ${dosage.holdTime}`);
+
+    return parts.join(' x ') + ` | ${dosage.frequency}`;
+  };
+
+  const renderExerciseCard = (rec: ExerciseRecommendation, index: number) => {
+    const expanded = expandedExercises.has(rec.exercise.id);
+
+    return (
+      <View key={rec.exercise.id} style={styles.exerciseCard}>
+        <TouchableOpacity onPress={() => toggleExerciseExpanded(rec.exercise.id)} activeOpacity={0.8}>
+          <View style={styles.exerciseHeader}>
+            <View style={styles.exerciseNumberBadge}>
+              <Text style={styles.exerciseNumber}>{index + 1}</Text>
+            </View>
+            <View style={styles.exerciseInfo}>
+              <Text style={styles.exerciseName}>{rec.exercise.name}</Text>
+              <View style={styles.exerciseMeta}>
+                <View style={styles.difficultyBadge}>
+                  <Text style={styles.difficultyText}>{rec.exercise.difficulty}</Text>
+                </View>
+                <Text style={styles.categoryText}>{rec.exercise.category}</Text>
+              </View>
+            </View>
+            <ArrowRight
+              size={20}
+              color={colors.neutral[400]}
+              style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}
+            />
+          </View>
+
+          {/* Dosage - always visible */}
+          <View style={styles.dosageContainer}>
+            <Dumbbell size={14} color={colors.primary[500]} />
+            <Text style={styles.dosageText}>{formatDosage(rec)}</Text>
+          </View>
+        </TouchableOpacity>
+
+        {expanded && (
+          <View style={styles.exerciseDetails}>
+            {/* Description */}
+            <Text style={styles.exerciseDescription}>{rec.exercise.description}</Text>
+
+            {/* Rationale */}
+            <View style={styles.rationaleContainer}>
+              <Target size={14} color="#10B981" />
+              <Text style={styles.rationaleText}>{rec.reasoning}</Text>
+            </View>
+
+            {/* Safety Notes */}
+            {rec.safetyNotes.length > 0 && (
+              <View style={styles.safetyContainer}>
+                <Text style={styles.sectionLabel}>Safety Notes:</Text>
+                {rec.safetyNotes.map((note, i) => (
+                  <View key={i} style={styles.safetyItem}>
+                    <Info size={12} color="#F59E0B" />
+                    <Text style={styles.safetyText}>{note}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Red Flag Warnings */}
+            {rec.redFlagWarnings.length > 0 && (
+              <View style={styles.redFlagContainer}>
+                <Text style={styles.sectionLabel}>Stop If:</Text>
+                {rec.redFlagWarnings.map((warning, i) => (
+                  <View key={i} style={styles.redFlagItem}>
+                    <AlertTriangle size={12} color="#EF4444" />
+                    <Text style={styles.redFlagText}>{warning}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Progression Tips */}
+            {rec.progressionTips.length > 0 && (
+              <View style={styles.tipsContainer}>
+                <Text style={styles.sectionLabel}>Progression Tips:</Text>
+                {rec.progressionTips.map((tip, i) => (
+                  <Text key={i} style={styles.tipText}>• {tip}</Text>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const renderResults = () => {
     if (!assessmentResult) return null;
 
@@ -457,7 +563,7 @@ export default function AssessmentScreen() {
     return (
       <View style={styles.resultsContainer}>
         <Text style={styles.resultsTitle}>Assessment Complete</Text>
-        
+
         {/* Risk Level */}
         <View style={[styles.riskCard, { borderColor: getRiskColor(assessmentResult.riskLevel) }]}>
           <View style={styles.riskHeader}>
@@ -471,31 +577,6 @@ export default function AssessmentScreen() {
           </Text>
         </View>
 
-        {/* Exercise Recommendations */}
-        {assessmentResult.recommendations.length > 0 && (
-          <View style={styles.recommendationsCard}>
-            <Text style={styles.recommendationsTitle}>
-              🎯 Personalized Exercise Recommendations
-            </Text>
-            <Text style={styles.recommendationsCount}>
-              {assessmentResult.recommendations.length} exercises found for your condition
-            </Text>
-            <TouchableOpacity 
-              style={styles.viewExercisesButton}
-              onPress={() => {
-                Alert.alert(
-                  'View Exercises',
-                  'Your personalized exercises are now available in the Exercises tab.',
-                  [{ text: 'OK' }]
-                );
-              }}
-            >
-              <Text style={styles.viewExercisesText}>View My Exercises</Text>
-              <ArrowRight size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* Next Steps */}
         <View style={styles.nextStepsCard}>
           <Text style={styles.nextStepsTitle}>Recommended Next Steps</Text>
@@ -507,24 +588,44 @@ export default function AssessmentScreen() {
           ))}
         </View>
 
+        {/* Exercise Recommendations - Displayed Inline */}
+        {assessmentResult.recommendations.length > 0 && (
+          <View style={styles.exercisesSection}>
+            <Text style={styles.exercisesSectionTitle}>
+              Your Personalized Exercises
+            </Text>
+            <Text style={styles.exercisesSectionSubtitle}>
+              {assessmentResult.recommendations.length} exercises matched for your {assessmentData.painLocation?.toLowerCase()} pain
+            </Text>
+
+            {assessmentResult.recommendations.map((rec, index) => renderExerciseCard(rec, index))}
+
+            <View style={styles.disclaimerBox}>
+              <Text style={styles.disclaimerText}>
+                These exercises are educational recommendations, not medical advice.
+                Consult with a healthcare provider before starting any exercise program,
+                especially if you have significant pain or medical conditions.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* No Recommendations (Critical Risk) */}
+        {assessmentResult.recommendations.length === 0 && assessmentResult.riskLevel === 'critical' && (
+          <View style={styles.criticalWarningCard}>
+            <AlertTriangle size={24} color="#DC2626" />
+            <Text style={styles.criticalWarningTitle}>Exercise Not Recommended</Text>
+            <Text style={styles.criticalWarningText}>
+              Due to your symptoms, we recommend seeking immediate medical evaluation
+              before starting any exercise program.
+            </Text>
+          </View>
+        )}
+
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity style={styles.newAssessmentButton} onPress={resetAssessment}>
             <Text style={styles.newAssessmentText}>Take New Assessment</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.viewExercisesButton}
-            onPress={() => {
-              Alert.alert(
-                'View Your Exercises',
-                'Your personalized exercise recommendations are available in the Exercises tab.',
-                [{ text: 'OK' }]
-              );
-            }}
-          >
-            <Text style={styles.viewExercisesButtonText}>View My Exercises</Text>
-            <ArrowRight size={16} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       </View>
@@ -1001,39 +1102,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
   },
-  recommendationsCard: {
-    backgroundColor: '#F0FDF4',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: '#10B981',
-  },
-  recommendationsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#065F46',
-    marginBottom: 8,
-  },
-  recommendationsCount: {
-    fontSize: 14,
-    color: '#374151',
-    marginBottom: 12,
-  },
-  viewExercisesButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10B981',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  viewExercisesText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
   nextStepsCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -1088,21 +1156,204 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#374151',
   },
-  viewExercisesButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary[500],
-    paddingVertical: 14,
-    borderRadius: 8,
-    gap: 8,
-  },
-  viewExercisesButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
   bottomSpacer: {
     height: 20,
+  },
+  // Exercise Card Styles
+  exercisesSection: {
+    marginTop: 8,
+  },
+  exercisesSectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  exercisesSectionSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  exerciseCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  exerciseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  exerciseNumberBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary[500],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  exerciseNumber: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  exerciseInfo: {
+    flex: 1,
+  },
+  exerciseName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  exerciseMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  difficultyBadge: {
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  difficultyText: {
+    fontSize: 12,
+    color: '#10B981',
+    fontWeight: '500',
+  },
+  categoryText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textTransform: 'capitalize',
+  },
+  dosageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  dosageText: {
+    fontSize: 13,
+    color: colors.primary[600],
+    fontWeight: '500',
+  },
+  exerciseDetails: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  exerciseDescription: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  rationaleContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F0FDF4',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+    gap: 8,
+  },
+  rationaleText: {
+    fontSize: 13,
+    color: '#065F46',
+    flex: 1,
+  },
+  safetyContainer: {
+    marginBottom: 12,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 6,
+  },
+  safetyItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+    gap: 6,
+  },
+  safetyText: {
+    fontSize: 12,
+    color: '#92400E',
+    flex: 1,
+    lineHeight: 16,
+  },
+  redFlagContainer: {
+    backgroundColor: '#FEF2F2',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  redFlagItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+    gap: 6,
+  },
+  redFlagText: {
+    fontSize: 12,
+    color: '#DC2626',
+    flex: 1,
+    lineHeight: 16,
+  },
+  tipsContainer: {
+    marginBottom: 8,
+  },
+  tipText: {
+    fontSize: 12,
+    color: '#6B7280',
+    lineHeight: 18,
+  },
+  disclaimerBox: {
+    backgroundColor: '#F3F4F6',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  disclaimerText: {
+    fontSize: 11,
+    color: '#6B7280',
+    lineHeight: 16,
+    fontStyle: 'italic',
+  },
+  criticalWarningCard: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#DC2626',
+    alignItems: 'center',
+  },
+  criticalWarningTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#DC2626',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  criticalWarningText: {
+    fontSize: 14,
+    color: '#7F1D1D',
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
