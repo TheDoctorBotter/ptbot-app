@@ -81,8 +81,32 @@ export class OpenAIProxyService {
       return null;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || null;
+    try {
+      // First try getSession
+      const { data: { session }, error } = await supabase.auth.getSession();
+
+      if (error) {
+        console.warn('[OpenAIProxy] getSession error:', error.message);
+      }
+
+      if (session?.access_token) {
+        return session.access_token;
+      }
+
+      // Fallback: try to get user (which also refreshes the session)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Session should be available now
+        const { data: { session: refreshedSession } } = await supabase.auth.getSession();
+        return refreshedSession?.access_token || null;
+      }
+
+      console.warn('[OpenAIProxy] No session or user found');
+      return null;
+    } catch (err) {
+      console.error('[OpenAIProxy] Error getting access token:', err);
+      return null;
+    }
   }
 
   private async callProxy(request: ProxyRequest): Promise<ProxyResponse> {
@@ -95,10 +119,18 @@ export class OpenAIProxyService {
       throw new Error('User not authenticated. Please sign in to use this feature.');
     }
 
+    // Get the anon key for the apikey header
+    const supabaseAnonKey =
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+      (typeof globalThis !== 'undefined' &&
+        (globalThis as any).import?.meta?.env?.VITE_SUPABASE_ANON_KEY) ||
+      '';
+
     const response = await fetch(`${supabaseUrl}/functions/v1/openai-proxy`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'apikey': supabaseAnonKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),

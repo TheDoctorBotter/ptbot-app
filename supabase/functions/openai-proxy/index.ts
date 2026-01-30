@@ -312,16 +312,26 @@ Deno.serve(async (req) => {
 
     // Authenticate user
     const authHeader = req.headers.get('Authorization');
+    console.log('[openai-proxy] Auth header present:', !!authHeader);
+
     if (!authHeader) {
+      console.log('[openai-proxy] No auth header');
       return corsResponse({ error: 'Missing authorization header' }, 401);
     }
 
     const token = authHeader.replace('Bearer ', '');
+    console.log('[openai-proxy] Token length:', token.length);
+
     const { data: { user }, error: getUserError } = await supabase.auth.getUser(token);
 
+    console.log('[openai-proxy] getUser result - user:', !!user, 'error:', getUserError?.message || 'none');
+
     if (getUserError || !user) {
-      return corsResponse({ error: 'Unauthorized' }, 401);
+      console.log('[openai-proxy] Auth failed:', getUserError?.message || 'no user');
+      return corsResponse({ error: 'Unauthorized', details: getUserError?.message }, 401);
     }
+
+    console.log('[openai-proxy] Auth success for user:', user.id.slice(0, 8));
 
     // Check rate limit
     const rateCheck = checkRateLimit(user.id);
