@@ -56,7 +56,7 @@ export const Disclaimers: React.FC<DisclaimersProps> = ({ id }) => {
               className="w-full p-6 text-left flex items-center justify-between hover:bg-gray-50 transition-colors"
             >
               <div className="flex items-center space-x-4">
-                <FileText className="h-6 w-6 text-blue-600" />
+                <FileText className="h-6 w-6 text-primary-500" />
                 <h3 className="text-xl font-semibold text-gray-900">Telehealth Services Consent</h3>
               </div>
               {expandedSection === 'telehealth' ? 
@@ -93,11 +93,11 @@ export const Disclaimers: React.FC<DisclaimersProps> = ({ id }) => {
                 <p className="text-gray-700 leading-relaxed mb-4">
                   <strong>Licensing Notice:</strong> Virtual physical therapy services are only available to clients located in Texas and other states where Dr. Justin Lemmo holds an active license or PT Compact privilege. Clients are responsible for confirming their state of residence before receiving services.
                 </p>
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <p className="text-blue-800 font-medium">
+                <div className="bg-primary-50 p-4 rounded-lg">
+                  <p className="text-primary-800 font-medium">
                     Texas Physical Therapy License #1215276
                   </p>
-                  <p className="text-blue-700 text-sm mt-1">
+                  <p className="text-primary-700 text-sm mt-1">
                     Dr. Justin Lemmo, PT, DPT - Licensed in the State of Texas
                   </p>
                 </div>

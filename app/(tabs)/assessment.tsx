@@ -14,6 +14,7 @@ import { Activity, MapPin, Clock, TriangleAlert as AlertTriangle, CircleCheck as
 import { AssessmentService } from '@/services/assessmentService';
 import type { AssessmentData, AssessmentResult } from '@/services/assessmentService';
 import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
+import { colors } from '@/constants/theme';
 
 const redFlagSymptoms = [
   'Bowel or bladder dysfunction',
@@ -635,7 +636,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   header: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     paddingHorizontal: 20,
     paddingVertical: 20,
   },
@@ -647,7 +648,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1D4ED8',
+    backgroundColor: colors.primary[600],
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -666,7 +667,7 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#BFDBFE',
+    color: colors.primary[200],
   },
   content: {
     flex: 1,
@@ -686,7 +687,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     borderRadius: 2,
   },
   progressText: {
@@ -728,8 +729,8 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   painLevelButtonSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: colors.primary[500],
+    borderColor: colors.primary[500],
   },
   painLevelButtonHigh: {
     borderColor: '#DC2626',
@@ -766,8 +767,8 @@ const styles = StyleSheet.create({
     minWidth: '45%',
   },
   locationButtonSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: colors.primary[500],
+    borderColor: colors.primary[500],
   },
   locationButtonText: {
     fontSize: 14,
@@ -790,8 +791,8 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   durationButtonSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: colors.primary[500],
+    borderColor: colors.primary[500],
   },
   durationButtonText: {
     fontSize: 16,
@@ -817,8 +818,8 @@ const styles = StyleSheet.create({
     minWidth: '45%',
   },
   painTypeButtonSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: colors.primary[500],
+    borderColor: colors.primary[500],
   },
   painTypeButtonText: {
     fontSize: 14,
@@ -936,7 +937,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     gap: 8,
   },
   nextButtonDisabled: {
@@ -1058,7 +1059,7 @@ const styles = StyleSheet.create({
   nextStepNumber: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#2563EB',
+    color: colors.primary[500],
     backgroundColor: '#EBF4FF',
     width: 24,
     height: 24,
@@ -1091,7 +1092,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     paddingVertical: 14,
     borderRadius: 8,
     gap: 8,

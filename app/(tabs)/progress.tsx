@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TrendingUp, ChartBar as BarChart3, TrendingDown, Minus, Calendar, Activity, Target, Award, Plus, X, Save } from 'lucide-react-native';
+import { colors } from '@/constants/theme';
 
 interface ProgressData {
   date: string;
@@ -375,7 +376,7 @@ export default function ProgressScreen() {
             style={styles.modalSaveButton}
             onPress={saveEntry}
           >
-            <Save size={20} color="#2563EB" />
+            <Save size={20} color={colors.primary[500]} />
           </TouchableOpacity>
         </View>
 
@@ -431,7 +432,7 @@ export default function ProgressScreen() {
                 style={styles.addExerciseButton}
                 onPress={addExerciseField}
               >
-                <Plus size={16} color="#2563EB" />
+                <Plus size={16} color={colors.primary[500]} />
                 <Text style={styles.addExerciseText}>Add Exercise</Text>
               </TouchableOpacity>
             </View>
@@ -528,7 +529,7 @@ export default function ProgressScreen() {
             style={styles.modalSaveButton}
             onPress={saveEditEntry}
           >
-            <Save size={20} color="#2563EB" />
+            <Save size={20} color={colors.primary[500]} />
           </TouchableOpacity>
         </View>
 
@@ -582,7 +583,7 @@ export default function ProgressScreen() {
                     style={styles.addExerciseButton}
                     onPress={addEditExerciseField}
                   >
-                    <Plus size={16} color="#2563EB" />
+                    <Plus size={16} color={colors.primary[500]} />
                     <Text style={styles.addExerciseText}>Add Exercise</Text>
                   </TouchableOpacity>
                 </View>
@@ -712,7 +713,7 @@ export default function ProgressScreen() {
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <View style={styles.statHeader}>
-              <Activity size={20} color="#2563EB" />
+              <Activity size={20} color={colors.primary[500]} />
               <Text style={styles.statTitle}>Avg Pain Level</Text>
             </View>
             <Text style={styles.statValue}>{stats.avgPain.toFixed(1)}/10</Text>
@@ -763,7 +764,7 @@ export default function ProgressScreen() {
         {/* Recent Entries */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            <Calendar size={18} color="#2563EB" /> Recent Entries
+            <Calendar size={18} color={colors.primary[500]} /> Recent Entries
           </Text>
           {getFilteredData().slice(-5).reverse().map((item, index) => (
             <View key={index} style={styles.entryCard}>
@@ -831,7 +832,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   header: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     paddingHorizontal: 20,
     paddingVertical: 20,
   },
@@ -843,7 +844,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1D4ED8',
+    backgroundColor: colors.primary[600],
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -862,7 +863,7 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#BFDBFE',
+    color: colors.primary[200],
   },
   content: {
     flex: 1,
@@ -881,7 +882,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   periodButtonSelected: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
   },
   periodButtonText: {
     fontSize: 14,
@@ -998,7 +999,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
@@ -1011,7 +1012,7 @@ const styles = StyleSheet.create({
   chartLine: {
     position: 'absolute',
     height: 2,
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     transformOrigin: 'left center',
   },
   xAxisLabels: {
@@ -1078,7 +1079,7 @@ const styles = StyleSheet.create({
   editButtonText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#2563EB',
+    color: colors.primary[500],
   },
   deleteButton: {
     backgroundColor: '#FEE2E2',
@@ -1135,7 +1136,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     marginHorizontal: 16,
     marginTop: 16,
     paddingVertical: 14,
@@ -1237,7 +1238,7 @@ const styles = StyleSheet.create({
   addExerciseText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#2563EB',
+    color: colors.primary[500],
   },
   exerciseInputGroup: {
     borderWidth: 1,
@@ -1333,8 +1334,8 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   painLevelButtonSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: colors.primary[500],
+    borderColor: colors.primary[500],
   },
   painLevelButtonHigh: {
     borderColor: '#DC2626',

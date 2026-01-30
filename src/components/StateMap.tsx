@@ -19,7 +19,7 @@ export const StateMap = () => {
 
   const getStateFill = (stateName: string) => {
     if (activePracticeStates.includes(stateName)) {
-      return '#3B82F6'; // Blue for active practice
+      return '#C41E3A'; // Scarlet for active practice
     } else if (ptCompactStates.includes(stateName)) {
       return '#6B7280'; // Gray for PT Compact states
     } else {
@@ -29,7 +29,7 @@ export const StateMap = () => {
 
   const getStateStroke = (stateName: string) => {
     if (activePracticeStates.includes(stateName)) {
-      return '#1D4ED8'; // Darker blue stroke for active states
+      return '#B91C1C'; // Darker scarlet stroke for active states
     } else {
       return '#D1D5DB'; // Light gray stroke for all others
     }
@@ -63,9 +63,9 @@ export const StateMap = () => {
           <p className="text-lg text-gray-600 mb-2">
             Virtual physical therapy services available through PT Compact licensing
           </p>
-          <div className="inline-flex items-center bg-blue-50 px-4 py-2 rounded-lg">
-            <CheckCircle className="h-5 w-5 text-blue-600 mr-2" />
-            <span className="text-blue-800 font-medium">
+          <div className="inline-flex items-center bg-primary-50 px-4 py-2 rounded-lg">
+            <CheckCircle className="h-5 w-5 text-primary-500 mr-2" />
+            <span className="text-primary-800 font-medium">
               Texas License #1215276 - Dr. Justin Lemmo, PT, DPT
             </span>
           </div>
@@ -659,7 +659,7 @@ export const StateMap = () => {
           
           <div className="flex justify-center mt-6 space-x-8 flex-wrap gap-4">
             <div className="flex items-center">
-              <div className="w-4 h-4 bg-blue-600 rounded mr-2"></div>
+              <div className="w-4 h-4 bg-primary-500 rounded mr-2"></div>
               <span className="text-sm text-gray-700">Active Practice (Licensed)</span>
             </div>
             <div className="flex items-center">
@@ -674,12 +674,12 @@ export const StateMap = () => {
         </div>
 
         <div className="grid md:grid-cols-2 gap-8">
-          <div className="bg-blue-50 rounded-xl p-6">
-            <h3 className="text-lg font-semibold text-blue-900 mb-3">Currently Licensed</h3>
+          <div className="bg-primary-50 rounded-xl p-6">
+            <h3 className="text-lg font-semibold text-primary-900 mb-3">Currently Licensed</h3>
             <div className="space-y-2">
               <div className="flex items-center">
-                <CheckCircle className="h-5 w-5 text-blue-600 mr-2" />
-                <span className="text-blue-800">Texas (License #1215276)</span>
+                <CheckCircle className="h-5 w-5 text-primary-500 mr-2" />
+                <span className="text-primary-800">Texas (License #1215276)</span>
               </div>
             </div>
           </div>
@@ -692,7 +692,7 @@ export const StateMap = () => {
             </p>
             <a
               href="mailto:justinlemmodpt@gmail.com?subject=PT Compact State Inquiry"
-              className="inline-flex items-center text-blue-600 hover:text-blue-700 font-medium text-sm"
+              className="inline-flex items-center text-primary-500 hover:text-primary-600 font-medium text-sm"
             >
               <MapPin className="h-4 w-4 mr-1" />
               Inquire about services in your state

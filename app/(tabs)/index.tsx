@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MessageCircle, Send, Bot, User, ExternalLink, MapPin, Youtube } from 'lucide-react-native';
+import { colors } from '@/constants/theme';
 
 interface ChatMessage {
   id: string;
@@ -180,7 +181,7 @@ Your goal is to guide users through the app features while providing helpful, sa
     >
       <View style={styles.messageHeader}>
         {message.isUser ? (
-          <User size={16} color="#2563EB" />
+          <User size={16} color={colors.primary[500]} />
         ) : (
           <Bot size={16} color="#10B981" />
         )}
@@ -242,7 +243,7 @@ Your goal is to guide users through the app features while providing helpful, sa
 
           <TouchableOpacity style={styles.consultationCard} onPress={bookConsultation}>
             <View style={styles.quickActionHeader}>
-              <MapPin size={20} color="#2563EB" />
+              <MapPin size={20} color={colors.primary[500]} />
               <Text style={styles.quickActionTitle}>Texas Consultations</Text>
             </View>
             <Text style={styles.quickActionDescription}>
@@ -306,10 +307,10 @@ Your goal is to guide users through the app features while providing helpful, sa
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.neutral[50],
   },
   header: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     paddingHorizontal: 20,
     paddingVertical: 20,
   },
@@ -321,7 +322,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1D4ED8',
+    backgroundColor: colors.primary[600],
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -340,7 +341,7 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#BFDBFE',
+    color: colors.primary[200],
   },
   keyboardContainer: {
     flex: 1,
@@ -361,11 +362,11 @@ const styles = StyleSheet.create({
   },
   consultationCard: {
     flex: 1,
-    backgroundColor: '#EBF4FF',
+    backgroundColor: colors.primary[50],
     borderRadius: 8,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#2563EB',
+    borderColor: colors.primary[500],
   },
   quickActionHeader: {
     flexDirection: 'row',
@@ -424,7 +425,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   userMessageBubble: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     borderBottomRightRadius: 4,
   },
   botMessageBubble: {
@@ -485,7 +486,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   sendButton: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.primary[500],
     borderRadius: 16,
     padding: 10,
     marginLeft: 8,
