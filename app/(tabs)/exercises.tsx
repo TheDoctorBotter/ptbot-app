@@ -184,26 +184,15 @@ export default function ExercisesScreen() {
       return;
     }
 
-    const openAIApiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-    const youtubeApiKey = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
-    const channelId = process.env.EXPO_PUBLIC_YOUTUBE_CHANNEL_ID;
-
-    if (!openAIApiKey) {
-      Alert.alert(
-        'AI Search Unavailable',
-        'AI exercise search requires API configuration. For now, browse the exercises below or complete an assessment for personalized recommendations.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
     setIsSearching(true);
 
     try {
+      const youtubeApiKey = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+      const channelId = process.env.EXPO_PUBLIC_YOUTUBE_CHANNEL_ID;
+
       const exerciseService = new ExerciseRecommendationService(
-        openAIApiKey,
-        youtubeApiKey || '',
-        channelId || ''
+        youtubeApiKey,
+        channelId
       );
 
       const matches = await exerciseService.getExerciseRecommendationsFromChat(searchQuery);
@@ -223,11 +212,20 @@ export default function ExercisesScreen() {
       }
     } catch (error) {
       console.error('Exercise search error:', error);
-      Alert.alert(
-        'Search Error',
-        'Unable to search exercises right now. Please try browsing the exercises below.',
-        [{ text: 'OK' }]
-      );
+      const errorMessage = error instanceof Error ? error.message : '';
+      if (errorMessage.includes('sign in') || errorMessage.includes('authenticated')) {
+        Alert.alert(
+          'Sign In Required',
+          'AI-powered search requires you to be signed in. Please go to the Account tab to sign in, or browse the exercises below.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Search Error',
+          'Unable to search exercises right now. Please try browsing the exercises below.',
+          [{ text: 'OK' }]
+        );
+      }
     } finally {
       setIsSearching(false);
     }

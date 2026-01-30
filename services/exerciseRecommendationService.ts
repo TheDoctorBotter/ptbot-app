@@ -18,13 +18,12 @@ interface UserPainProfile {
 
 export class ExerciseRecommendationService {
   private youtubeService: YouTubeService;
-  private openAIApiKey: string;
   private exerciseCache: AnalyzedExercise[] = [];
   private cacheExpiry: number = 0;
 
-  constructor(openAIApiKey: string, youtubeApiKey: string, channelId: string) {
-    this.openAIApiKey = openAIApiKey;
-    this.youtubeService = new YouTubeService(youtubeApiKey, channelId);
+  constructor(youtubeApiKey?: string, channelId?: string) {
+    // YouTube service is optional - only used for video library fetching
+    this.youtubeService = new YouTubeService(youtubeApiKey || '', channelId || '');
   }
 
   async getAnalyzedExercises(): Promise<AnalyzedExercise[]> {
