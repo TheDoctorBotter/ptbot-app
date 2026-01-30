@@ -7,7 +7,9 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Platform } from 'react-native';
+
+// Check if we're in a server-side rendering context
+const isSSR = typeof window === 'undefined';
 
 // Get Supabase URL - try both Vite and Expo env var formats
 const supabaseUrl =
@@ -31,48 +33,83 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// Custom storage adapter that handles SSR gracefully
-const createStorageAdapter = () => {
-  // Check if we're in a browser/React Native environment
-  const isClient = typeof window !== 'undefined' || Platform.OS !== 'web';
+// Lazy-loaded supabase client
+let _supabase: SupabaseClient | null = null;
 
-  if (!isClient) {
-    // Return a no-op storage for SSR
-    return {
-      getItem: async () => null,
-      setItem: async () => {},
-      removeItem: async () => {},
-    };
-  }
-
-  // Use AsyncStorage for React Native, localStorage for web
-  if (Platform.OS !== 'web') {
-    // Dynamically import AsyncStorage only when needed
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    return AsyncStorage;
-  }
-
-  // Web browser - use localStorage
-  return {
-    getItem: async (key: string) => localStorage.getItem(key),
-    setItem: async (key: string, value: string) => localStorage.setItem(key, value),
-    removeItem: async (key: string) => localStorage.removeItem(key),
-  };
+// No-op storage for SSR
+const noopStorage = {
+  getItem: async () => null,
+  setItem: async () => {},
+  removeItem: async () => {},
 };
 
-// Create Supabase client with appropriate storage
-let supabase: SupabaseClient | null = null;
+// Get or create supabase client (lazy initialization for SSR compatibility)
+const getSupabase = (): SupabaseClient | null => {
+  if (_supabase) return _supabase;
+  if (!supabaseUrl || !supabaseAnonKey) return null;
 
-if (supabaseUrl && supabaseAnonKey) {
-  supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  // During SSR, create client with no-op storage
+  if (isSSR) {
+    _supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        storage: noopStorage,
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    });
+    return _supabase;
+  }
+
+  // Client-side: determine storage based on platform
+  let storage: any = noopStorage;
+
+  try {
+    // Check if we're in React Native (not web)
+    const { Platform } = require('react-native');
+    if (Platform.OS !== 'web') {
+      // React Native - use AsyncStorage
+      storage = require('@react-native-async-storage/async-storage').default;
+    } else {
+      // Web browser - use localStorage
+      storage = {
+        getItem: async (key: string) => localStorage.getItem(key),
+        setItem: async (key: string, value: string) => localStorage.setItem(key, value),
+        removeItem: async (key: string) => localStorage.removeItem(key),
+      };
+    }
+  } catch {
+    // Fallback to localStorage if Platform check fails
+    if (typeof localStorage !== 'undefined') {
+      storage = {
+        getItem: async (key: string) => localStorage.getItem(key),
+        setItem: async (key: string, value: string) => localStorage.setItem(key, value),
+        removeItem: async (key: string) => localStorage.removeItem(key),
+      };
+    }
+  }
+
+  _supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      storage: createStorageAdapter(),
+      storage,
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: false, // Disabled for React Native
+      detectSessionInUrl: false,
     },
   });
-}
+
+  return _supabase;
+};
+
+// Create a proxy that lazily initializes the client
+const supabase = new Proxy({} as SupabaseClient, {
+  get(_, prop) {
+    const client = getSupabase();
+    if (!client) return undefined;
+    const value = (client as any)[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});
 
 export { supabase, supabaseUrl, supabaseAnonKey };
 export default supabase;
