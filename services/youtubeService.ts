@@ -1,3 +1,5 @@
+import { openaiProxy } from './openaiProxyService';
+
 export interface YouTubeVideo {
   id: string;
   title: string;
@@ -66,67 +68,25 @@ export class YouTubeService {
     }
   }
 
-  async analyzeVideoForExerciseData(video: YouTubeVideo, openAIApiKey: string): Promise<AnalyzedExercise | null> {
+  async analyzeVideoForExerciseData(video: YouTubeVideo, _openAIApiKey?: string): Promise<AnalyzedExercise | null> {
     try {
       console.log(`🤖 Analyzing video: ${video.title.substring(0, 50)}...`);
-      
+
       // Add delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 200));
-      
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openAIApiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are analyzing a YouTube video from Dr. Justin Lemmo's physical therapy channel. Extract detailed exercise information.
 
-Return ONLY a JSON object with this exact structure:
-{
-  "isExerciseVideo": boolean (true only if this is an exercise, stretch, or rehabilitation video),
-  "bodyParts": ["specific body parts: neck, upper back, lower back, shoulder, elbow, wrist, hip, knee, ankle, etc."],
-  "conditions": ["specific conditions: herniated disc, sciatica, rotator cuff, plantar fasciitis, etc."],
-  "difficulty": "Beginner|Intermediate|Advanced",
-  "keywords": ["terms patients would search for"],
-  "painTypes": ["types of pain addressed"],
-  "targetAudience": ["who this is designed for"],
-  "contraindications": ["when NOT to do this exercise"],
-  "estimatedDuration": "estimated time in minutes"
-}
-
-Only return isExerciseVideo: true if this is actually a physical therapy, exercise, or rehabilitation video. Be very specific about body parts and conditions.`
-            },
-            {
-              role: 'user',
-              content: `Title: ${video.title}\n\nDescription: ${video.description}`
-            }
-          ],
-          max_tokens: 400,
-          temperature: 0.1,
-        }),
+      const analysis = await openaiProxy.analyzeVideo({
+        title: video.title,
+        description: video.description,
       });
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        console.error('OpenAI API error during video analysis:', data);
-        return null;
-      }
-      
-      const analysis = JSON.parse(data.choices[0].message.content);
-      
-      if (!analysis.isExerciseVideo) {
+      if (!analysis || !analysis.isExerciseVideo) {
         console.log(`❌ Not an exercise video: ${video.title}`);
         return null;
       }
 
       console.log(`✅ Analyzed exercise video: ${video.title}`);
-      
+
       return {
         id: video.id,
         title: video.title,

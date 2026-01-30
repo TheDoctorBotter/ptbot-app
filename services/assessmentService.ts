@@ -1,5 +1,6 @@
 import { ExerciseRecommendationService } from './exerciseRecommendationService';
 import type { AnalyzedExercise } from './youtubeService';
+import { openaiProxy } from './openaiProxyService';
 
 export interface AssessmentData {
   painLevel: number;
@@ -160,58 +161,23 @@ export class AssessmentService {
 
   private async generateSafetyNotes(assessment: AssessmentData, exercise: AnalyzedExercise): Promise<string[]> {
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.openAIApiKey}`,
+      const safetyNotes = await openaiProxy.generateSafetyNotes(
+        {
+          painLevel: assessment.painLevel,
+          painLocation: assessment.painLocation,
+          painType: assessment.painType,
+          painDuration: assessment.painDuration,
+          additionalSymptoms: assessment.additionalSymptoms,
         },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are a physical therapy expert. Generate specific safety notes for this exercise based on the patient's condition. Return ONLY a JSON array of safety notes:
-              
-              ["safety note 1", "safety note 2", "safety note 3"]
-              
-              Focus on:
-              - Modifications for their pain level
-              - Precautions for their specific symptoms
-              - When to stop the exercise
-              - Progression guidelines
-              
-              Keep each note concise and actionable.`
-            },
-            {
-              role: 'user',
-              content: `Patient Assessment:
-              Pain Level: ${assessment.painLevel}/10
-              Location: ${assessment.painLocation}
-              Pain Type: ${assessment.painType}
-              Duration: ${assessment.painDuration}
-              Additional Symptoms: ${assessment.additionalSymptoms.join(', ')}
-              
-              Exercise: ${exercise.title}
-              Description: ${exercise.description}
-              Difficulty: ${exercise.difficulty}
-              Target Body Parts: ${exercise.bodyParts.join(', ')}
-              Contraindications: ${exercise.contraindications.join(', ')}`
-            }
-          ],
-          max_tokens: 200,
-          temperature: 0.1,
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        console.error('Error generating safety notes:', data);
-        return ['Consult with a healthcare provider before starting this exercise'];
-      }
-
-      return JSON.parse(data.choices[0].message.content);
+        {
+          title: exercise.title,
+          description: exercise.description,
+          difficulty: exercise.difficulty,
+          bodyParts: exercise.bodyParts,
+          contraindications: exercise.contraindications,
+        }
+      );
+      return safetyNotes;
     } catch (error) {
       console.error('Error generating safety notes:', error);
       return ['Consult with a healthcare provider before starting this exercise'];

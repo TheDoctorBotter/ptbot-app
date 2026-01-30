@@ -1,5 +1,6 @@
 import { YouTubeService } from './youtubeService';
 import type { AnalyzedExercise } from './youtubeService';
+import { openaiProxy } from './openaiProxyService';
 
 interface ExerciseMatch {
   exercise: AnalyzedExercise;
@@ -68,9 +69,9 @@ export class ExerciseRecommendationService {
   async findMatchingExercises(userPain: UserPainProfile): Promise<ExerciseMatch[]> {
     try {
       console.log('🎯 Finding matching exercises for user pain profile...');
-      
+
       const exercises = await this.getAnalyzedExercises();
-      
+
       if (exercises.length === 0) {
         console.log('No exercises available for matching');
         return [];
@@ -78,18 +79,7 @@ export class ExerciseRecommendationService {
 
       console.log(`Matching user pain profile against ${exercises.length} exercises`);
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.openAIApiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are a physical therapy expert working with Dr. Justin Lemmo's exercise videos. Match the user's pain description to the most relevant exercises.
+      const systemPrompt = `You are a physical therapy expert working with Dr. Justin Lemmo's exercise videos. Match the user's pain description to the most relevant exercises.
 
 Scoring Criteria (0-100):
 - Body part match (40 points): Exact body part alignment
@@ -98,7 +88,7 @@ Scoring Criteria (0-100):
 - Difficulty appropriateness (10 points): Suitable for their pain level
 - Keyword relevance (5 points): Keywords match their description
 
-IMPORTANT: 
+IMPORTANT:
 - Only recommend exercises that are SAFE for their condition
 - Consider contraindications carefully
 - Higher pain levels (8-10) should get gentler, beginner exercises
@@ -113,11 +103,9 @@ Return a JSON array of the top 3-5 most relevant exercises:
   }
 ]
 
-Only include exercises with relevanceScore >= 70. Sort by relevanceScore descending.`
-            },
-            {
-              role: 'user',
-              content: `Patient Pain Profile:
+Only include exercises with relevanceScore >= 70. Sort by relevanceScore descending.`;
+
+      const userContent = `Patient Pain Profile:
 Description: "${userPain.description}"
 Pain Level: ${userPain.painLevel}/10
 Location: ${userPain.location}
@@ -137,23 +125,18 @@ Difficulty: ${ex.difficulty}
 Duration: ${ex.duration}
 Target Audience: ${ex.targetAudience.join(', ')}
 Contraindications: ${ex.contraindications.join(', ')}
-`).join('\n---\n')}`
-            }
-          ],
-          max_tokens: 1500,
-          temperature: 0.2,
-        }),
-      });
+`).join('\n---\n')}`;
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        console.error('OpenAI matching error:', data);
-        return [];
-      }
+      const responseContent = await openaiProxy.chat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        { max_tokens: 1000, temperature: 0.2 }
+      );
 
-      const matches = JSON.parse(data.choices[0].message.content);
-      
+      const matches = JSON.parse(responseContent);
+
       // Map the matches back to full exercise objects
       const exerciseMatches: ExerciseMatch[] = matches.map((match: any) => {
         const exercise = exercises.find(ex => ex.id === match.exerciseId);
@@ -176,20 +159,8 @@ Contraindications: ${ex.contraindications.join(', ')}
   async getExerciseRecommendationsFromChat(chatMessage: string): Promise<ExerciseMatch[]> {
     try {
       console.log('💬 Analyzing chat message for pain information...');
-      
-      // First, extract pain information from the chat message
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.openAIApiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are a medical AI assistant. Extract pain and symptom information from the user's message. Be thorough in identifying any mentions of:
+
+      const systemPrompt = `You are a medical AI assistant. Extract pain and symptom information from the user's message. Be thorough in identifying any mentions of:
 - Body parts or anatomical locations
 - Pain descriptions or symptoms
 - Activities that cause pain
@@ -205,26 +176,17 @@ Return ONLY a JSON object:
   "duration": "acute|subacute|chronic|unknown",
   "triggers": "what makes it worse or better",
   "additionalSymptoms": ["other symptoms mentioned"]
-}`
-            },
-            {
-              role: 'user',
-              content: chatMessage
-            }
-          ],
-          max_tokens: 300,
-          temperature: 0.1,
-        }),
-      });
+}`;
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        console.error('OpenAI API error during pain analysis:', data);
-        return [];
-      }
-      
-      const painProfile = JSON.parse(data.choices[0].message.content);
+      const responseContent = await openaiProxy.chat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: chatMessage },
+        ],
+        { max_tokens: 300, temperature: 0.1 }
+      );
+
+      const painProfile = JSON.parse(responseContent);
       console.log('🔍 Extracted pain profile:', painProfile);
 
       if (!painProfile.hasPainDescription) {

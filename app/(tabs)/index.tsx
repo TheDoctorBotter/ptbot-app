@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MessageCircle, Send, Bot, User, ExternalLink, MapPin, Youtube } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
+import { openaiProxy } from '@/services/openaiProxyService';
 
 interface ChatMessage {
   id: string;
@@ -35,8 +36,6 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const openAIApiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-
   useEffect(() => {
     // Auto-scroll to bottom when new messages are added
     setTimeout(() => {
@@ -46,15 +45,6 @@ export default function HomeScreen() {
 
   const sendMessage = async () => {
     if (!inputText.trim()) return;
-
-    if (!openAIApiKey) {
-      Alert.alert(
-        'Configuration Required',
-        'OpenAI API key is not configured. Please add EXPO_PUBLIC_OPENAI_API_KEY to your environment variables.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -68,18 +58,7 @@ export default function HomeScreen() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openAIApiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are PTBot, a helpful virtual physical therapy assistant created by Dr. Justin Lemmo, PT, DPT. You provide educational information about physical therapy, exercises, and general wellness.
+      const systemPrompt = `You are PTBot, a helpful virtual physical therapy assistant created by Dr. Justin Lemmo, PT, DPT. You provide educational information about physical therapy, exercises, and general wellness.
 
 IMPORTANT GUIDELINES:
 - Always emphasize that you provide educational information, not medical diagnosis
@@ -97,31 +76,25 @@ NEVER:
 - Replace professional medical advice
 - Give advice for serious injuries without proper assessment
 
-Your goal is to guide users through the app features while providing helpful, safe, and educational physical therapy information.`
-            },
-            ...messages.slice(-5).map(msg => ({
-              role: msg.isUser ? 'user' as const : 'assistant' as const,
-              content: msg.text,
-            })),
-            {
-              role: 'user',
-              content: inputText.trim(),
-            },
-          ],
-          max_tokens: 300,
-          temperature: 0.7,
-        }),
+Your goal is to guide users through the app features while providing helpful, safe, and educational physical therapy information.`;
+
+      const chatMessages = [
+        { role: 'system' as const, content: systemPrompt },
+        ...messages.slice(-5).map(msg => ({
+          role: msg.isUser ? 'user' as const : 'assistant' as const,
+          content: msg.text,
+        })),
+        { role: 'user' as const, content: inputText.trim() },
+      ];
+
+      const responseText = await openaiProxy.chat(chatMessages, {
+        max_tokens: 300,
+        temperature: 0.7,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error?.message || 'Failed to get response');
-      }
 
       const botMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        text: data.choices[0].message.content,
+        text: responseText,
         isUser: false,
         timestamp: new Date(),
       };
@@ -129,9 +102,13 @@ Your goal is to guide users through the app features while providing helpful, sa
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {
       console.error('Chat error:', error);
+      const errorText = error instanceof Error && error.message.includes('sign in')
+        ? "Please sign in to use the chatbot. Go to the Account tab to create an account or log in."
+        : "I'm sorry, I'm having trouble responding right now. Please try again in a moment, or use the Assessment tab to get personalized exercise recommendations.";
+
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        text: "I'm sorry, I'm having trouble responding right now. Please try again in a moment, or use the Assessment tab to get personalized exercise recommendations.",
+        text: errorText,
         isUser: false,
         timestamp: new Date(),
       };
