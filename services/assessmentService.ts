@@ -1,6 +1,12 @@
-import { ExerciseRecommendationService } from './exerciseRecommendationService';
-import type { AnalyzedExercise } from './youtubeService';
-import { openaiProxy } from './openaiProxyService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  exerciseLibrary,
+  getExercisesByBodyPart,
+  getExercisesByPainLevel,
+  scoreExercises,
+  type LibraryExercise,
+  type ExerciseDosage,
+} from '@/data/exerciseLibrary';
 
 export interface AssessmentData {
   painLevel: number;
@@ -15,28 +21,39 @@ export interface AssessmentData {
   timestamp: string;
 }
 
+export interface ExerciseRecommendation {
+  exercise: {
+    id: string;
+    name: string;
+    description: string;
+    videoUrl?: string;
+    thumbnailUrl?: string;
+    bodyParts: string[];
+    difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+    category: string;
+  };
+  dosage: ExerciseDosage;
+  relevanceScore: number;
+  reasoning: string;
+  safetyNotes: string[];
+  redFlagWarnings: string[];
+  progressionTips: string[];
+}
+
 export interface AssessmentResult {
   id: string;
   assessment: AssessmentData;
   recommendations: ExerciseRecommendation[];
   riskLevel: 'low' | 'moderate' | 'high' | 'critical';
   nextSteps: string[];
+  createdAt: string;
 }
 
-export interface ExerciseRecommendation {
-  exercise: AnalyzedExercise;
-  relevanceScore: number;
-  reasoning: string;
-  safetyNotes: string[];
-}
+const STORAGE_KEY = 'ptbot_assessments';
 
 export class AssessmentService {
-  private exerciseService: ExerciseRecommendationService;
-  private openAIApiKey: string;
-
-  constructor(openAIApiKey: string, youtubeApiKey: string, channelId: string) {
-    this.openAIApiKey = openAIApiKey;
-    this.exerciseService = new ExerciseRecommendationService(openAIApiKey, youtubeApiKey, channelId);
+  constructor() {
+    // No external API keys needed - uses deterministic library
   }
 
   async processAssessment(assessmentData: AssessmentData): Promise<AssessmentResult> {
@@ -45,12 +62,12 @@ export class AssessmentService {
 
       // Determine risk level based on red flags and pain severity
       const riskLevel = this.calculateRiskLevel(assessmentData);
-      
+
       // Generate exercise recommendations if safe to do so
       let recommendations: ExerciseRecommendation[] = [];
-      
+
       if (riskLevel !== 'critical') {
-        recommendations = await this.generateExerciseRecommendations(assessmentData);
+        recommendations = this.generateExerciseRecommendations(assessmentData);
       }
 
       // Generate next steps based on assessment
@@ -62,11 +79,11 @@ export class AssessmentService {
         recommendations,
         riskLevel,
         nextSteps,
+        createdAt: new Date().toISOString(),
       };
 
       console.log(`✅ Assessment processed: ${riskLevel} risk, ${recommendations.length} recommendations`);
       return result;
-
     } catch (error) {
       console.error('Error processing assessment:', error);
       throw new Error('Failed to process assessment');
@@ -82,14 +99,16 @@ export class AssessmentService {
     // High: Severe pain (8-10) with concerning symptoms
     if (assessment.painLevel >= 8) {
       const concerningSymptoms = [
-        'Progressive neurological deficits',
+        'Numbness or tingling',
+        'Muscle weakness',
         'Weakness in both legs',
-        'Severe night pain'
       ];
-      
-      if (assessment.additionalSymptoms.some(symptom => 
-        concerningSymptoms.some(concerning => symptom.includes(concerning))
-      )) {
+
+      if (
+        assessment.additionalSymptoms.some((symptom) =>
+          concerningSymptoms.some((concerning) => symptom.toLowerCase().includes(concerning.toLowerCase()))
+        )
+      ) {
         return 'high';
       }
     }
@@ -103,85 +122,99 @@ export class AssessmentService {
     return 'low';
   }
 
-  private async generateExerciseRecommendations(assessment: AssessmentData): Promise<ExerciseRecommendation[]> {
-    try {
-      // Create a comprehensive pain description for the AI
-      const painDescription = this.createPainDescription(assessment);
-      
-      // Use the exercise recommendation service to find matches
-      const matches = await this.exerciseService.findMatchingExercises({
-        description: painDescription,
-        painLevel: assessment.painLevel,
-        location: assessment.painLocation,
-        painType: assessment.painType,
-        duration: assessment.painDuration,
-      });
+  private generateExerciseRecommendations(assessment: AssessmentData): ExerciseRecommendation[] {
+    // Step 1: Get exercises for the body part
+    let candidates = getExercisesByBodyPart(assessment.painLocation);
 
-      // Convert matches to recommendations with safety notes
-      const recommendations: ExerciseRecommendation[] = await Promise.all(
-        matches.map(async (match) => {
-          const safetyNotes = await this.generateSafetyNotes(assessment, match.exercise);
-          return {
-            exercise: match.exercise,
-            relevanceScore: match.relevanceScore,
-            reasoning: match.reasoning,
-            safetyNotes,
-          };
-        })
-      );
-
-      return recommendations.slice(0, 5); // Return top 5 recommendations
-    } catch (error) {
-      console.error('Error generating exercise recommendations:', error);
-      return [];
-    }
-  }
-
-  private createPainDescription(assessment: AssessmentData): string {
-    let description = `I have ${assessment.painType} pain in my ${assessment.painLocation}`;
-    
-    if (assessment.painLevel > 0) {
-      description += ` with severity ${assessment.painLevel}/10`;
-    }
-    
-    if (assessment.painDuration) {
-      description += ` for ${assessment.painDuration}`;
-    }
-    
-    if (assessment.mechanismOfInjury) {
-      description += `. It started from: ${assessment.mechanismOfInjury}`;
-    }
-    
-    if (assessment.additionalSymptoms.length > 0) {
-      description += `. Additional symptoms: ${assessment.additionalSymptoms.join(', ')}`;
+    // If no specific matches, fall back to general exercises
+    if (candidates.length === 0) {
+      console.log(`No exercises found for ${assessment.painLocation}, using general recommendations`);
+      candidates = exerciseLibrary.filter((ex) => ex.difficulty === 'Beginner');
     }
 
-    return description;
-  }
+    // Step 2: Filter by pain level safety
+    candidates = getExercisesByPainLevel(candidates, assessment.painLevel);
 
-  private async generateSafetyNotes(assessment: AssessmentData, exercise: AnalyzedExercise): Promise<string[]> {
-    try {
-      const safetyNotes = await openaiProxy.generateSafetyNotes(
-        {
-          painLevel: assessment.painLevel,
-          painLocation: assessment.painLocation,
-          painType: assessment.painType,
-          painDuration: assessment.painDuration,
-          additionalSymptoms: assessment.additionalSymptoms,
-        },
-        {
-          title: exercise.title,
+    // Step 3: Score and rank exercises
+    const scored = scoreExercises(candidates, {
+      bodyPart: assessment.painLocation,
+      painLevel: assessment.painLevel,
+      painType: assessment.painType,
+      painDuration: assessment.painDuration,
+      symptoms: assessment.additionalSymptoms,
+    });
+
+    // Step 4: Take top 3-5 recommendations
+    const topExercises = scored.filter((s) => s.score >= 40).slice(0, 5);
+
+    // Ensure we have at least 3 exercises if available
+    const finalExercises =
+      topExercises.length >= 3 ? topExercises : scored.slice(0, Math.min(3, scored.length));
+
+    // Step 5: Build recommendations with dosage and safety info
+    const recommendations: ExerciseRecommendation[] = finalExercises.map((scored) => {
+      const { exercise, matchReasons } = scored;
+
+      // Generate safety notes based on assessment
+      const safetyNotes = this.generateSafetyNotes(assessment, exercise);
+
+      return {
+        exercise: {
+          id: exercise.id,
+          name: exercise.name,
           description: exercise.description,
-          difficulty: exercise.difficulty,
+          videoUrl: exercise.videoUrl,
+          thumbnailUrl: exercise.thumbnailUrl,
           bodyParts: exercise.bodyParts,
-          contraindications: exercise.contraindications,
-        }
-      );
-      return safetyNotes;
-    } catch (error) {
-      console.error('Error generating safety notes:', error);
-      return ['Consult with a healthcare provider before starting this exercise'];
+          difficulty: exercise.difficulty,
+          category: exercise.category,
+        },
+        dosage: exercise.dosage,
+        relevanceScore: scored.score,
+        reasoning: matchReasons.join('. '),
+        safetyNotes,
+        redFlagWarnings: exercise.redFlagWarnings,
+        progressionTips: exercise.progressionTips,
+      };
+    });
+
+    return recommendations;
+  }
+
+  private generateSafetyNotes(assessment: AssessmentData, exercise: LibraryExercise): string[] {
+    const notes: string[] = [];
+
+    // Pain level specific guidance
+    if (assessment.painLevel >= 7) {
+      notes.push('Start very gently and reduce intensity if pain increases above baseline.');
+    } else if (assessment.painLevel >= 5) {
+      notes.push('Perform within pain-free range. Stop if pain significantly worsens.');
     }
+
+    // Include exercise-specific contraindications
+    if (exercise.contraindications.length > 0) {
+      notes.push(`Avoid this exercise if you have: ${exercise.contraindications.join(', ')}.`);
+    }
+
+    // Duration-specific guidance
+    if (assessment.painDuration.includes('More than 6 months')) {
+      notes.push('For chronic conditions, consistency is key. Start with lower intensity and progress slowly.');
+    } else if (assessment.painDuration.includes('Less than 1 week')) {
+      notes.push('For acute pain, rest may be beneficial. If pain worsens with exercise, pause and reassess.');
+    }
+
+    // Symptom-specific notes
+    if (assessment.additionalSymptoms.includes('Numbness or tingling')) {
+      notes.push('If numbness or tingling increases during the exercise, stop immediately.');
+    }
+    if (assessment.additionalSymptoms.includes('Muscle weakness')) {
+      notes.push('Start with supported positions and progress to unsupported as strength improves.');
+    }
+
+    // General safety reminder
+    notes.push('Consult with a healthcare provider if symptoms worsen or do not improve within 2 weeks.');
+
+    return notes;
   }
 
   private generateNextSteps(assessment: AssessmentData, riskLevel: string): string[] {
@@ -204,7 +237,7 @@ export class AssessmentService {
         break;
 
       case 'moderate':
-        steps.push('📱 Follow recommended exercises in the Exercises tab');
+        steps.push('📱 Follow recommended exercises below');
         steps.push('📊 Track your progress daily');
         steps.push('🩺 Consider seeing a healthcare provider if no improvement in 1-2 weeks');
         if (assessment.location.toLowerCase().includes('texas')) {
@@ -223,25 +256,22 @@ export class AssessmentService {
     return steps;
   }
 
-  // Store assessment results locally (in real app, this would go to database)
-  saveAssessmentResult(result: AssessmentResult): void {
+  // Store assessment results using AsyncStorage (React Native compatible)
+  async saveAssessmentResult(result: AssessmentResult): Promise<void> {
     try {
-      const existingResults = this.getStoredAssessments();
+      const existingResults = await this.getStoredAssessments();
       const updatedResults = [result, ...existingResults.slice(0, 9)]; // Keep last 10
-      
-      // In a real app, this would be saved to a database
+
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedResults));
       console.log('Assessment result saved:', result.id);
-      
-      // For now, we'll just log it
-      localStorage?.setItem('ptbot_assessments', JSON.stringify(updatedResults));
     } catch (error) {
       console.error('Error saving assessment result:', error);
     }
   }
 
-  getStoredAssessments(): AssessmentResult[] {
+  async getStoredAssessments(): Promise<AssessmentResult[]> {
     try {
-      const stored = localStorage?.getItem('ptbot_assessments');
+      const stored = await AsyncStorage.getItem(STORAGE_KEY);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
       console.error('Error retrieving stored assessments:', error);
@@ -249,8 +279,17 @@ export class AssessmentService {
     }
   }
 
-  getLatestAssessment(): AssessmentResult | null {
-    const assessments = this.getStoredAssessments();
+  async getLatestAssessment(): Promise<AssessmentResult | null> {
+    const assessments = await this.getStoredAssessments();
     return assessments.length > 0 ? assessments[0] : null;
+  }
+
+  async clearAssessments(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEY);
+      console.log('Assessment history cleared');
+    } catch (error) {
+      console.error('Error clearing assessments:', error);
+    }
   }
 }

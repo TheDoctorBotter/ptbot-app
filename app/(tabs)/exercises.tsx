@@ -289,62 +289,87 @@ export default function ExercisesScreen() {
               Based on your recent assessment, here are exercises specifically chosen for your condition:
             </Text>
             
-            {latestAssessment!.recommendations.map((recommendation, index) => (
-              <View key={recommendation.exercise.id} style={styles.recommendationCard}>
-                <View style={styles.recommendationHeader}>
-                  <View style={styles.recommendationInfo}>
-                    <Text style={styles.recommendationTitle}>{recommendation.exercise.title}</Text>
-                    <View style={styles.recommendationMeta}>
-                      <View style={styles.scoreContainer}>
-                        <Text style={styles.scoreLabel}>Match: </Text>
-                        <Text style={styles.scoreValue}>{recommendation.relevanceScore}%</Text>
-                      </View>
-                      <View style={styles.exerciseMetaItem}>
-                        <Clock size={14} color="#6B7280" />
-                        <Text style={styles.exerciseMetaText}>{recommendation.exercise.duration}</Text>
-                      </View>
-                      <View 
-                        style={[
-                          styles.difficultyBadge,
-                          { backgroundColor: getDifficultyColor(recommendation.exercise.difficulty) + '20' }
-                        ]}
-                      >
-                        <Text 
+            {latestAssessment!.recommendations.map((recommendation, index) => {
+              // Format dosage for display
+              const dosageText = recommendation.dosage
+                ? `${recommendation.dosage.sets} sets${recommendation.dosage.reps ? ` x ${recommendation.dosage.reps} reps` : ''}${recommendation.dosage.holdTime ? ` (${recommendation.dosage.holdTime})` : ''}`
+                : '';
+
+              return (
+                <View key={recommendation.exercise.id} style={styles.recommendationCard}>
+                  <View style={styles.recommendationHeader}>
+                    <View style={styles.recommendationInfo}>
+                      <Text style={styles.recommendationTitle}>{recommendation.exercise.name}</Text>
+                      <View style={styles.recommendationMeta}>
+                        <View style={styles.scoreContainer}>
+                          <Text style={styles.scoreLabel}>Match: </Text>
+                          <Text style={styles.scoreValue}>{recommendation.relevanceScore}%</Text>
+                        </View>
+                        {dosageText && (
+                          <View style={styles.exerciseMetaItem}>
+                            <Clock size={14} color="#6B7280" />
+                            <Text style={styles.exerciseMetaText}>{dosageText}</Text>
+                          </View>
+                        )}
+                        <View
                           style={[
-                            styles.difficultyText,
-                            { color: getDifficultyColor(recommendation.exercise.difficulty) }
+                            styles.difficultyBadge,
+                            { backgroundColor: getDifficultyColor(recommendation.exercise.difficulty) + '20' }
                           ]}
                         >
-                          {recommendation.exercise.difficulty}
-                        </Text>
+                          <Text
+                            style={[
+                              styles.difficultyText,
+                              { color: getDifficultyColor(recommendation.exercise.difficulty) }
+                            ]}
+                          >
+                            {recommendation.exercise.difficulty}
+                          </Text>
+                        </View>
                       </View>
                     </View>
                   </View>
+
+                  {/* Dosage/Frequency */}
+                  {recommendation.dosage && (
+                    <View style={styles.dosageContainer}>
+                      <Text style={styles.dosageLabel}>Dosage:</Text>
+                      <Text style={styles.dosageText}>{recommendation.dosage.frequency}</Text>
+                    </View>
+                  )}
+
+                  <Text style={styles.recommendationReasoning}>
+                    <Text style={styles.reasoningLabel}>Why this helps: </Text>
+                    {recommendation.reasoning}
+                  </Text>
+
+                  {recommendation.safetyNotes && recommendation.safetyNotes.length > 0 && (
+                    <View style={styles.safetyNotesContainer}>
+                      <Text style={styles.safetyNotesTitle}>Safety Notes:</Text>
+                      {recommendation.safetyNotes.map((note, noteIndex) => (
+                        <Text key={noteIndex} style={styles.safetyNote}>• {note}</Text>
+                      ))}
+                    </View>
+                  )}
+
+                  {recommendation.exercise.videoUrl ? (
+                    <TouchableOpacity
+                      style={styles.watchRecommendedButton}
+                      onPress={() => openExerciseVideo(recommendation.exercise.videoUrl!)}
+                    >
+                      <Play size={16} color="#FFFFFF" />
+                      <Text style={styles.watchRecommendedText}>Watch Exercise Video</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.noVideoContainer}>
+                      <Text style={styles.noVideoText}>
+                        Video coming soon - search for "{recommendation.exercise.name}" on YouTube
+                      </Text>
+                    </View>
+                  )}
                 </View>
-                
-                <Text style={styles.recommendationReasoning}>
-                  <Text style={styles.reasoningLabel}>Why this helps: </Text>
-                  {recommendation.reasoning}
-                </Text>
-                
-                {recommendation.safetyNotes && recommendation.safetyNotes.length > 0 && (
-                  <View style={styles.safetyNotesContainer}>
-                    <Text style={styles.safetyNotesTitle}>⚠️ Safety Notes:</Text>
-                    {recommendation.safetyNotes.map((note, noteIndex) => (
-                      <Text key={noteIndex} style={styles.safetyNote}>• {note}</Text>
-                    ))}
-                  </View>
-                )}
-                
-                <TouchableOpacity 
-                  style={styles.watchRecommendedButton}
-                  onPress={() => openExerciseVideo(recommendation.exercise.url)}
-                >
-                  <Play size={16} color="#FFFFFF" />
-                  <Text style={styles.watchRecommendedText}>Watch Exercise Video</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+              );
+            })}
             
             <TouchableOpacity 
               style={styles.newAssessmentButton}
@@ -1077,5 +1102,37 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 20,
+  },
+  dosageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginBottom: 12,
+    gap: 8,
+  },
+  dosageLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#065F46',
+  },
+  dosageText: {
+    fontSize: 13,
+    color: '#10B981',
+  },
+  noVideoContainer: {
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  noVideoText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
