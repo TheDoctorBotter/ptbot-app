@@ -119,10 +119,18 @@ export class OpenAIProxyService {
       throw new Error('User not authenticated. Please sign in to use this feature.');
     }
 
+    // Get the anon key for the apikey header
+    const supabaseAnonKey =
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+      (typeof globalThis !== 'undefined' &&
+        (globalThis as any).import?.meta?.env?.VITE_SUPABASE_ANON_KEY) ||
+      '';
+
     const response = await fetch(`${supabaseUrl}/functions/v1/openai-proxy`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'apikey': supabaseAnonKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),
