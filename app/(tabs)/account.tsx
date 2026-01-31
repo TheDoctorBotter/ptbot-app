@@ -260,10 +260,15 @@ export default function AccountScreen() {
 
             setIsLoading(true);
             try {
-              const { error } = await supabase.auth.signOut();
+              // Use 'local' scope to clear session from this device
+              const { error } = await supabase.auth.signOut({ scope: 'local' });
               if (error) {
+                console.error('Sign out error:', error);
                 Alert.alert('Error', 'Failed to sign out. Please try again.');
               } else {
+                // Explicitly clear state
+                setSession(null);
+                setUser(null);
                 setShowProfileTabs(false);
                 clearForm();
               }
