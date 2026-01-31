@@ -1,12 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  exerciseLibrary,
-  getExercisesByBodyPart,
-  getExercisesByPainLevel,
-  scoreExercises,
-  type LibraryExercise,
-  type ExerciseDosage,
-} from '@/data/exerciseLibrary';
+import { supabase } from '@/lib/supabase';
 
 export interface AssessmentData {
   painLevel: number;
@@ -19,6 +12,15 @@ export interface AssessmentData {
   redFlags: string[];
   location: string;
   timestamp: string;
+}
+
+export interface ExerciseDosage {
+  sets: number;
+  reps?: number;
+  duration?: string;
+  frequency: string;
+  holdTime?: string;
+  restBetweenSets?: string;
 }
 
 export interface ExerciseRecommendation {
@@ -49,11 +51,38 @@ export interface AssessmentResult {
   createdAt: string;
 }
 
+// Database exercise type (from Supabase)
+interface DatabaseExercise {
+  id: string;
+  youtube_video_id: string;
+  title: string;
+  description: string;
+  thumbnail_url: string | null;
+  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  body_parts: string[];
+  conditions: string[];
+  keywords: string[];
+  recommended_sets: number | null;
+  recommended_reps: number | null;
+  recommended_hold_seconds: number | null;
+  recommended_frequency: string | null;
+  contraindications: string[];
+  safety_notes: string[];
+  display_order: number;
+  section_id: string;
+}
+
+interface ScoredExercise {
+  exercise: DatabaseExercise;
+  score: number;
+  matchReasons: string[];
+}
+
 const STORAGE_KEY = 'ptbot_assessments';
 
 export class AssessmentService {
   constructor() {
-    // No external API keys needed - uses deterministic library
+    // Uses Supabase for exercise data
   }
 
   async processAssessment(assessmentData: AssessmentData): Promise<AssessmentResult> {
@@ -67,7 +96,7 @@ export class AssessmentService {
       let recommendations: ExerciseRecommendation[] = [];
 
       if (riskLevel !== 'critical') {
-        recommendations = this.generateExerciseRecommendations(assessmentData);
+        recommendations = await this.generateExerciseRecommendations(assessmentData);
       }
 
       // Generate next steps based on assessment
@@ -122,67 +151,245 @@ export class AssessmentService {
     return 'low';
   }
 
-  private generateExerciseRecommendations(assessment: AssessmentData): ExerciseRecommendation[] {
-    // Step 1: Get exercises for the body part
-    let candidates = getExercisesByBodyPart(assessment.painLocation);
-
-    // If no specific matches, fall back to general exercises
-    if (candidates.length === 0) {
-      console.log(`No exercises found for ${assessment.painLocation}, using general recommendations`);
-      candidates = exerciseLibrary.filter((ex) => ex.difficulty === 'Beginner');
+  private async generateExerciseRecommendations(assessment: AssessmentData): Promise<ExerciseRecommendation[]> {
+    if (!supabase) {
+      console.warn('Supabase not configured, returning empty recommendations');
+      return [];
     }
 
-    // Step 2: Filter by pain level safety
-    candidates = getExercisesByPainLevel(candidates, assessment.painLevel);
+    try {
+      // Step 1: Get the section ID for the body part
+      const sectionSlug = this.bodyPartToSectionSlug(assessment.painLocation);
 
-    // Step 3: Score and rank exercises
-    const scored = scoreExercises(candidates, {
-      bodyPart: assessment.painLocation,
-      painLevel: assessment.painLevel,
-      painType: assessment.painType,
-      painDuration: assessment.painDuration,
-      symptoms: assessment.additionalSymptoms,
-    });
+      // Step 2: Query exercises from Supabase
+      const { data: exercises, error } = await supabase
+        .from('exercise_videos')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
 
-    // Step 4: Take top 3-5 recommendations
-    const topExercises = scored.filter((s) => s.score >= 40).slice(0, 5);
+      if (error) {
+        console.error('Error fetching exercises from Supabase:', error);
+        return [];
+      }
 
-    // Ensure we have at least 3 exercises if available
-    const finalExercises =
-      topExercises.length >= 3 ? topExercises : scored.slice(0, Math.min(3, scored.length));
+      if (!exercises || exercises.length === 0) {
+        console.log('No exercises found in database');
+        return [];
+      }
 
-    // Step 5: Build recommendations with dosage and safety info
-    const recommendations: ExerciseRecommendation[] = finalExercises.map((scored) => {
-      const { exercise, matchReasons } = scored;
+      // Step 3: Score and rank exercises
+      const scored = this.scoreExercisesFromDB(exercises as DatabaseExercise[], assessment);
 
-      // Generate safety notes based on assessment
-      const safetyNotes = this.generateSafetyNotes(assessment, exercise);
+      // Step 4: Filter by pain level - for high pain, prefer beginner exercises
+      let filtered = scored;
+      if (assessment.painLevel >= 7) {
+        // High pain: strongly prefer beginner, allow some intermediate
+        filtered = scored.filter(s => s.exercise.difficulty !== 'Advanced');
+      } else if (assessment.painLevel >= 5) {
+        // Moderate pain: allow beginner and intermediate
+        filtered = scored.filter(s => s.exercise.difficulty !== 'Advanced' || s.score > 70);
+      }
 
-      return {
-        exercise: {
-          id: exercise.id,
-          name: exercise.name,
-          description: exercise.description,
-          videoUrl: exercise.videoUrl,
-          thumbnailUrl: exercise.thumbnailUrl,
-          bodyParts: exercise.bodyParts,
-          difficulty: exercise.difficulty,
-          category: exercise.category,
-        },
-        dosage: exercise.dosage,
-        relevanceScore: scored.score,
-        reasoning: matchReasons.join('. '),
-        safetyNotes,
-        redFlagWarnings: exercise.redFlagWarnings,
-        progressionTips: exercise.progressionTips,
-      };
-    });
+      // Step 5: Take top 5-8 recommendations (return the full routine if matched)
+      const topExercises = filtered.filter((s) => s.score >= 30).slice(0, 8);
 
-    return recommendations;
+      // Ensure we have at least 3 exercises if available
+      const finalExercises =
+        topExercises.length >= 3 ? topExercises : filtered.slice(0, Math.min(5, filtered.length));
+
+      // Step 6: Build recommendations with dosage and safety info
+      const recommendations: ExerciseRecommendation[] = finalExercises.map((scored) => {
+        const { exercise, matchReasons } = scored;
+
+        // Generate safety notes based on assessment
+        const safetyNotes = this.generateSafetyNotes(assessment, exercise);
+
+        // Build YouTube video URL
+        const videoUrl = exercise.youtube_video_id
+          ? `https://www.youtube.com/watch?v=${exercise.youtube_video_id}`
+          : undefined;
+
+        // Build thumbnail URL
+        const thumbnailUrl = exercise.youtube_video_id
+          ? `https://img.youtube.com/vi/${exercise.youtube_video_id}/hqdefault.jpg`
+          : exercise.thumbnail_url || undefined;
+
+        // Build dosage from database fields
+        const dosage: ExerciseDosage = {
+          sets: exercise.recommended_sets || 2,
+          reps: exercise.recommended_reps || undefined,
+          frequency: exercise.recommended_frequency || 'Daily',
+          holdTime: exercise.recommended_hold_seconds
+            ? `${exercise.recommended_hold_seconds} seconds`
+            : undefined,
+        };
+
+        return {
+          exercise: {
+            id: exercise.id,
+            name: exercise.title,
+            description: exercise.description || '',
+            videoUrl,
+            thumbnailUrl,
+            bodyParts: exercise.body_parts || [],
+            difficulty: exercise.difficulty || 'Beginner',
+            category: this.inferCategory(exercise),
+          },
+          dosage,
+          relevanceScore: scored.score,
+          reasoning: matchReasons.join('. '),
+          safetyNotes,
+          redFlagWarnings: this.generateRedFlagWarnings(exercise),
+          progressionTips: this.generateProgressionTips(exercise),
+        };
+      });
+
+      return recommendations;
+    } catch (error) {
+      console.error('Error generating exercise recommendations:', error);
+      return [];
+    }
   }
 
-  private generateSafetyNotes(assessment: AssessmentData, exercise: LibraryExercise): string[] {
+  private bodyPartToSectionSlug(painLocation: string): string {
+    const mappings: Record<string, string> = {
+      'lower back': 'lower-back',
+      'upper back': 'upper-back',
+      'neck': 'neck',
+      'shoulder': 'shoulder',
+      'hip': 'hip',
+      'knee': 'knee',
+      'ankle': 'ankle-foot',
+      'foot': 'ankle-foot',
+      'elbow': 'elbow-wrist',
+      'wrist': 'elbow-wrist',
+      'hand': 'elbow-wrist',
+    };
+
+    const lower = painLocation.toLowerCase();
+    for (const [key, value] of Object.entries(mappings)) {
+      if (lower.includes(key)) {
+        return value;
+      }
+    }
+    return 'lower-back'; // default
+  }
+
+  private scoreExercisesFromDB(
+    exercises: DatabaseExercise[],
+    assessment: AssessmentData
+  ): ScoredExercise[] {
+    const painLocation = assessment.painLocation.toLowerCase();
+    const painType = assessment.painType.toLowerCase();
+    const symptoms = assessment.additionalSymptoms.map(s => s.toLowerCase());
+
+    // Build search terms from assessment
+    const searchTerms: string[] = [
+      painLocation,
+      painType,
+      ...symptoms,
+      assessment.painDuration.toLowerCase(),
+    ].filter(Boolean);
+
+    // Add common symptom keywords
+    if (painType.includes('stiff') || painType.includes('tight')) {
+      searchTerms.push('stiffness', 'mobility', 'flexibility');
+    }
+    if (painType.includes('ach') || painType.includes('dull')) {
+      searchTerms.push('mechanical', 'muscle tension', 'relief');
+    }
+    if (symptoms.some(s => s.includes('sit'))) {
+      searchTerms.push('sitting', 'flexion', 'posture');
+    }
+
+    const scored: ScoredExercise[] = exercises.map(exercise => {
+      let score = 0;
+      const matchReasons: string[] = [];
+
+      // Check body part match (highest priority)
+      const bodyPartsLower = (exercise.body_parts || []).map(b => b.toLowerCase());
+      if (bodyPartsLower.some(bp => painLocation.includes(bp) || bp.includes(painLocation.split(' ')[0]))) {
+        score += 40;
+        matchReasons.push(`Targets ${assessment.painLocation}`);
+      }
+
+      // Check conditions match
+      const conditionsLower = (exercise.conditions || []).map(c => c.toLowerCase());
+      for (const term of searchTerms) {
+        if (conditionsLower.some(c => c.includes(term) || term.includes(c.split(' ')[0]))) {
+          score += 15;
+          matchReasons.push(`Addresses ${term}`);
+          break; // Only count once per exercise
+        }
+      }
+
+      // Check keywords match
+      const keywordsLower = (exercise.keywords || []).map(k => k.toLowerCase());
+      let keywordMatches = 0;
+      for (const term of searchTerms) {
+        if (keywordsLower.some(k => k.includes(term) || term.includes(k))) {
+          keywordMatches++;
+        }
+      }
+      if (keywordMatches > 0) {
+        score += Math.min(keywordMatches * 5, 20);
+        matchReasons.push(`Matches ${keywordMatches} symptoms/keywords`);
+      }
+
+      // Bonus for beginner exercises with high pain
+      if (assessment.painLevel >= 6 && exercise.difficulty === 'Beginner') {
+        score += 10;
+        matchReasons.push('Appropriate for your pain level');
+      }
+
+      // Bonus for featured exercises
+      if ((exercise as any).is_featured) {
+        score += 5;
+      }
+
+      // Use display order as tiebreaker (lower order = earlier in sequence = higher score)
+      score += Math.max(0, 10 - (exercise.display_order || 0));
+
+      return { exercise, score, matchReasons };
+    });
+
+    // Sort by score descending, then by display_order ascending
+    return scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (a.exercise.display_order || 0) - (b.exercise.display_order || 0);
+    });
+  }
+
+  private inferCategory(exercise: DatabaseExercise): string {
+    const title = exercise.title.toLowerCase();
+    const keywords = (exercise.keywords || []).join(' ').toLowerCase();
+
+    if (title.includes('stretch') || keywords.includes('stretch') || keywords.includes('flexibility')) {
+      return 'stretch';
+    }
+    if (title.includes('strength') || keywords.includes('strengthen') || title.includes('superman')) {
+      return 'strengthening';
+    }
+    if (title.includes('mobility') || title.includes('cat') || title.includes('camel')) {
+      return 'mobility';
+    }
+    if (title.includes('nerve') || keywords.includes('nerve')) {
+      return 'nerve_glide';
+    }
+    if (title.includes('posture') || keywords.includes('posture')) {
+      return 'postural';
+    }
+    return 'mobility';
+  }
+
+  private generateSafetyNotes(assessment: AssessmentData, exercise: DatabaseExercise): string[] {
     const notes: string[] = [];
+
+    // Include exercise-specific safety notes from database
+    if (exercise.safety_notes && exercise.safety_notes.length > 0) {
+      notes.push(...exercise.safety_notes);
+    }
 
     // Pain level specific guidance
     if (assessment.painLevel >= 7) {
@@ -192,8 +399,8 @@ export class AssessmentService {
     }
 
     // Include exercise-specific contraindications
-    if (exercise.contraindications.length > 0) {
-      notes.push(`Avoid this exercise if you have: ${exercise.contraindications.join(', ')}.`);
+    if (exercise.contraindications && exercise.contraindications.length > 0) {
+      notes.push(`Avoid if you have: ${exercise.contraindications.join(', ')}.`);
     }
 
     // Duration-specific guidance
@@ -215,6 +422,36 @@ export class AssessmentService {
     notes.push('Consult with a healthcare provider if symptoms worsen or do not improve within 2 weeks.');
 
     return notes;
+  }
+
+  private generateRedFlagWarnings(exercise: DatabaseExercise): string[] {
+    const warnings: string[] = [];
+
+    if (exercise.contraindications && exercise.contraindications.length > 0) {
+      warnings.push(`Do not perform if you have: ${exercise.contraindications.join(', ')}`);
+    }
+
+    warnings.push('Stop immediately if you experience sharp shooting pain down the leg');
+    warnings.push('Seek medical attention if you develop bowel or bladder changes');
+
+    return warnings;
+  }
+
+  private generateProgressionTips(exercise: DatabaseExercise): string[] {
+    const tips: string[] = [];
+
+    if (exercise.difficulty === 'Beginner') {
+      tips.push('Once comfortable, increase hold time or repetitions gradually');
+      tips.push('Progress to the next exercise in the sequence when this feels easy');
+    } else if (exercise.difficulty === 'Intermediate') {
+      tips.push('Focus on control and form before increasing intensity');
+      tips.push('Can add resistance or increase range as tolerated');
+    } else {
+      tips.push('This is an advanced exercise - ensure proper form throughout');
+      tips.push('Consider working with a physical therapist for optimal technique');
+    }
+
+    return tips;
   }
 
   private generateNextSteps(assessment: AssessmentData, riskLevel: string): string[] {
