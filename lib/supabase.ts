@@ -7,6 +7,8 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Check if we're in a server-side rendering context
 const isSSR = typeof window === 'undefined';
@@ -33,9 +35,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// Lazy-loaded supabase client
-let _supabase: SupabaseClient | null = null;
-
 // No-op storage for SSR
 const noopStorage = {
   getItem: async () => null,
@@ -43,73 +42,55 @@ const noopStorage = {
   removeItem: async () => {},
 };
 
-// Get or create supabase client (lazy initialization for SSR compatibility)
-const getSupabase = (): SupabaseClient | null => {
-  if (_supabase) return _supabase;
-  if (!supabaseUrl || !supabaseAnonKey) return null;
-
-  // During SSR, create client with no-op storage
-  if (isSSR) {
-    _supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        storage: noopStorage,
-        autoRefreshToken: false,
-        persistSession: false,
-        detectSessionInUrl: false,
-      },
-    });
-    return _supabase;
-  }
-
-  // Client-side: determine storage based on platform
-  let storage: any = noopStorage;
-
-  try {
-    // Check if we're in React Native (not web)
-    const { Platform } = require('react-native');
-    if (Platform.OS !== 'web') {
-      // React Native - use AsyncStorage
-      storage = require('@react-native-async-storage/async-storage').default;
-    } else {
-      // Web browser - use localStorage
-      storage = {
-        getItem: async (key: string) => localStorage.getItem(key),
-        setItem: async (key: string, value: string) => localStorage.setItem(key, value),
-        removeItem: async (key: string) => localStorage.removeItem(key),
-      };
-    }
-  } catch {
-    // Fallback to localStorage if Platform check fails
+// Web storage wrapper
+const webStorage = {
+  getItem: async (key: string) => {
     if (typeof localStorage !== 'undefined') {
-      storage = {
-        getItem: async (key: string) => localStorage.getItem(key),
-        setItem: async (key: string, value: string) => localStorage.setItem(key, value),
-        removeItem: async (key: string) => localStorage.removeItem(key),
-      };
+      return localStorage.getItem(key);
     }
+    return null;
+  },
+  setItem: async (key: string, value: string) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, value);
+    }
+  },
+  removeItem: async (key: string) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(key);
+    }
+  },
+};
+
+// Determine the appropriate storage based on environment
+const getStorage = () => {
+  // SSR - use no-op
+  if (isSSR) {
+    return noopStorage;
   }
 
-  _supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  // React Native (iOS/Android) - use AsyncStorage
+  if (Platform.OS !== 'web') {
+    return AsyncStorage;
+  }
+
+  // Web browser - use localStorage wrapper
+  return webStorage;
+};
+
+// Create Supabase client
+let supabase: SupabaseClient | null = null;
+
+if (supabaseUrl && supabaseAnonKey) {
+  supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      storage,
-      autoRefreshToken: true,
-      persistSession: true,
+      storage: getStorage(),
+      autoRefreshToken: !isSSR,
+      persistSession: !isSSR,
       detectSessionInUrl: false,
     },
   });
-
-  return _supabase;
-};
-
-// Create a proxy that lazily initializes the client
-const supabase = new Proxy({} as SupabaseClient, {
-  get(_, prop) {
-    const client = getSupabase();
-    if (!client) return undefined;
-    const value = (client as any)[prop];
-    return typeof value === 'function' ? value.bind(client) : value;
-  },
-});
+}
 
 export { supabase, supabaseUrl, supabaseAnonKey };
 export default supabase;
