@@ -172,23 +172,36 @@ export default function ExercisesScreen() {
     }
   };
 
-  const openExerciseVideo = (url?: string) => {
+  const openExerciseVideo = (url?: string, debugInfo?: { id: string; title: string; youtubeVideoId?: string }) => {
     const videoUrl = url || 'https://youtube.com/@justinlemmodpt';
+
+    // Debug logging to trace video mapping issues
+    if (debugInfo) {
+      console.log('🎬 [VIDEO TAP DEBUG]', {
+        exerciseId: debugInfo.id,
+        title: debugInfo.title,
+        youtubeVideoId: debugInfo.youtubeVideoId || 'N/A',
+        fullUrl: videoUrl,
+      });
+    } else {
+      console.log('🎬 [VIDEO TAP]', { url: videoUrl });
+    }
+
     Linking.openURL(videoUrl).catch(() => {
       Alert.alert('Error', 'Unable to open video. Please try again later.');
     });
   };
 
-  const openAssessmentExerciseVideo = async (exerciseId: string, fallbackUrl?: string) => {
+  const openAssessmentExerciseVideo = async (exerciseId: string, exerciseTitle: string, fallbackUrl?: string) => {
     if (!supabase) {
-      openExerciseVideo(fallbackUrl);
+      openExerciseVideo(fallbackUrl, { id: exerciseId, title: exerciseTitle });
       return;
     }
 
     try {
       const { data, error } = await supabase
         .from('exercise_videos')
-        .select('youtube_video_id')
+        .select('youtube_video_id, title')
         .eq('id', exerciseId)
         .maybeSingle();
 
@@ -196,8 +209,9 @@ export default function ExercisesScreen() {
         console.error('Error fetching exercise video:', error);
       }
 
-      const resolvedUrl = data?.youtube_video_id
-        ? `https://www.youtube.com/watch?v=${data.youtube_video_id}`
+      const youtubeVideoId = data?.youtube_video_id;
+      const resolvedUrl = youtubeVideoId
+        ? `https://www.youtube.com/watch?v=${youtubeVideoId}`
         : fallbackUrl;
 
       if (!resolvedUrl) {
@@ -205,10 +219,15 @@ export default function ExercisesScreen() {
         return;
       }
 
-      openExerciseVideo(resolvedUrl);
+      // Debug logging with database-resolved data
+      openExerciseVideo(resolvedUrl, {
+        id: exerciseId,
+        title: data?.title || exerciseTitle,
+        youtubeVideoId: youtubeVideoId || undefined,
+      });
     } catch (fetchError) {
       console.error('Failed to resolve exercise video URL:', fetchError);
-      openExerciseVideo(fallbackUrl);
+      openExerciseVideo(fallbackUrl, { id: exerciseId, title: exerciseTitle });
     }
   };
 
@@ -389,6 +408,7 @@ export default function ExercisesScreen() {
                       style={styles.watchRecommendedButton}
                       onPress={() => openAssessmentExerciseVideo(
                         recommendation.exercise.id,
+                        recommendation.exercise.name,
                         recommendation.exercise.videoUrl
                       )}
                     >
@@ -579,9 +599,12 @@ export default function ExercisesScreen() {
                 
                 <Text style={styles.exerciseDescription}>{exercise.description}</Text>
                 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.watchVideoButton}
-                  onPress={() => openExerciseVideo(exercise.url)}
+                  onPress={() => openExerciseVideo(exercise.url, {
+                    id: exercise.id,
+                    title: exercise.title,
+                  })}
                 >
                   <Play size={16} color="#FFFFFF" />
                   <Text style={styles.watchVideoText}>Watch on YouTube</Text>
