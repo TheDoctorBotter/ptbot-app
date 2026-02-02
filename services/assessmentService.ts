@@ -498,16 +498,58 @@ export class AssessmentService {
     return steps;
   }
 
-  // Store assessment results using AsyncStorage (React Native compatible)
+  // Store assessment results using AsyncStorage (React Native compatible) AND Supabase
   async saveAssessmentResult(result: AssessmentResult): Promise<void> {
     try {
+      // Save to local storage for offline access
       const existingResults = await this.getStoredAssessments();
       const updatedResults = [result, ...existingResults.slice(0, 9)]; // Keep last 10
-
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedResults));
-      console.log('Assessment result saved:', result.id);
+      console.log('Assessment result saved locally:', result.id);
+
+      // Also save to Supabase for admin viewing
+      await this.saveAssessmentToSupabase(result);
     } catch (error) {
       console.error('Error saving assessment result:', error);
+    }
+  }
+
+  // Save assessment to Supabase database
+  private async saveAssessmentToSupabase(result: AssessmentResult): Promise<void> {
+    if (!supabase) {
+      console.warn('Supabase not configured, skipping cloud save');
+      return;
+    }
+
+    try {
+      // Get current user (may be null for anonymous assessments)
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const { error } = await supabase
+        .from('assessments')
+        .insert({
+          user_id: user?.id || null,
+          pain_level: result.assessment.painLevel,
+          pain_location: result.assessment.painLocation,
+          pain_duration: result.assessment.painDuration,
+          pain_type: result.assessment.painType,
+          mechanism_of_injury: result.assessment.mechanismOfInjury,
+          medications: result.assessment.medications,
+          additional_symptoms: result.assessment.additionalSymptoms,
+          red_flags: result.assessment.redFlags,
+          location: result.assessment.location,
+          risk_level: result.riskLevel,
+          next_steps: result.nextSteps,
+          recommendations: result.recommendations,
+        });
+
+      if (error) {
+        console.error('Error saving assessment to Supabase:', error);
+      } else {
+        console.log('Assessment saved to Supabase for user:', user?.email || 'anonymous');
+      }
+    } catch (error) {
+      console.error('Error saving assessment to Supabase:', error);
     }
   }
 
