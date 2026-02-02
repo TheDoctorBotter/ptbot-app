@@ -7,9 +7,10 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Activity, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Stethoscope, Brain, Heart, Shield, Dumbbell, Target, Info } from 'lucide-react-native';
+import { Activity, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Stethoscope, Brain, Heart, Shield, Dumbbell, Target, Info, Play } from 'lucide-react-native';
 import { AssessmentService } from '@/services/assessmentService';
 import type { AssessmentData, AssessmentResult, ExerciseRecommendation } from '@/services/assessmentService';
 import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
@@ -69,6 +70,13 @@ export default function AssessmentScreen() {
         next.add(exerciseId);
       }
       return next;
+    });
+  };
+
+  const openExerciseVideo = (videoUrl: string, exerciseName: string) => {
+    console.log('🎬 Opening video:', { exerciseName, videoUrl });
+    Linking.openURL(videoUrl).catch(() => {
+      Alert.alert('Error', 'Unable to open video. Please try again later.');
     });
   };
 
@@ -529,6 +537,21 @@ export default function AssessmentScreen() {
                 {rec.progressionTips.map((tip, i) => (
                   <Text key={i} style={styles.tipText}>• {tip}</Text>
                 ))}
+              </View>
+            )}
+
+            {/* Watch Video Button */}
+            {rec.exercise.videoUrl ? (
+              <TouchableOpacity
+                style={styles.watchVideoButton}
+                onPress={() => openExerciseVideo(rec.exercise.videoUrl!, rec.exercise.name)}
+              >
+                <Play size={16} color="#FFFFFF" />
+                <Text style={styles.watchVideoText}>Watch Exercise Video</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.noVideoContainer}>
+                <Text style={styles.noVideoText}>Video coming soon</Text>
               </View>
             )}
           </View>
@@ -1355,5 +1378,33 @@ const styles = StyleSheet.create({
     color: '#7F1D1D',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  watchVideoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary[500],
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  watchVideoText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  noVideoContainer: {
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  noVideoText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });

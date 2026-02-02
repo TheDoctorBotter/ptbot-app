@@ -16,6 +16,7 @@ import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert 
 import { supabase } from '@/lib/supabase';
 import ProfileTabs from '@/components/ProfileTabs';
 import { colors } from '@/constants/theme';
+import { AssessmentService } from '@/services/assessmentService';
 import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 interface UserProfile {
@@ -249,7 +250,7 @@ export default function AccountScreen() {
   const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
-      'Are you sure you want to sign out?',
+      'Are you sure you want to sign out? Your assessment data will be cleared.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -260,6 +261,11 @@ export default function AccountScreen() {
 
             setIsLoading(true);
             try {
+              // Clear assessment data first
+              const assessmentService = new AssessmentService();
+              await assessmentService.clearAssessments();
+              console.log('Assessment data cleared on sign out');
+
               // Use 'local' scope to clear session from this device
               const { error } = await supabase.auth.signOut({ scope: 'local' });
               if (error) {
@@ -271,6 +277,7 @@ export default function AccountScreen() {
                 setUser(null);
                 setShowProfileTabs(false);
                 clearForm();
+                Alert.alert('Signed Out', 'You have been signed out successfully. Take a new assessment when you sign back in.');
               }
             } catch (error) {
               console.error('Sign out error:', error);
