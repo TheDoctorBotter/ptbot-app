@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Activity, Chrome as Home, TrendingUp, Youtube, User } from 'lucide-react-native';
+import { Activity, Chrome as Home, Youtube, User } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 
 export default function TabLayout() {
@@ -38,15 +38,6 @@ export default function TabLayout() {
           title: 'Assessment',
           tabBarIcon: ({ size, color }) => (
             <Activity size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="progress"
-        options={{
-          title: 'Progress',
-          tabBarIcon: ({ size, color }) => (
-            <TrendingUp size={size} color={color} />
           ),
         }}
       />
