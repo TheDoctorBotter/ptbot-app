@@ -498,8 +498,17 @@ export class AssessmentService {
     return steps;
   }
 
+  // Consent data interface
+  interface ConsentData {
+    userEmail: string;
+    userPhone: string;
+    consentContact: boolean;
+    consentDataUse: boolean;
+    legalWaiverAccepted: boolean;
+  }
+
   // Store assessment results using AsyncStorage (React Native compatible) AND Supabase
-  async saveAssessmentResult(result: AssessmentResult): Promise<void> {
+  async saveAssessmentResult(result: AssessmentResult, consentData?: { userEmail: string; userPhone: string; consentContact: boolean; consentDataUse: boolean; legalWaiverAccepted: boolean }): Promise<void> {
     try {
       // Save to local storage for offline access
       const existingResults = await this.getStoredAssessments();
@@ -508,14 +517,14 @@ export class AssessmentService {
       console.log('Assessment result saved locally:', result.id);
 
       // Also save to Supabase for admin viewing
-      await this.saveAssessmentToSupabase(result);
+      await this.saveAssessmentToSupabase(result, consentData);
     } catch (error) {
       console.error('Error saving assessment result:', error);
     }
   }
 
   // Save assessment to Supabase database
-  private async saveAssessmentToSupabase(result: AssessmentResult): Promise<void> {
+  private async saveAssessmentToSupabase(result: AssessmentResult, consentData?: { userEmail: string; userPhone: string; consentContact: boolean; consentDataUse: boolean; legalWaiverAccepted: boolean }): Promise<void> {
     if (!supabase) {
       console.warn('Supabase not configured, skipping cloud save');
       return;
@@ -529,6 +538,8 @@ export class AssessmentService {
         .from('assessments')
         .insert({
           user_id: user?.id || null,
+          user_email: consentData?.userEmail || user?.email || null,
+          user_phone: consentData?.userPhone || null,
           pain_level: result.assessment.painLevel,
           pain_location: result.assessment.painLocation,
           pain_duration: result.assessment.painDuration,
@@ -541,12 +552,16 @@ export class AssessmentService {
           risk_level: result.riskLevel,
           next_steps: result.nextSteps,
           recommendations: result.recommendations,
+          consent_contact: consentData?.consentContact || false,
+          consent_data_use: consentData?.consentDataUse || false,
+          legal_waiver_accepted: consentData?.legalWaiverAccepted || false,
+          consent_timestamp: consentData ? new Date().toISOString() : null,
         });
 
       if (error) {
         console.error('Error saving assessment to Supabase:', error);
       } else {
-        console.log('Assessment saved to Supabase for user:', user?.email || 'anonymous');
+        console.log('Assessment saved to Supabase for user:', consentData?.userEmail || user?.email || 'anonymous');
       }
     } catch (error) {
       console.error('Error saving assessment to Supabase:', error);

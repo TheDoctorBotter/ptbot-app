@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,16 @@ import {
   TextInput,
   Alert,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Activity, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Stethoscope, Brain, Heart, Shield, Dumbbell, Target, Info, Play } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Activity, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Stethoscope, Brain, Heart, Shield, Dumbbell, Target, Info, Play, LogIn, Phone, Square, CheckSquare } from 'lucide-react-native';
 import { AssessmentService } from '@/services/assessmentService';
 import type { AssessmentData, AssessmentResult, ExerciseRecommendation } from '@/services/assessmentService';
 import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
 import { colors } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
 
 const redFlagSymptoms = [
   'Bowel or bladder dysfunction',
@@ -43,6 +46,7 @@ const additionalSymptoms = [
 ];
 
 export default function AssessmentScreen() {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [assessmentData, setAssessmentData] = useState<Partial<AssessmentData>>({
     painLevel: 0,
@@ -59,7 +63,44 @@ export default function AssessmentScreen() {
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
   const [expandedExercises, setExpandedExercises] = useState<Set<string>>(new Set());
 
+  // Auth state
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const [userEmail, setUserEmail] = useState('');
+  const [userPhone, setUserPhone] = useState('');
+
+  // Consent state
+  const [consentContact, setConsentContact] = useState(false);
+  const [consentDataUse, setConsentDataUse] = useState(false);
+  const [legalWaiverAccepted, setLegalWaiverAccepted] = useState(false);
+
   const assessmentService = new AssessmentService();
+
+  // Check authentication on mount
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    if (!supabase) {
+      setIsCheckingAuth(false);
+      return;
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      if (user) {
+        setUserEmail(user.email || '');
+        // Get phone from user metadata if available
+        setUserPhone(user.user_metadata?.phone || user.phone || '');
+      }
+    } catch (error) {
+      console.error('Error checking auth:', error);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
 
   const toggleExerciseExpanded = (exerciseId: string) => {
     setExpandedExercises(prev => {
@@ -80,7 +121,7 @@ export default function AssessmentScreen() {
     });
   };
 
-  const totalSteps = 7;
+  const totalSteps = 8; // Added consent step
 
   const nextStep = () => {
     if (currentStep < totalSteps) {
@@ -115,13 +156,24 @@ export default function AssessmentScreen() {
       return;
     }
 
+    // Validate consent
+    if (!consentContact || !consentDataUse || !legalWaiverAccepted) {
+      Alert.alert('Consent Required', 'Please accept all consent checkboxes and the legal waiver to continue.');
+      return;
+    }
+
+    if (!userPhone.trim() || userPhone.trim().length < 10) {
+      Alert.alert('Phone Required', 'Please enter a valid phone number.');
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
       // Check for red flags first
       if (assessmentData.redFlags && assessmentData.redFlags.length > 0) {
         showRedFlagWarning(assessmentData.redFlags);
-        
+
         // Send alert to medical professional
         await sendRedFlagAlert({
           symptoms: assessmentData.redFlags,
@@ -134,12 +186,17 @@ export default function AssessmentScreen() {
       // Process the assessment
       const result = await assessmentService.processAssessment(assessmentData as AssessmentData);
 
-      // Save the result (async)
-      await assessmentService.saveAssessmentResult(result);
+      // Save the result with consent data
+      await assessmentService.saveAssessmentResult(result, {
+        userEmail,
+        userPhone: userPhone.trim(),
+        consentContact,
+        consentDataUse,
+        legalWaiverAccepted,
+      });
 
       setAssessmentResult(result);
       setCurrentStep(totalSteps + 1); // Go to results step
-
 
     } catch (error) {
       console.error('Assessment processing error:', error);
@@ -168,6 +225,10 @@ export default function AssessmentScreen() {
     });
     setAssessmentResult(null);
     setExpandedExercises(new Set());
+    // Reset consent (keep phone number)
+    setConsentContact(false);
+    setConsentDataUse(false);
+    setLegalWaiverAccepted(false);
   };
 
   const renderProgressBar = () => (
@@ -443,6 +504,95 @@ export default function AssessmentScreen() {
           </View>
         );
 
+      case 8:
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Consent & Agreement</Text>
+            <Text style={styles.stepDescription}>
+              Please review and accept the following before submitting your assessment:
+            </Text>
+
+            {/* Phone Number Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Phone Number (required)</Text>
+              <View style={styles.phoneInputContainer}>
+                <Phone size={20} color="#9CA3AF" />
+                <TextInput
+                  style={styles.phoneInput}
+                  value={userPhone}
+                  onChangeText={setUserPhone}
+                  placeholder="(555) 123-4567"
+                  keyboardType="phone-pad"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+              <Text style={styles.inputHelper}>
+                We may contact you regarding your assessment results
+              </Text>
+            </View>
+
+            {/* Consent Checkboxes */}
+            <View style={styles.consentSection}>
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                onPress={() => setConsentContact(!consentContact)}
+              >
+                {consentContact ? (
+                  <CheckSquare size={24} color={colors.primary[500]} />
+                ) : (
+                  <Square size={24} color="#9CA3AF" />
+                )}
+                <Text style={styles.checkboxText}>
+                  I consent to being contacted by PTBot regarding my assessment results and any health concerns identified.
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                onPress={() => setConsentDataUse(!consentDataUse)}
+              >
+                {consentDataUse ? (
+                  <CheckSquare size={24} color={colors.primary[500]} />
+                ) : (
+                  <Square size={24} color="#9CA3AF" />
+                )}
+                <Text style={styles.checkboxText}>
+                  I consent to PTBot collecting and using my health information to provide personalized exercise recommendations and improve services.
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Legal Waiver */}
+            <View style={styles.legalWaiverContainer}>
+              <Text style={styles.legalWaiverTitle}>Legal Disclaimer & Waiver</Text>
+              <ScrollView style={styles.legalWaiverScroll} nestedScrollEnabled>
+                <Text style={styles.legalWaiverText}>
+                  By using PTBot, I acknowledge and agree to the following:{'\n\n'}
+                  1. <Text style={styles.legalBold}>Not Medical Advice:</Text> PTBot provides educational information and exercise recommendations only. It is NOT a substitute for professional medical advice, diagnosis, or treatment.{'\n\n'}
+                  2. <Text style={styles.legalBold}>Consult Healthcare Provider:</Text> I understand I should consult with a qualified healthcare provider before starting any exercise program, especially if I have existing health conditions.{'\n\n'}
+                  3. <Text style={styles.legalBold}>Assumption of Risk:</Text> I voluntarily assume all risks associated with using PTBot and performing any recommended exercises. I understand that physical activity carries inherent risks of injury.{'\n\n'}
+                  4. <Text style={styles.legalBold}>Release of Liability:</Text> I release PTBot, its creators, affiliates, and Dr. Justin Lemmo from any and all claims, damages, or liability arising from my use of this application or performance of recommended exercises.{'\n\n'}
+                  5. <Text style={styles.legalBold}>Emergency Situations:</Text> I understand that if I experience severe symptoms or medical emergencies, I should seek immediate medical attention and not rely on this application.
+                </Text>
+              </ScrollView>
+
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                onPress={() => setLegalWaiverAccepted(!legalWaiverAccepted)}
+              >
+                {legalWaiverAccepted ? (
+                  <CheckSquare size={24} color={colors.primary[500]} />
+                ) : (
+                  <Square size={24} color="#9CA3AF" />
+                )}
+                <Text style={styles.checkboxText}>
+                  I have read, understand, and agree to the above disclaimer and waiver. I acknowledge that PTBot is not a replacement for direct medical intervention.
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+
       default:
         return null;
     }
@@ -664,9 +814,58 @@ export default function AssessmentScreen() {
       case 5: return !!assessmentData.mechanismOfInjury?.trim();
       case 6: return true; // Additional symptoms are optional
       case 7: return true; // Red flags are optional but important
+      case 8: return userPhone.trim().length >= 10 && consentContact && consentDataUse && legalWaiverAccepted;
       default: return false;
     }
   };
+
+  // Show loading while checking auth
+  if (isCheckingAuth) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary[500]} />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Show login required screen if not logged in
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.headerLogo}>
+            <View style={styles.logoContainer}>
+              <Brain size={28} color="#FFFFFF" />
+              <Text style={styles.logoText}>PTBOT</Text>
+            </View>
+            <Text style={styles.headerTitle}>Symptom Assessment</Text>
+          </View>
+          <Text style={styles.headerSubtitle}>Help us understand your condition</Text>
+        </View>
+
+        <View style={styles.loginRequiredContainer}>
+          <LogIn size={64} color={colors.primary[500]} />
+          <Text style={styles.loginRequiredTitle}>Sign In Required</Text>
+          <Text style={styles.loginRequiredText}>
+            To take an assessment and receive personalized exercise recommendations, please sign in or create an account first.
+          </Text>
+          <Text style={styles.loginRequiredSubtext}>
+            We need your contact information to follow up on your assessment results and ensure your safety.
+          </Text>
+          <TouchableOpacity
+            style={styles.loginButton}
+            onPress={() => router.push('/account')}
+          >
+            <LogIn size={20} color="#FFFFFF" />
+            <Text style={styles.loginButtonText}>Go to Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // Show results if assessment is complete
   if (currentStep > totalSteps) {
@@ -1406,5 +1605,127 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+  // Loading and Login Required styles
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6B7280',
+  },
+  loginRequiredContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loginRequiredTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  loginRequiredText: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  loginRequiredSubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  loginButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary[500],
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 8,
+    gap: 8,
+  },
+  loginButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  // Consent step styles
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  phoneInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#FFFFFF',
+    gap: 8,
+  },
+  phoneInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  inputHelper: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 4,
+  },
+  consentSection: {
+    marginBottom: 20,
+    gap: 16,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  checkboxText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+  },
+  legalWaiverContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  legalWaiverTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  legalWaiverScroll: {
+    maxHeight: 200,
+    marginBottom: 16,
+  },
+  legalWaiverText: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 20,
+  },
+  legalBold: {
+    fontWeight: '600',
   },
 });
