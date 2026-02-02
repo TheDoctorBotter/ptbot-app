@@ -14,6 +14,7 @@ import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckC
 import { useAssessmentResults } from '@/hooks/useAssessmentResults';
 import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
 import type { ExerciseRecommendation } from '@/services/assessmentService';
+import { supabase } from '@/lib/supabase';
 import { colors } from '@/constants/theme';
 
 interface Exercise {
@@ -176,6 +177,39 @@ export default function ExercisesScreen() {
     Linking.openURL(videoUrl).catch(() => {
       Alert.alert('Error', 'Unable to open video. Please try again later.');
     });
+  };
+
+  const openAssessmentExerciseVideo = async (exerciseId: string, fallbackUrl?: string) => {
+    if (!supabase) {
+      openExerciseVideo(fallbackUrl);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('exercise_videos')
+        .select('youtube_video_id')
+        .eq('id', exerciseId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching exercise video:', error);
+      }
+
+      const resolvedUrl = data?.youtube_video_id
+        ? `https://www.youtube.com/watch?v=${data.youtube_video_id}`
+        : fallbackUrl;
+
+      if (!resolvedUrl) {
+        Alert.alert('Error', 'Video is unavailable for this exercise.');
+        return;
+      }
+
+      openExerciseVideo(resolvedUrl);
+    } catch (fetchError) {
+      console.error('Failed to resolve exercise video URL:', fetchError);
+      openExerciseVideo(fallbackUrl);
+    }
   };
 
   const searchExercises = async () => {
@@ -353,7 +387,10 @@ export default function ExercisesScreen() {
                   {recommendation.exercise.videoUrl ? (
                     <TouchableOpacity
                       style={styles.watchRecommendedButton}
-                      onPress={() => openExerciseVideo(recommendation.exercise.videoUrl!)}
+                      onPress={() => openAssessmentExerciseVideo(
+                        recommendation.exercise.id,
+                        recommendation.exercise.videoUrl
+                      )}
                     >
                       <Play size={16} color="#FFFFFF" />
                       <Text style={styles.watchRecommendedText}>Watch Exercise Video</Text>
