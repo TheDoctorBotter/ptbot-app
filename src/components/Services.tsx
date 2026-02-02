@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Check, MessageCircle, Calendar, Target, Loader2 } from 'lucide-react';
-import { stripeProducts } from '../stripe-config';
+import { stripeProducts, type StripeProduct } from '../stripe-config';
 import { supabase } from '../lib/supabase';
 
 interface ServicesProps {
@@ -71,13 +71,13 @@ export const Services: React.FC<ServicesProps> = ({ user, onShowAuth, id }) => {
     }
   };
 
-  const handleCheckout = async (priceId: string) => {
+  const handleCheckout = async (product: StripeProduct) => {
     if (!user) {
       onShowAuth();
       return;
     }
     
-    setCheckoutLoading(priceId);
+    setCheckoutLoading(product.priceId);
     
     try {
       if (!supabase) {
@@ -91,12 +91,6 @@ export const Services: React.FC<ServicesProps> = ({ user, onShowAuth, id }) => {
         return;
       }
 
-      const product = stripeProducts.find(p => p.priceId === priceId);
-      if (!product) {
-        alert('Product not found. Please try again.');
-        return;
-      }
-
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-checkout`, {
         method: 'POST',
         headers: {
@@ -104,7 +98,7 @@ export const Services: React.FC<ServicesProps> = ({ user, onShowAuth, id }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          price_id: priceId,
+          price_id: product.priceId,
           mode: product.mode,
           success_url: `${typeof window !== 'undefined' ? window.location.origin : ''}/success`,
           cancel_url: `${typeof window !== 'undefined' ? window.location.origin : ''}`,
@@ -190,7 +184,7 @@ export const Services: React.FC<ServicesProps> = ({ user, onShowAuth, id }) => {
                 </ul>
                 
                 <button
-                  onClick={() => handleCheckout(pkg!.priceId)}
+                  onClick={() => handleCheckout(pkg!)}
                   disabled={checkoutLoading === pkg!.priceId}
                   className={`w-full py-3 px-6 rounded-lg font-semibold transition-colors ${
                     pkg!.name === '12 Week Guided Program'
