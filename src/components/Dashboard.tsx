@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Calendar, CreditCard, Package, Clock, CheckCircle, MessageCircle, Target, Loader2, Check, Home, Plus, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getProductByPriceId, stripeProducts } from '../stripe-config';
+import { getProductByPriceId, stripeProducts, type StripeProduct } from '../stripe-config';
 
 interface DashboardProps {
   user: any;
@@ -92,24 +92,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
     });
   };
 
-  const handleCheckout = async (priceId: string) => {
+  const handleCheckout = async (product: StripeProduct) => {
     if (!supabase) {
       alert('Payment system is not configured. Please contact support.');
       return;
     }
     
-    setCheckoutLoading(priceId);
+    setCheckoutLoading(product.priceId);
     
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         alert('Please sign in again to continue.');
-        return;
-      }
-
-      const product = stripeProducts.find(p => p.priceId === priceId);
-      if (!product) {
-        alert('Product not found. Please try again.');
         return;
       }
 
@@ -120,7 +114,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          price_id: priceId,
+          price_id: product.priceId,
           mode: product.mode,
           success_url: `${typeof window !== 'undefined' ? window.location.origin : ''}/success`,
           cancel_url: `${typeof window !== 'undefined' ? window.location.origin : ''}`,
@@ -293,7 +287,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onGoHome }) => {
                           </div>
                         </div>
                         <button
-                          onClick={() => handleCheckout(pkg!.priceId)}
+                          onClick={() => handleCheckout(pkg!)}
                           disabled={checkoutLoading === pkg!.priceId}
                           className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
                             pkg!.name === '12 Week Guided Program'

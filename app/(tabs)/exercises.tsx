@@ -14,6 +14,7 @@ import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckC
 import { useAssessmentResults } from '@/hooks/useAssessmentResults';
 import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
 import type { ExerciseRecommendation } from '@/services/assessmentService';
+import { supabase } from '@/lib/supabase';
 import { colors } from '@/constants/theme';
 
 interface Exercise {
@@ -191,6 +192,45 @@ export default function ExercisesScreen() {
     });
   };
 
+  const openAssessmentExerciseVideo = async (exerciseId: string, exerciseTitle: string, fallbackUrl?: string) => {
+    if (!supabase) {
+      openExerciseVideo(fallbackUrl, { id: exerciseId, title: exerciseTitle });
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('exercise_videos')
+        .select('youtube_video_id, title')
+        .eq('id', exerciseId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching exercise video:', error);
+      }
+
+      const youtubeVideoId = data?.youtube_video_id;
+      const resolvedUrl = youtubeVideoId
+        ? `https://www.youtube.com/watch?v=${youtubeVideoId}`
+        : fallbackUrl;
+
+      if (!resolvedUrl) {
+        Alert.alert('Error', 'Video is unavailable for this exercise.');
+        return;
+      }
+
+      // Debug logging with database-resolved data
+      openExerciseVideo(resolvedUrl, {
+        id: exerciseId,
+        title: data?.title || exerciseTitle,
+        youtubeVideoId: youtubeVideoId || undefined,
+      });
+    } catch (fetchError) {
+      console.error('Failed to resolve exercise video URL:', fetchError);
+      openExerciseVideo(fallbackUrl, { id: exerciseId, title: exerciseTitle });
+    }
+  };
+
   const searchExercises = async () => {
     if (!searchQuery.trim()) {
       Alert.alert('Search Required', 'Please enter a description of your pain or symptoms.');
@@ -366,16 +406,11 @@ export default function ExercisesScreen() {
                   {recommendation.exercise.videoUrl ? (
                     <TouchableOpacity
                       style={styles.watchRecommendedButton}
-                      onPress={() => {
-                        // Extract youtube video ID from URL for debug logging
-                        const urlMatch = recommendation.exercise.videoUrl?.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
-                        const youtubeVideoId = urlMatch ? urlMatch[1] : undefined;
-                        openExerciseVideo(recommendation.exercise.videoUrl!, {
-                          id: recommendation.exercise.id,
-                          title: recommendation.exercise.name,
-                          youtubeVideoId,
-                        });
-                      }}
+                      onPress={() => openAssessmentExerciseVideo(
+                        recommendation.exercise.id,
+                        recommendation.exercise.name,
+                        recommendation.exercise.videoUrl
+                      )}
                     >
                       <Play size={16} color="#FFFFFF" />
                       <Text style={styles.watchRecommendedText}>Watch Exercise Video</Text>
