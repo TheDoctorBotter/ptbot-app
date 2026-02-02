@@ -247,48 +247,52 @@ export default function AccountScreen() {
   };
 
   // Handle Sign Out
-  const handleSignOut = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out? Your assessment data will be cleared.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            if (!supabase) return;
+  const handleSignOut = async () => {
+    if (!supabase) {
+      Alert.alert('Error', 'Authentication service not available.');
+      return;
+    }
 
-            setIsLoading(true);
-            try {
-              // Clear assessment data first
-              const assessmentService = new AssessmentService();
-              await assessmentService.clearAssessments();
-              console.log('Assessment data cleared on sign out');
+    setIsLoading(true);
+    console.log('Sign out button pressed - starting sign out process');
 
-              // Use 'local' scope to clear session from this device
-              const { error } = await supabase.auth.signOut({ scope: 'local' });
-              if (error) {
-                console.error('Sign out error:', error);
-                Alert.alert('Error', 'Failed to sign out. Please try again.');
-              } else {
-                // Explicitly clear state
-                setSession(null);
-                setUser(null);
-                setShowProfileTabs(false);
-                clearForm();
-                Alert.alert('Signed Out', 'You have been signed out successfully. Take a new assessment when you sign back in.');
-              }
-            } catch (error) {
-              console.error('Sign out error:', error);
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
-      ]
-    );
+    try {
+      // Clear assessment data first
+      const assessmentService = new AssessmentService();
+      await assessmentService.clearAssessments();
+      console.log('Assessment data cleared on sign out');
+
+      // Sign out from Supabase - use global scope to sign out everywhere
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        console.error('Sign out error:', error);
+        Alert.alert('Error', 'Failed to sign out. Please try again.');
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('Supabase sign out successful');
+
+      // Explicitly clear all state
+      setSession(null);
+      setUser(null);
+      setShowProfileTabs(false);
+      clearForm();
+      setIsLoading(false);
+
+      // Show success message
+      Alert.alert(
+        'Signed Out',
+        'You have been signed out successfully.',
+        [{ text: 'OK' }]
+      );
+
+    } catch (error) {
+      console.error('Sign out error:', error);
+      Alert.alert('Error', 'Failed to sign out. Please try again.');
+      setIsLoading(false);
+    }
   };
 
   // Handle password reset
