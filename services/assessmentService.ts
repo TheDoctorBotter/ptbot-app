@@ -498,15 +498,6 @@ export class AssessmentService {
     return steps;
   }
 
-  // Consent data interface
-  interface ConsentData {
-    userEmail: string;
-    userPhone: string;
-    consentContact: boolean;
-    consentDataUse: boolean;
-    legalWaiverAccepted: boolean;
-  }
-
   // Store assessment results using AsyncStorage (React Native compatible) AND Supabase
   async saveAssessmentResult(result: AssessmentResult, consentData?: { userEmail: string; userPhone: string; consentContact: boolean; consentDataUse: boolean; legalWaiverAccepted: boolean }): Promise<void> {
     try {
