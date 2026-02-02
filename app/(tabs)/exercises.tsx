@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,11 @@ import {
   Alert,
   Linking,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Calendar, Dumbbell, Search, Sparkles, Target } from 'lucide-react-native';
 import { useAssessmentResults } from '@/hooks/useAssessmentResults';
 import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
@@ -105,21 +108,94 @@ const previewExercises: Exercise[] = [
 ];
 
 export default function ExercisesScreen() {
+  const router = useRouter();
   const [exercises, setExercises] = useState<Exercise[]>(previewExercises);
+  const [databaseExercises, setDatabaseExercises] = useState<Exercise[]>([]);
   const [selectedBodyPart, setSelectedBodyPart] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingExercises, setIsLoadingExercises] = useState(false);
   const { latestAssessment, isLoading: assessmentLoading, refreshAssessment } = useAssessmentResults();
 
   const bodyParts = ['All', 'Lower Back', 'Upper Back', 'Neck', 'Shoulder', 'Hip', 'Knee', 'Ankle'];
 
-  const filteredExercises = exercises.filter(ex => {
-    const matchesBodyPart = selectedBodyPart === 'All' || ex.bodyPart === selectedBodyPart;
-    const matchesSearch = !searchQuery || 
+  // Refresh assessment data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      refreshAssessment();
+    }, [refreshAssessment])
+  );
+
+  // Fetch exercises from Supabase when body part changes
+  useEffect(() => {
+    fetchExercisesByBodyPart(selectedBodyPart);
+  }, [selectedBodyPart]);
+
+  const fetchExercisesByBodyPart = async (bodyPart: string) => {
+    if (!supabase) {
+      console.log('Supabase not configured, using preview exercises');
+      return;
+    }
+
+    setIsLoadingExercises(true);
+    try {
+      let query = supabase
+        .from('exercise_videos')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true })
+        .order('id', { ascending: true });
+
+      // Filter by body part if not "All"
+      if (bodyPart !== 'All') {
+        query = query.contains('body_parts', [bodyPart]);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching exercises:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const mappedExercises: Exercise[] = data.map((ex: any) => ({
+          id: ex.id,
+          title: ex.title,
+          bodyPart: ex.body_parts?.[0] || 'General',
+          duration: ex.recommended_hold_seconds
+            ? `${ex.recommended_hold_seconds}s hold`
+            : `${ex.recommended_sets || 2} sets`,
+          difficulty: ex.difficulty || 'Beginner',
+          description: ex.description || '',
+          url: ex.youtube_video_id
+            ? `https://www.youtube.com/watch?v=${ex.youtube_video_id}`
+            : 'https://youtube.com/@justinlemmodpt',
+          completed: false,
+        }));
+        setDatabaseExercises(mappedExercises);
+      } else {
+        setDatabaseExercises([]);
+      }
+    } catch (error) {
+      console.error('Error fetching exercises:', error);
+    } finally {
+      setIsLoadingExercises(false);
+    }
+  };
+
+  // Use database exercises if available, otherwise fall back to preview exercises
+  const exercisesToDisplay = databaseExercises.length > 0 ? databaseExercises : exercises;
+
+  const filteredExercises = exercisesToDisplay.filter(ex => {
+    const matchesBodyPart = selectedBodyPart === 'All' ||
+      ex.bodyPart.toLowerCase().includes(selectedBodyPart.toLowerCase()) ||
+      selectedBodyPart.toLowerCase().includes(ex.bodyPart.toLowerCase());
+    const matchesSearch = !searchQuery ||
       ex.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ex.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ex.bodyPart.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     return matchesBodyPart && matchesSearch;
   });
 
@@ -426,20 +502,9 @@ export default function ExercisesScreen() {
               );
             })}
             
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.newAssessmentButton}
-              onPress={() => {
-                Alert.alert(
-                  'New Assessment',
-                  'Complete a new assessment to get updated exercise recommendations based on your current symptoms.',
-                  [
-                    { text: 'Cancel' },
-                    { text: 'Go to Assessment', onPress: () => {
-                      console.log('Navigate to assessment tab');
-                    }}
-                  ]
-                );
-              }}
+              onPress={() => router.push('/assessment')}
             >
               <Sparkles size={16} color={colors.primary[500]} />
               <Text style={styles.newAssessmentText}>Take New Assessment</Text>
@@ -455,20 +520,9 @@ export default function ExercisesScreen() {
             <Text style={styles.noAssessmentDescription}>
               Complete the Assessment tab to receive AI-powered exercise recommendations specifically tailored to your symptoms and condition.
             </Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.assessmentButton}
-              onPress={() => {
-                Alert.alert(
-                  'Start Assessment',
-                  'The assessment will help us understand your symptoms and provide personalized exercise recommendations.',
-                  [
-                    { text: 'Cancel' },
-                    { text: 'Start Assessment', onPress: () => {
-                      console.log('Navigate to assessment tab');
-                    }}
-                  ]
-                );
-              }}
+              onPress={() => router.push('/assessment')}
             >
               <Target size={16} color="#FFFFFF" />
               <Text style={styles.assessmentButtonText}>Start Assessment</Text>
@@ -539,13 +593,21 @@ export default function ExercisesScreen() {
         {/* Exercise List */}
         <View style={styles.exerciseContainer}>
           <Text style={styles.exerciseTitle}>
-            {selectedBodyPart === 'All' 
-              ? `All Exercises (${filteredExercises.length})` 
+            {selectedBodyPart === 'All'
+              ? `All Exercises (${filteredExercises.length})`
               : `${selectedBodyPart} Exercises (${filteredExercises.length})`
             }
           </Text>
-          
-          {filteredExercises.length === 0 ? (
+          {databaseExercises.length > 0 && (
+            <Text style={styles.exerciseSource}>From Dr. Lemmo's exercise library</Text>
+          )}
+
+          {isLoadingExercises ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.primary[500]} />
+              <Text style={styles.loadingText}>Loading exercises...</Text>
+            </View>
+          ) : filteredExercises.length === 0 ? (
             <View style={styles.noResultsContainer}>
               <Text style={styles.noResultsText}>
                 No exercises found matching your criteria.
@@ -614,7 +676,7 @@ export default function ExercisesScreen() {
           )}
         </View>
 
-        {/* Progress Summary */}
+        {/* Progress Summary - based on database exercises */}
         <View style={styles.progressSummary}>
           <Text style={styles.progressTitle}>Today's Progress</Text>
           <View style={styles.progressStats}>
@@ -1191,6 +1253,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  exerciseSource: {
+    fontSize: 12,
+    color: '#10B981',
+    marginBottom: 12,
     fontStyle: 'italic',
   },
 });
