@@ -162,11 +162,13 @@ export class AssessmentService {
       const sectionSlug = this.bodyPartToSectionSlug(assessment.painLocation);
 
       // Step 2: Query exercises from Supabase
+      // Use explicit ordering: display_order first, then id for deterministic results
       const { data: exercises, error } = await supabase
         .from('exercise_videos')
         .select('*')
         .eq('is_active', true)
-        .order('display_order', { ascending: true });
+        .order('display_order', { ascending: true })
+        .order('id', { ascending: true });
 
       if (error) {
         console.error('Error fetching exercises from Supabase:', error);
@@ -354,10 +356,13 @@ export class AssessmentService {
       return { exercise, score, matchReasons };
     });
 
-    // Sort by score descending, then by display_order ascending
+    // Sort by score descending, then by display_order ascending, then by id for determinism
     return scored.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      return (a.exercise.display_order || 0) - (b.exercise.display_order || 0);
+      const orderDiff = (a.exercise.display_order || 0) - (b.exercise.display_order || 0);
+      if (orderDiff !== 0) return orderDiff;
+      // Tertiary sort by id ensures consistent ordering when score and display_order are equal
+      return a.exercise.id.localeCompare(b.exercise.id);
     });
   }
 

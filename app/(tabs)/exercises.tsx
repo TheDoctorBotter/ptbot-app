@@ -171,8 +171,21 @@ export default function ExercisesScreen() {
     }
   };
 
-  const openExerciseVideo = (url?: string) => {
+  const openExerciseVideo = (url?: string, debugInfo?: { id: string; title: string; youtubeVideoId?: string }) => {
     const videoUrl = url || 'https://youtube.com/@justinlemmodpt';
+
+    // Debug logging to trace video mapping issues
+    if (debugInfo) {
+      console.log('🎬 [VIDEO TAP DEBUG]', {
+        exerciseId: debugInfo.id,
+        title: debugInfo.title,
+        youtubeVideoId: debugInfo.youtubeVideoId || 'N/A',
+        fullUrl: videoUrl,
+      });
+    } else {
+      console.log('🎬 [VIDEO TAP]', { url: videoUrl });
+    }
+
     Linking.openURL(videoUrl).catch(() => {
       Alert.alert('Error', 'Unable to open video. Please try again later.');
     });
@@ -353,7 +366,16 @@ export default function ExercisesScreen() {
                   {recommendation.exercise.videoUrl ? (
                     <TouchableOpacity
                       style={styles.watchRecommendedButton}
-                      onPress={() => openExerciseVideo(recommendation.exercise.videoUrl!)}
+                      onPress={() => {
+                        // Extract youtube video ID from URL for debug logging
+                        const urlMatch = recommendation.exercise.videoUrl?.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+                        const youtubeVideoId = urlMatch ? urlMatch[1] : undefined;
+                        openExerciseVideo(recommendation.exercise.videoUrl!, {
+                          id: recommendation.exercise.id,
+                          title: recommendation.exercise.name,
+                          youtubeVideoId,
+                        });
+                      }}
                     >
                       <Play size={16} color="#FFFFFF" />
                       <Text style={styles.watchRecommendedText}>Watch Exercise Video</Text>
@@ -542,9 +564,12 @@ export default function ExercisesScreen() {
                 
                 <Text style={styles.exerciseDescription}>{exercise.description}</Text>
                 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.watchVideoButton}
-                  onPress={() => openExerciseVideo(exercise.url)}
+                  onPress={() => openExerciseVideo(exercise.url, {
+                    id: exercise.id,
+                    title: exercise.title,
+                  })}
                 >
                   <Play size={16} color="#FFFFFF" />
                   <Text style={styles.watchVideoText}>Watch on YouTube</Text>
