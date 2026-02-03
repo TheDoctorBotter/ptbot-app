@@ -499,7 +499,23 @@ export class AssessmentService {
   }
 
   // Store assessment results using AsyncStorage (React Native compatible) AND Supabase
-  async saveAssessmentResult(result: AssessmentResult, consentData?: { userEmail: string; userPhone: string; consentContact: boolean; consentDataUse: boolean; legalWaiverAccepted: boolean }): Promise<void> {
+  async saveAssessmentResult(result: AssessmentResult, consentData?: {
+    userEmail: string;
+    userPhone: string;
+    consentContact: boolean;
+    consentDataUse: boolean;
+    legalWaiverAccepted: boolean;
+    // Post-op data
+    surgeryStatus?: string;
+    postOpRegion?: string | null;
+    surgeryType?: string | null;
+    procedureModifier?: string | null;
+    weeksSinceSurgery?: string | null;
+    weightBearingStatus?: string | null;
+    surgeonPrecautions?: string | null;
+    protocolKeySelected?: string | null;
+    phaseNumberSelected?: number | null;
+  }): Promise<void> {
     try {
       // Save to local storage for offline access
       const existingResults = await this.getStoredAssessments();
@@ -515,7 +531,22 @@ export class AssessmentService {
   }
 
   // Save assessment to Supabase database
-  private async saveAssessmentToSupabase(result: AssessmentResult, consentData?: { userEmail: string; userPhone: string; consentContact: boolean; consentDataUse: boolean; legalWaiverAccepted: boolean }): Promise<void> {
+  private async saveAssessmentToSupabase(result: AssessmentResult, consentData?: {
+    userEmail: string;
+    userPhone: string;
+    consentContact: boolean;
+    consentDataUse: boolean;
+    legalWaiverAccepted: boolean;
+    surgeryStatus?: string;
+    postOpRegion?: string | null;
+    surgeryType?: string | null;
+    procedureModifier?: string | null;
+    weeksSinceSurgery?: string | null;
+    weightBearingStatus?: string | null;
+    surgeonPrecautions?: string | null;
+    protocolKeySelected?: string | null;
+    phaseNumberSelected?: number | null;
+  }): Promise<void> {
     if (!supabase) {
       console.warn('Supabase not configured, skipping cloud save');
       return;
@@ -547,6 +578,16 @@ export class AssessmentService {
           consent_data_use: consentData?.consentDataUse || false,
           legal_waiver_accepted: consentData?.legalWaiverAccepted || false,
           consent_timestamp: consentData ? new Date().toISOString() : null,
+          // Post-op data
+          surgery_status: consentData?.surgeryStatus || null,
+          post_op_region: consentData?.postOpRegion || null,
+          surgery_type: consentData?.surgeryType || null,
+          procedure_modifier: consentData?.procedureModifier || null,
+          weeks_since_surgery: consentData?.weeksSinceSurgery || null,
+          weight_bearing_status: consentData?.weightBearingStatus || null,
+          surgeon_precautions: consentData?.surgeonPrecautions || null,
+          protocol_key_selected: consentData?.protocolKeySelected || null,
+          phase_number_selected: consentData?.phaseNumberSelected || null,
         });
 
       if (error) {
