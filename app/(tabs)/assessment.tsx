@@ -45,6 +45,59 @@ const additionalSymptoms = [
   'Dizziness',
 ];
 
+// Post-op surgery type mappings
+const surgeryTypesByRegion: Record<string, { label: string; key: string; hasModifier?: boolean; modifiers?: string[] }[]> = {
+  'Shoulder': [
+    { label: 'Rotator Cuff Repair', key: 'rotator_cuff_repair', hasModifier: true, modifiers: ['Grade 1 (Small Tear)', 'Grade 2 (Medium Tear)', 'Grade 3 (Large/Massive Tear)'] },
+    { label: 'Labral Repair (SLAP/Bankart)', key: 'labral_repair' },
+    { label: 'Shoulder Stabilization', key: 'stabilization' },
+    { label: 'Total Shoulder Arthroplasty', key: 'total_shoulder_arthroplasty' },
+    { label: 'Reverse Total Shoulder Arthroplasty', key: 'reverse_total_shoulder_arthroplasty' },
+  ],
+  'Knee': [
+    { label: 'ACL Reconstruction', key: 'acl_reconstruction' },
+    { label: 'PCL Reconstruction', key: 'pcl_reconstruction' },
+    { label: 'Meniscus Repair', key: 'meniscus_repair' },
+    { label: 'Partial Meniscectomy', key: 'partial_meniscectomy' },
+    { label: 'Patellar Tendon Repair', key: 'patellar_tendon_repair' },
+    { label: 'Total Knee Arthroplasty', key: 'total_knee_arthroplasty' },
+  ],
+  'Hip': [
+    { label: 'Total Hip Arthroplasty (Anterior)', key: 'total_hip_arthroplasty_anterior' },
+    { label: 'Total Hip Arthroplasty (Posterior)', key: 'total_hip_arthroplasty_posterior' },
+    { label: 'Hip Labral Repair', key: 'labral_repair' },
+    { label: 'FAI Surgery', key: 'fai_surgery' },
+  ],
+  'Elbow': [
+    { label: 'UCL Reconstruction (Tommy John)', key: 'ucl_reconstruction' },
+    { label: 'UCL Repair', key: 'ucl_repair' },
+    { label: 'Distal Biceps Tendon Repair', key: 'distal_biceps_repair' },
+    { label: 'Lateral Epicondyle Repair', key: 'lateral_epicondyle_repair' },
+  ],
+  'Foot/Ankle': [
+    { label: 'Achilles Tendon Repair', key: 'achilles_tendon_repair' },
+    { label: 'Ankle Ligament Reconstruction', key: 'ankle_ligament_reconstruction' },
+    { label: 'Ankle Arthroscopy', key: 'ankle_arthroscopy' },
+    { label: 'Plantar Fascia Release', key: 'plantar_fascia_release' },
+    { label: 'Lisfranc Repair', key: 'lisfranc_repair' },
+  ],
+};
+
+const weeksSinceSurgeryOptions = [
+  '0-2 weeks',
+  '2-6 weeks',
+  '6-12 weeks',
+  '12+ weeks',
+];
+
+const weightBearingOptions = [
+  'Non-weight-bearing (NWB)',
+  'Partial weight-bearing (PWB)',
+  'Weight-bearing as tolerated (WBAT)',
+  'Full weight-bearing',
+  'Not sure',
+];
+
 export default function AssessmentScreen() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
@@ -73,6 +126,15 @@ export default function AssessmentScreen() {
   const [consentContact, setConsentContact] = useState(false);
   const [consentDataUse, setConsentDataUse] = useState(false);
   const [legalWaiverAccepted, setLegalWaiverAccepted] = useState(false);
+
+  // Post-op state
+  const [surgeryStatus, setSurgeryStatus] = useState<'no_surgery' | 'post_op' | 'not_sure' | ''>('');
+  const [postOpRegion, setPostOpRegion] = useState('');
+  const [surgeryType, setSurgeryType] = useState('');
+  const [procedureModifier, setProcedureModifier] = useState('');
+  const [weeksSinceSurgery, setWeeksSinceSurgery] = useState('');
+  const [weightBearingStatus, setWeightBearingStatus] = useState('');
+  const [surgeonPrecautions, setSurgeonPrecautions] = useState<'yes' | 'no' | 'not_sure' | ''>('');
 
   const assessmentService = new AssessmentService();
 
@@ -121,7 +183,48 @@ export default function AssessmentScreen() {
     });
   };
 
-  const totalSteps = 8; // Added consent step
+  // Calculate total steps based on surgery status
+  const getStepConfig = () => {
+    // Base steps: 1-Pain Level, 2-Pain Location, 3-Surgery Status
+    // Then continue with: 4-Duration, 5-Pain Type, 6-Mechanism, 7-Additional, 8-Red Flags, 9-Consent
+    // Post-op adds: Region, Surgery Type, (Modifier), Weeks, (Weight Bearing), Precautions
+
+    const isPostOp = surgeryStatus === 'post_op';
+    const isLowerExtremity = ['Knee', 'Hip', 'Foot/Ankle'].includes(postOpRegion);
+    const selectedSurgery = surgeryTypesByRegion[postOpRegion]?.find(s => s.key === surgeryType);
+    const needsModifier = selectedSurgery?.hasModifier && selectedSurgery?.modifiers;
+
+    let steps = [
+      'painLevel',        // 1
+      'painLocation',     // 2
+      'surgeryStatus',    // 3
+    ];
+
+    if (isPostOp) {
+      steps.push('postOpRegion');      // 4
+      steps.push('surgeryType');       // 5
+      if (needsModifier) {
+        steps.push('procedureModifier'); // 6
+      }
+      steps.push('weeksSinceSurgery'); // 6 or 7
+      if (isLowerExtremity) {
+        steps.push('weightBearing');   // 7 or 8
+      }
+      steps.push('surgeonPrecautions'); // 8 or 9
+    }
+
+    steps.push('painDuration');        // varies
+    steps.push('painType');
+    steps.push('mechanism');
+    steps.push('additionalSymptoms');
+    steps.push('redFlags');
+    steps.push('consent');
+
+    return steps;
+  };
+
+  const stepConfig = getStepConfig();
+  const totalSteps = stepConfig.length;
 
   const nextStep = () => {
     if (currentStep < totalSteps) {
@@ -181,18 +284,46 @@ export default function AssessmentScreen() {
           location: assessmentData.location || 'Unknown',
           timestamp: new Date().toISOString(),
         });
+
+        // If red flags, don't proceed with recommendations
+        setAssessmentResult({
+          riskLevel: 'critical',
+          recommendations: [],
+          nextSteps: [
+            'Please seek immediate medical attention',
+            'Contact your healthcare provider or call 911 if symptoms are severe',
+            'Do not attempt exercises until cleared by a medical professional',
+          ],
+          summary: 'Red flag symptoms detected. Please consult a healthcare professional.',
+        });
+        setCurrentStep(totalSteps + 1);
+        return;
       }
 
-      // Process the assessment
+      // Generate protocol key and phase for post-op patients
+      const protocolKey = generateProtocolKey();
+      const safePhase = getSafePhase();
+
+      // Process the assessment with post-op data
       const result = await assessmentService.processAssessment(assessmentData as AssessmentData);
 
-      // Save the result with consent data
+      // Save the result with consent and post-op data
       await assessmentService.saveAssessmentResult(result, {
         userEmail,
         userPhone: userPhone.trim(),
         consentContact,
         consentDataUse,
         legalWaiverAccepted,
+        // Post-op data
+        surgeryStatus,
+        postOpRegion: surgeryStatus === 'post_op' ? postOpRegion : null,
+        surgeryType: surgeryStatus === 'post_op' ? surgeryType : null,
+        procedureModifier: surgeryStatus === 'post_op' ? procedureModifier : null,
+        weeksSinceSurgery: surgeryStatus === 'post_op' ? weeksSinceSurgery : null,
+        weightBearingStatus: surgeryStatus === 'post_op' ? weightBearingStatus : null,
+        surgeonPrecautions: surgeryStatus === 'post_op' ? surgeonPrecautions : null,
+        protocolKeySelected: protocolKey,
+        phaseNumberSelected: surgeryStatus === 'post_op' ? safePhase : null,
       });
 
       setAssessmentResult(result);
@@ -229,6 +360,74 @@ export default function AssessmentScreen() {
     setConsentContact(false);
     setConsentDataUse(false);
     setLegalWaiverAccepted(false);
+    // Reset post-op state
+    setSurgeryStatus('');
+    setPostOpRegion('');
+    setSurgeryType('');
+    setProcedureModifier('');
+    setWeeksSinceSurgery('');
+    setWeightBearingStatus('');
+    setSurgeonPrecautions('');
+  };
+
+  // Generate protocol key from post-op selections
+  const generateProtocolKey = (): string | null => {
+    if (surgeryStatus !== 'post_op' || !postOpRegion || !surgeryType) {
+      return null;
+    }
+
+    const regionKey = postOpRegion.toLowerCase().replace(/\//g, '_');
+    let key = `${regionKey}_${surgeryType}`;
+
+    // Add modifier for rotator cuff
+    if (surgeryType === 'rotator_cuff_repair' && procedureModifier) {
+      if (procedureModifier.includes('Grade 1')) {
+        key += '_grade1';
+      } else if (procedureModifier.includes('Grade 2')) {
+        key += '_grade2';
+      } else if (procedureModifier.includes('Grade 3')) {
+        key += '_grade3';
+      }
+    }
+
+    return key;
+  };
+
+  // Determine phase based on weeks since surgery
+  const determinePhase = (): number => {
+    if (!weeksSinceSurgery) return 1;
+
+    // Conservative phase mapping based on time
+    if (weeksSinceSurgery === '0-2 weeks') return 1;
+    if (weeksSinceSurgery === '2-6 weeks') return 2;
+    if (weeksSinceSurgery === '6-12 weeks') return 3;
+    if (weeksSinceSurgery === '12+ weeks') return 4;
+
+    return 1;
+  };
+
+  // Apply safety gates for phase progression
+  const getSafePhase = (): number => {
+    let phase = determinePhase();
+
+    // Safety gate: high pain keeps user at earlier phase
+    if (assessmentData.painLevel && assessmentData.painLevel >= 7) {
+      phase = Math.min(phase, 1);
+    }
+
+    // Safety gate: swelling or severe symptoms
+    const severeSymptoms = ['Swelling', 'Numbness or tingling', 'Muscle weakness'];
+    const hasSevereSymptoms = assessmentData.additionalSymptoms?.some(s => severeSymptoms.includes(s));
+    if (hasSevereSymptoms && phase > 2) {
+      phase = 2;
+    }
+
+    // Safety gate: NWB status limits functional progression
+    if (weightBearingStatus === 'Non-weight-bearing (NWB)' && phase > 2) {
+      phase = 2;
+    }
+
+    return phase;
   };
 
   const renderProgressBar = () => (
@@ -248,15 +447,18 @@ export default function AssessmentScreen() {
   );
 
   const renderStep = () => {
-    switch (currentStep) {
-      case 1:
+    const currentStepName = stepConfig[currentStep - 1];
+    const selectedSurgery = surgeryTypesByRegion[postOpRegion]?.find(s => s.key === surgeryType);
+
+    switch (currentStepName) {
+      case 'painLevel':
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>Pain Level Assessment</Text>
             <Text style={styles.stepDescription}>
               On a scale of 0-10, how would you rate your current pain level?
             </Text>
-            
+
             <View style={styles.painLevelContainer}>
               {[...Array(11)].map((_, i) => (
                 <TouchableOpacity
@@ -279,7 +481,7 @@ export default function AssessmentScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-            
+
             <View style={styles.painLevelLabels}>
               <Text style={styles.painLevelLabel}>No Pain</Text>
               <Text style={styles.painLevelLabel}>Worst Possible</Text>
@@ -287,14 +489,14 @@ export default function AssessmentScreen() {
           </View>
         );
 
-      case 2:
+      case 'painLocation':
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>Pain Location</Text>
             <Text style={styles.stepDescription}>
               Where is your pain located? Select the primary area.
             </Text>
-            
+
             <View style={styles.locationGrid}>
               {[
                 'Neck', 'Upper Back', 'Lower Back', 'Shoulder',
@@ -322,14 +524,284 @@ export default function AssessmentScreen() {
           </View>
         );
 
-      case 3:
+      case 'surgeryStatus':
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Surgery Status</Text>
+            <Text style={styles.stepDescription}>
+              Have you had surgery related to your current symptoms?
+            </Text>
+
+            <View style={styles.durationContainer}>
+              {[
+                { value: 'no_surgery', label: 'No surgery / not post-op' },
+                { value: 'post_op', label: 'Post-op (I had surgery)' },
+                { value: 'not_sure', label: "I'm not sure" },
+              ].map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.durationButton,
+                    surgeryStatus === option.value && styles.durationButtonSelected,
+                  ]}
+                  onPress={() => {
+                    setSurgeryStatus(option.value as any);
+                    // Reset post-op fields if not post-op
+                    if (option.value !== 'post_op') {
+                      setPostOpRegion('');
+                      setSurgeryType('');
+                      setProcedureModifier('');
+                      setWeeksSinceSurgery('');
+                      setWeightBearingStatus('');
+                      setSurgeonPrecautions('');
+                    }
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.durationButtonText,
+                      surgeryStatus === option.value && styles.durationButtonTextSelected,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {surgeryStatus === 'not_sure' && (
+              <View style={styles.redFlagNote}>
+                <Info size={16} color="#F59E0B" />
+                <Text style={styles.redFlagNoteText}>
+                  If you're unsure about your surgical history, we recommend consulting with your healthcare provider.
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+
+      case 'postOpRegion':
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Surgery Body Region</Text>
+            <Text style={styles.stepDescription}>
+              Which body region was your surgery on?
+            </Text>
+
+            <View style={styles.locationGrid}>
+              {['Shoulder', 'Knee', 'Hip', 'Elbow', 'Foot/Ankle'].map((region) => (
+                <TouchableOpacity
+                  key={region}
+                  style={[
+                    styles.locationButton,
+                    postOpRegion === region && styles.locationButtonSelected,
+                  ]}
+                  onPress={() => {
+                    setPostOpRegion(region);
+                    setSurgeryType(''); // Reset surgery type when region changes
+                    setProcedureModifier('');
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.locationButtonText,
+                      postOpRegion === region && styles.locationButtonTextSelected,
+                    ]}
+                  >
+                    {region}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        );
+
+      case 'surgeryType':
+        const surgeryOptions = surgeryTypesByRegion[postOpRegion] || [];
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Surgery Type</Text>
+            <Text style={styles.stepDescription}>
+              What type of surgery did you have?
+            </Text>
+
+            <View style={styles.durationContainer}>
+              {surgeryOptions.map((surgery) => (
+                <TouchableOpacity
+                  key={surgery.key}
+                  style={[
+                    styles.durationButton,
+                    surgeryType === surgery.key && styles.durationButtonSelected,
+                  ]}
+                  onPress={() => {
+                    setSurgeryType(surgery.key);
+                    setProcedureModifier(''); // Reset modifier when surgery changes
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.durationButtonText,
+                      surgeryType === surgery.key && styles.durationButtonTextSelected,
+                    ]}
+                  >
+                    {surgery.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        );
+
+      case 'procedureModifier':
+        const modifiers = selectedSurgery?.modifiers || [];
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Procedure Details</Text>
+            <Text style={styles.stepDescription}>
+              Please specify the grade or type of your {selectedSurgery?.label}:
+            </Text>
+
+            <View style={styles.durationContainer}>
+              {modifiers.map((modifier) => (
+                <TouchableOpacity
+                  key={modifier}
+                  style={[
+                    styles.durationButton,
+                    procedureModifier === modifier && styles.durationButtonSelected,
+                  ]}
+                  onPress={() => setProcedureModifier(modifier)}
+                >
+                  <Text
+                    style={[
+                      styles.durationButtonText,
+                      procedureModifier === modifier && styles.durationButtonTextSelected,
+                    ]}
+                  >
+                    {modifier}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        );
+
+      case 'weeksSinceSurgery':
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Time Since Surgery</Text>
+            <Text style={styles.stepDescription}>
+              How long ago was your surgery?
+            </Text>
+
+            <View style={styles.durationContainer}>
+              {weeksSinceSurgeryOptions.map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    styles.durationButton,
+                    weeksSinceSurgery === option && styles.durationButtonSelected,
+                  ]}
+                  onPress={() => setWeeksSinceSurgery(option)}
+                >
+                  <Text
+                    style={[
+                      styles.durationButtonText,
+                      weeksSinceSurgery === option && styles.durationButtonTextSelected,
+                    ]}
+                  >
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        );
+
+      case 'weightBearing':
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Weight-Bearing Status</Text>
+            <Text style={styles.stepDescription}>
+              What is your current weight-bearing status as instructed by your surgeon?
+            </Text>
+
+            <View style={styles.durationContainer}>
+              {weightBearingOptions.map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    styles.durationButton,
+                    weightBearingStatus === option && styles.durationButtonSelected,
+                  ]}
+                  onPress={() => setWeightBearingStatus(option)}
+                >
+                  <Text
+                    style={[
+                      styles.durationButtonText,
+                      weightBearingStatus === option && styles.durationButtonTextSelected,
+                    ]}
+                  >
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        );
+
+      case 'surgeonPrecautions':
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Surgeon Restrictions</Text>
+            <Text style={styles.stepDescription}>
+              Has your surgeon given you specific movement restrictions or precautions?
+            </Text>
+
+            <View style={styles.durationContainer}>
+              {[
+                { value: 'yes', label: 'Yes, I have restrictions' },
+                { value: 'no', label: 'No restrictions that I know of' },
+                { value: 'not_sure', label: 'Not sure' },
+              ].map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.durationButton,
+                    surgeonPrecautions === option.value && styles.durationButtonSelected,
+                  ]}
+                  onPress={() => setSurgeonPrecautions(option.value as any)}
+                >
+                  <Text
+                    style={[
+                      styles.durationButtonText,
+                      surgeonPrecautions === option.value && styles.durationButtonTextSelected,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {surgeonPrecautions === 'yes' && (
+              <View style={styles.redFlagNote}>
+                <Shield size={16} color="#F59E0B" />
+                <Text style={styles.redFlagNoteText}>
+                  Please follow your surgeon's specific instructions. Our recommendations will be conservative to respect your recovery.
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+
+      case 'painDuration':
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>Pain Duration</Text>
             <Text style={styles.stepDescription}>
               How long have you been experiencing this pain?
             </Text>
-            
+
             <View style={styles.durationContainer}>
               {[
                 'Less than 1 week',
@@ -360,14 +832,14 @@ export default function AssessmentScreen() {
           </View>
         );
 
-      case 4:
+      case 'painType':
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>Pain Type</Text>
             <Text style={styles.stepDescription}>
               How would you describe your pain? (Select all that apply)
             </Text>
-            
+
             <View style={styles.painTypeContainer}>
               {[
                 'Sharp/Stabbing',
@@ -407,14 +879,14 @@ export default function AssessmentScreen() {
           </View>
         );
 
-      case 5:
+      case 'mechanism':
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>How did this start?</Text>
             <Text style={styles.stepDescription}>
               Describe what caused your pain or how it began.
             </Text>
-            
+
             <TextInput
               style={styles.textAreaInput}
               value={assessmentData.mechanismOfInjury}
@@ -427,14 +899,14 @@ export default function AssessmentScreen() {
           </View>
         );
 
-      case 6:
+      case 'additionalSymptoms':
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>Additional Symptoms</Text>
             <Text style={styles.stepDescription}>
               Select any additional symptoms you're experiencing:
             </Text>
-            
+
             <View style={styles.symptomsContainer}>
               {additionalSymptoms.map((symptom) => (
                 <TouchableOpacity
@@ -459,7 +931,7 @@ export default function AssessmentScreen() {
           </View>
         );
 
-      case 7:
+      case 'redFlags':
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>⚠️ Red Flag Screening</Text>
@@ -504,7 +976,7 @@ export default function AssessmentScreen() {
           </View>
         );
 
-      case 8:
+      case 'consent':
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.stepTitle}>Consent & Agreement</Text>
@@ -806,16 +1278,42 @@ export default function AssessmentScreen() {
   };
 
   const canProceed = () => {
-    switch (currentStep) {
-      case 1: return assessmentData.painLevel !== undefined && assessmentData.painLevel > 0;
-      case 2: return !!assessmentData.painLocation;
-      case 3: return !!assessmentData.painDuration;
-      case 4: return !!assessmentData.painType;
-      case 5: return !!assessmentData.mechanismOfInjury?.trim();
-      case 6: return true; // Additional symptoms are optional
-      case 7: return true; // Red flags are optional but important
-      case 8: return userPhone.trim().length >= 10 && consentContact && consentDataUse && legalWaiverAccepted;
-      default: return false;
+    const currentStepName = stepConfig[currentStep - 1];
+    const selectedSurgery = surgeryTypesByRegion[postOpRegion]?.find(s => s.key === surgeryType);
+
+    switch (currentStepName) {
+      case 'painLevel':
+        return assessmentData.painLevel !== undefined && assessmentData.painLevel > 0;
+      case 'painLocation':
+        return !!assessmentData.painLocation;
+      case 'surgeryStatus':
+        return !!surgeryStatus;
+      case 'postOpRegion':
+        return !!postOpRegion;
+      case 'surgeryType':
+        return !!surgeryType;
+      case 'procedureModifier':
+        return !!procedureModifier || !selectedSurgery?.hasModifier;
+      case 'weeksSinceSurgery':
+        return !!weeksSinceSurgery;
+      case 'weightBearing':
+        return !!weightBearingStatus;
+      case 'surgeonPrecautions':
+        return !!surgeonPrecautions;
+      case 'painDuration':
+        return !!assessmentData.painDuration;
+      case 'painType':
+        return !!assessmentData.painType;
+      case 'mechanism':
+        return !!assessmentData.mechanismOfInjury?.trim();
+      case 'additionalSymptoms':
+        return true; // Additional symptoms are optional
+      case 'redFlags':
+        return true; // Red flags are optional but important
+      case 'consent':
+        return userPhone.trim().length >= 10 && consentContact && consentDataUse && legalWaiverAccepted;
+      default:
+        return false;
     }
   };
 
