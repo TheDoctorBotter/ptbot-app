@@ -64,6 +64,15 @@ export default function HomeScreen() {
         'Upper Back': ['upper back', 'thoracic', 'posture'],
       };
 
+      // Special conditions that warrant AAROM exercises
+      // Only show AAROM exercises if user mentions these specific conditions
+      const aaromConditions = [
+        'frozen shoulder', 'adhesive capsulitis', 'post-op', 'post-surgical',
+        'surgery', 'after surgery', 'cant move', "can't move", 'cannot move',
+        'limited motion', 'limited range', 'very stiff', 'severe stiffness'
+      ];
+      const shouldIncludeAAROM = aaromConditions.some(condition => query.includes(condition));
+
       // Find matching body parts
       const matchingBodyParts: string[] = [];
       for (const [bodyPart, keywords] of Object.entries(bodyPartKeywords)) {
@@ -96,6 +105,13 @@ export default function HomeScreen() {
       const scored = data.map((ex: any) => {
         let score = 0;
         const exBodyParts = (ex.body_parts || []).map((b: string) => b.toLowerCase());
+        const titleLower = ex.title.toLowerCase();
+
+        // Exclude AAROM exercises unless user has specific conditions
+        // AAROM exercises are for frozen shoulder/post-op patients only
+        if (titleLower.includes('aarom') && !shouldIncludeAAROM) {
+          return { exercise: ex, score: 0 };
+        }
 
         for (const bodyPart of matchingBodyParts) {
           if (exBodyParts.some((bp: string) => bp.toLowerCase().includes(bodyPart.toLowerCase()) ||
@@ -105,7 +121,6 @@ export default function HomeScreen() {
         }
 
         // Prefer beginner exercises for pain/symptoms
-        const titleLower = ex.title.toLowerCase();
         if (titleLower.includes('stretch') || titleLower.includes('gentle') || titleLower.includes('relief')) {
           score += 10;
         }
