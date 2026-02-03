@@ -60,7 +60,9 @@ export default function HomeScreen() {
         'Neck': ['neck', 'cervical', 'stiff neck', 'neck pain', 'neck stiffness'],
         'Shoulder': ['shoulder', 'rotator cuff', 'shoulder pain'],
         'Hip': ['hip', 'hip pain', 'hip flexor', 'glute'],
+        'Hamstrings': ['hamstring', 'hamstrings', 'back of thigh', 'posterior thigh', 'leg curl'],
         'Knee': ['knee', 'knee pain', 'quad', 'patella'],
+        'Ankle': ['ankle', 'ankle pain', 'foot', 'calf', 'achilles'],
         'Upper Back': ['upper back', 'thoracic', 'posture'],
       };
 

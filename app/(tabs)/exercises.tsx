@@ -122,7 +122,7 @@ export default function ExercisesScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { latestAssessment, isLoading: assessmentLoading, refreshAssessment } = useAssessmentResults();
 
-  const bodyParts = ['All', 'Lower Back', 'Upper Back', 'Neck', 'Shoulder', 'Hip', 'Knee', 'Ankle'];
+  const bodyParts = ['All', 'Lower Back', 'Upper Back', 'Neck', 'Shoulder', 'Hip', 'Hamstrings', 'Knee', 'Ankle'];
 
   // Get current user and load favorites
   useEffect(() => {
