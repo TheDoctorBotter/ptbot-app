@@ -284,6 +284,8 @@ export class AssessmentService {
     }
 
     try {
+      console.log(`🔍 Looking for protocol: key="${postOpData.protocolKey}", phase=${postOpData.phaseNumber}`);
+
       // Step 1: Get the protocol ID from protocol_key
       const { data: protocol, error: protocolError } = await supabase
         .from('protocols')
@@ -292,10 +294,18 @@ export class AssessmentService {
         .eq('is_active', true)
         .single();
 
-      if (protocolError || !protocol) {
-        console.log(`Protocol not found for key: ${postOpData.protocolKey}, falling back to standard recommendations`);
+      if (protocolError) {
+        console.log(`❌ Protocol query error:`, protocolError);
         return this.generateExerciseRecommendations(assessment);
       }
+
+      if (!protocol) {
+        console.log(`❌ Protocol not found for key: ${postOpData.protocolKey}, falling back to standard recommendations`);
+        return this.generateExerciseRecommendations(assessment);
+      }
+
+      console.log(`✅ Found protocol: ${protocol.surgery_name} (ID: ${protocol.id})`);
+
 
       // Step 2: Get exercises for this protocol and phase
       const { data: protocolExercises, error: exercisesError } = await supabase
@@ -332,9 +342,11 @@ export class AssessmentService {
         .order('display_order', { ascending: true });
 
       if (exercisesError) {
-        console.error('Error fetching protocol exercises:', exercisesError);
+        console.error('❌ Error fetching protocol exercises:', exercisesError);
         return this.generateExerciseRecommendations(assessment);
       }
+
+      console.log(`🔍 Protocol exercises query result: ${protocolExercises?.length || 0} exercises found for phase ${postOpData.phaseNumber}`);
 
       if (!protocolExercises || protocolExercises.length === 0) {
         console.log(`No exercises found for ${postOpData.protocolKey} Phase ${postOpData.phaseNumber}, falling back to standard recommendations`);
