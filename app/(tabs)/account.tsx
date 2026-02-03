@@ -63,6 +63,49 @@ export default function AccountScreen() {
   // UI state
   const [showProfileTabs, setShowProfileTabs] = useState(false);
 
+  // Profile data from Supabase
+  const [profileData, setProfileData] = useState<UserProfile | null>(null);
+  const [emailPreferences, setEmailPreferences] = useState<EmailPreferences | null>(null);
+
+  // Load profile from Supabase
+  const loadProfile = async (userId: string) => {
+    if (!supabase) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error loading profile:', error);
+        return;
+      }
+
+      if (data) {
+        setProfileData({
+          firstName: data.first_name || '',
+          lastName: data.last_name || '',
+          email: user?.email || '',
+          phone: data.phone || '',
+          dateOfBirth: data.date_of_birth || '',
+          location: data.location || '',
+          emergencyContact: data.emergency_contact || '',
+          emergencyPhone: data.emergency_phone || '',
+          medicalConditions: data.medical_conditions || '',
+          currentMedications: data.current_medications || '',
+          preferredLanguage: data.preferred_language || 'English',
+        });
+        if (data.email_preferences) {
+          setEmailPreferences(data.email_preferences);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
+
   // Check for existing session on mount and subscribe to auth changes
   useEffect(() => {
     if (!supabase) {
@@ -88,6 +131,16 @@ export default function AccountScreen() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Load profile when user changes
+  useEffect(() => {
+    if (user) {
+      loadProfile(user.id);
+    } else {
+      setProfileData(null);
+      setEmailPreferences(null);
+    }
+  }, [user]);
 
   // Form validation
   const validateEmail = (email: string) => {
@@ -363,7 +416,8 @@ export default function AccountScreen() {
     if (!supabase || !user) return;
 
     try {
-      const { error } = await supabase.auth.updateUser({
+      // Update auth user metadata
+      const { error: authError } = await supabase.auth.updateUser({
         data: {
           first_name: updatedProfile.firstName,
           last_name: updatedProfile.lastName,
@@ -371,7 +425,30 @@ export default function AccountScreen() {
         },
       });
 
-      if (error) throw error;
+      if (authError) throw authError;
+
+      // Update profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          first_name: updatedProfile.firstName,
+          last_name: updatedProfile.lastName,
+          phone: updatedProfile.phone,
+          date_of_birth: updatedProfile.dateOfBirth || null,
+          location: updatedProfile.location,
+          emergency_contact: updatedProfile.emergencyContact,
+          emergency_phone: updatedProfile.emergencyPhone,
+          medical_conditions: updatedProfile.medicalConditions,
+          current_medications: updatedProfile.currentMedications,
+          preferred_language: updatedProfile.preferredLanguage,
+          updated_at: new Date().toISOString(),
+        });
+
+      if (profileError) throw profileError;
+
+      // Update local state
+      setProfileData(prev => prev ? { ...prev, ...updatedProfile } : null);
     } catch (error) {
       console.error('Profile update error:', error);
       throw error;
@@ -397,13 +474,19 @@ export default function AccountScreen() {
     if (!supabase || !user) return;
 
     try {
-      const { error } = await supabase.auth.updateUser({
-        data: {
+      // Update profiles table with email preferences
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
           email_preferences: preferences,
-        },
-      });
+          updated_at: new Date().toISOString(),
+        });
 
       if (error) throw error;
+
+      // Update local state
+      setEmailPreferences(preferences);
     } catch (error) {
       console.error('Email preferences update error:', error);
       throw error;
@@ -491,11 +574,13 @@ export default function AccountScreen() {
         <ProfileTabs
           user={{
             email: user.email || '',
-            firstName: user.user_metadata?.first_name || '',
-            lastName: user.user_metadata?.last_name || '',
+            firstName: profileData?.firstName || user.user_metadata?.first_name || '',
+            lastName: profileData?.lastName || user.user_metadata?.last_name || '',
             isVerified: isEmailVerified(),
             createdAt: new Date(user.created_at),
           }}
+          initialProfile={profileData}
+          initialEmailPreferences={emailPreferences}
           onProfileUpdate={handleProfileUpdate}
           onPasswordChange={handlePasswordChange}
           onEmailPreferencesUpdate={handleEmailPreferencesUpdate}

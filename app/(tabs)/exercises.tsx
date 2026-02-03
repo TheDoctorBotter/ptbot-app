@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Calendar, Dumbbell, Search, Sparkles, Target } from 'lucide-react-native';
+import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Heart, Dumbbell, Search, Sparkles, Target } from 'lucide-react-native';
 import { useAssessmentResults } from '@/hooks/useAssessmentResults';
 import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
 import type { ExerciseRecommendation } from '@/services/assessmentService';
@@ -115,15 +115,158 @@ export default function ExercisesScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingExercises, setIsLoadingExercises] = useState(false);
+  const [aiSearchResults, setAiSearchResults] = useState<Exercise[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [favoriteExercises, setFavoriteExercises] = useState<Exercise[]>([]);
+  const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { latestAssessment, isLoading: assessmentLoading, refreshAssessment } = useAssessmentResults();
 
   const bodyParts = ['All', 'Lower Back', 'Upper Back', 'Neck', 'Shoulder', 'Hip', 'Knee', 'Ankle'];
+
+  // Get current user and load favorites
+  useEffect(() => {
+    const loadUserAndFavorites = async () => {
+      if (!supabase) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+        loadFavorites(user.id);
+      } else {
+        setCurrentUserId(null);
+        setFavoriteIds(new Set());
+        setFavoriteExercises([]);
+      }
+    };
+
+    loadUserAndFavorites();
+
+    // Subscribe to auth changes
+    const { data: { subscription } } = supabase?.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (session?.user) {
+          setCurrentUserId(session.user.id);
+          loadFavorites(session.user.id);
+        } else {
+          setCurrentUserId(null);
+          setFavoriteIds(new Set());
+          setFavoriteExercises([]);
+        }
+      }
+    ) || { data: { subscription: null } };
+
+    return () => subscription?.unsubscribe();
+  }, []);
+
+  // Load user's favorite exercises
+  const loadFavorites = async (userId: string) => {
+    if (!supabase) return;
+
+    setIsLoadingFavorites(true);
+    try {
+      const { data, error } = await supabase
+        .from('user_favorites')
+        .select(`
+          exercise_id,
+          exercise_videos (*)
+        `)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error loading favorites:', error);
+        return;
+      }
+
+      if (data) {
+        const ids = new Set(data.map((fav: any) => fav.exercise_id));
+        setFavoriteIds(ids);
+
+        const exercises: Exercise[] = data
+          .filter((fav: any) => fav.exercise_videos)
+          .map((fav: any) => {
+            const ex = fav.exercise_videos;
+            return {
+              id: ex.id,
+              title: ex.title,
+              bodyPart: ex.body_parts?.[0] || 'General',
+              duration: ex.recommended_hold_seconds
+                ? `${ex.recommended_hold_seconds}s hold`
+                : `${ex.recommended_sets || 2} sets`,
+              difficulty: ex.difficulty || 'Beginner',
+              description: ex.description || '',
+              url: ex.youtube_video_id
+                ? `https://www.youtube.com/watch?v=${ex.youtube_video_id}`
+                : 'https://youtube.com/@justinlemmodpt',
+              completed: false,
+            };
+          });
+        setFavoriteExercises(exercises);
+      }
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+    } finally {
+      setIsLoadingFavorites(false);
+    }
+  };
+
+  // Toggle favorite for an exercise
+  const toggleFavorite = async (exerciseId: string) => {
+    if (!supabase || !currentUserId) {
+      Alert.alert('Sign In Required', 'Please sign in to save favorite exercises.');
+      return;
+    }
+
+    const isFavorite = favoriteIds.has(exerciseId);
+
+    try {
+      if (isFavorite) {
+        // Remove from favorites
+        const { error } = await supabase
+          .from('user_favorites')
+          .delete()
+          .eq('user_id', currentUserId)
+          .eq('exercise_id', exerciseId);
+
+        if (error) throw error;
+
+        setFavoriteIds(prev => {
+          const next = new Set(prev);
+          next.delete(exerciseId);
+          return next;
+        });
+        setFavoriteExercises(prev => prev.filter(ex => ex.id !== exerciseId));
+      } else {
+        // Add to favorites
+        const { error } = await supabase
+          .from('user_favorites')
+          .insert({ user_id: currentUserId, exercise_id: exerciseId });
+
+        if (error) throw error;
+
+        setFavoriteIds(prev => new Set(prev).add(exerciseId));
+
+        // Find the exercise and add to favorites list
+        const exercise = databaseExercises.find(ex => ex.id === exerciseId) ||
+                         aiSearchResults.find(ex => ex.id === exerciseId);
+        if (exercise) {
+          setFavoriteExercises(prev => [...prev, exercise]);
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      Alert.alert('Error', 'Failed to update favorites. Please try again.');
+    }
+  };
 
   // Refresh assessment data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       refreshAssessment();
-    }, [refreshAssessment])
+      if (currentUserId) {
+        loadFavorites(currentUserId);
+      }
+    }, [refreshAssessment, currentUserId])
   );
 
   // Fetch exercises from Supabase when body part changes
@@ -313,48 +456,121 @@ export default function ExercisesScreen() {
       return;
     }
 
+    if (!supabase) {
+      Alert.alert('Error', 'Database not configured.');
+      return;
+    }
+
     setIsSearching(true);
+    setAiSearchResults([]);
 
     try {
-      const youtubeApiKey = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
-      const channelId = process.env.EXPO_PUBLIC_YOUTUBE_CHANNEL_ID;
+      // Parse search terms from query
+      const query = searchQuery.toLowerCase();
+      const searchTerms = query.split(/\s+/).filter(term => term.length > 2);
 
-      const exerciseService = new ExerciseRecommendationService(
-        youtubeApiKey,
-        channelId
-      );
+      // Build search conditions for keywords, conditions, and body parts
+      const { data, error } = await supabase
+        .from('exercise_videos')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
 
-      const matches = await exerciseService.getExerciseRecommendationsFromChat(searchQuery);
-      
-      if (matches.length > 0) {
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
         Alert.alert(
-          'Exercises Found',
-          `Found ${matches.length} exercises matching your description. These would appear as personalized recommendations when the YouTube API is configured.`,
+          'No Exercises Found',
+          'No exercises found in the database. Please try again later.',
           [{ text: 'OK' }]
         );
+        return;
+      }
+
+      // Score and filter exercises based on search query
+      const scoredExercises = data.map((ex: any) => {
+        let score = 0;
+        const bodyPartsLower = (ex.body_parts || []).map((b: string) => b.toLowerCase());
+        const keywordsLower = (ex.keywords || []).map((k: string) => k.toLowerCase());
+        const conditionsLower = (ex.conditions || []).map((c: string) => c.toLowerCase());
+        const titleLower = ex.title.toLowerCase();
+        const descLower = (ex.description || '').toLowerCase();
+
+        // Check for body part matches
+        for (const term of searchTerms) {
+          if (bodyPartsLower.some((bp: string) => bp.includes(term) || term.includes(bp))) {
+            score += 30;
+          }
+          if (conditionsLower.some((c: string) => c.includes(term))) {
+            score += 25;
+          }
+          if (keywordsLower.some((k: string) => k.includes(term))) {
+            score += 20;
+          }
+          if (titleLower.includes(term)) {
+            score += 15;
+          }
+          if (descLower.includes(term)) {
+            score += 10;
+          }
+        }
+
+        // Check for common symptom keywords
+        const symptomMatches = [
+          { terms: ['stiff', 'stiffness', 'tight', 'tightness'], keywords: ['stretch', 'mobility', 'flexibility'] },
+          { terms: ['pain', 'ache', 'hurt', 'sore'], keywords: ['relief', 'gentle', 'beginner'] },
+          { terms: ['weak', 'weakness'], keywords: ['strengthen', 'strengthening', 'stability'] },
+          { terms: ['numb', 'tingling', 'nerve'], keywords: ['nerve', 'glide', 'mobility'] },
+        ];
+
+        for (const match of symptomMatches) {
+          if (match.terms.some(t => query.includes(t))) {
+            if (match.keywords.some(k => keywordsLower.some((kw: string) => kw.includes(k)))) {
+              score += 15;
+            }
+          }
+        }
+
+        return { exercise: ex, score };
+      });
+
+      // Filter exercises with score > 0 and sort by score
+      const matches = scoredExercises
+        .filter((s: any) => s.score > 0)
+        .sort((a: any, b: any) => b.score - a.score)
+        .slice(0, 10);
+
+      if (matches.length > 0) {
+        const mappedExercises: Exercise[] = matches.map((m: any) => ({
+          id: m.exercise.id,
+          title: m.exercise.title,
+          bodyPart: m.exercise.body_parts?.[0] || 'General',
+          duration: m.exercise.recommended_hold_seconds
+            ? `${m.exercise.recommended_hold_seconds}s hold`
+            : `${m.exercise.recommended_sets || 2} sets`,
+          difficulty: m.exercise.difficulty || 'Beginner',
+          description: m.exercise.description || '',
+          url: m.exercise.youtube_video_id
+            ? `https://www.youtube.com/watch?v=${m.exercise.youtube_video_id}`
+            : 'https://youtube.com/@justinlemmodpt',
+          completed: false,
+        }));
+
+        setAiSearchResults(mappedExercises);
       } else {
         Alert.alert(
           'No Matches',
-          'No specific exercises found for your description. Try browsing the exercises below or complete a full assessment.',
+          'No specific exercises found for your description. Try browsing the exercises below or complete a full assessment for personalized recommendations.',
           [{ text: 'OK' }]
         );
       }
     } catch (error) {
       console.error('Exercise search error:', error);
-      const errorMessage = error instanceof Error ? error.message : '';
-      if (errorMessage.includes('sign in') || errorMessage.includes('authenticated')) {
-        Alert.alert(
-          'Sign In Required',
-          'AI-powered search requires you to be signed in. Please go to the Account tab to sign in, or browse the exercises below.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Search Error',
-          'Unable to search exercises right now. Please try browsing the exercises below.',
-          [{ text: 'OK' }]
-        );
-      }
+      Alert.alert(
+        'Search Error',
+        'Unable to search exercises right now. Please try browsing the exercises below.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsSearching(false);
     }
@@ -394,7 +610,7 @@ export default function ExercisesScreen() {
             multiline
             numberOfLines={3}
           />
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.searchButton, (!searchQuery.trim() || isSearching) && styles.searchButtonDisabled]}
             onPress={searchExercises}
             disabled={!searchQuery.trim() || isSearching}
@@ -404,6 +620,53 @@ export default function ExercisesScreen() {
               {isSearching ? 'Searching...' : 'Find My Exercises'}
             </Text>
           </TouchableOpacity>
+
+          {/* AI Search Results */}
+          {aiSearchResults.length > 0 && (
+            <View style={styles.aiSearchResults}>
+              <Text style={styles.aiSearchResultsTitle}>
+                Found {aiSearchResults.length} exercises for you:
+              </Text>
+              {aiSearchResults.map((exercise) => (
+                <View key={exercise.id} style={styles.aiSearchResultCard}>
+                  <View style={styles.aiSearchResultInfo}>
+                    <Text style={styles.aiSearchResultTitle}>{exercise.title}</Text>
+                    <Text style={styles.aiSearchResultMeta}>
+                      {exercise.bodyPart} • {exercise.difficulty}
+                    </Text>
+                  </View>
+                  <View style={styles.aiSearchResultActions}>
+                    <TouchableOpacity
+                      style={styles.aiSearchPlayButton}
+                      onPress={() => openExerciseVideo(exercise.url, { id: exercise.id, title: exercise.title })}
+                    >
+                      <Play size={14} color="#FFFFFF" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.aiSearchStarButton}
+                      onPress={() => toggleFavorite(exercise.id)}
+                    >
+                      <Star
+                        size={14}
+                        color="#F59E0B"
+                        fill={favoriteIds.has(exercise.id) ? "#F59E0B" : "transparent"}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+              <Text style={styles.aiSearchTip}>
+                For more personalized recommendations, complete a full assessment
+              </Text>
+              <TouchableOpacity
+                style={styles.fullAssessmentButton}
+                onPress={() => router.push('/assessment')}
+              >
+                <Target size={14} color={colors.primary[500]} />
+                <Text style={styles.fullAssessmentText}>Take Full Assessment</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Assessment-Based Recommendations */}
@@ -648,13 +911,14 @@ export default function ExercisesScreen() {
                       </View>
                     </View>
                   </View>
-                  <TouchableOpacity 
-                    style={styles.completeButton}
-                    onPress={() => toggleExerciseCompletion(exercise.id)}
+                  <TouchableOpacity
+                    style={styles.favoriteButton}
+                    onPress={() => toggleFavorite(exercise.id)}
                   >
-                    <CheckCircle 
-                      size={24} 
-                      color={exercise.completed ? '#10B981' : '#D1D5DB'} 
+                    <Star
+                      size={24}
+                      color="#F59E0B"
+                      fill={favoriteIds.has(exercise.id) ? "#F59E0B" : "transparent"}
                     />
                   </TouchableOpacity>
                 </View>
@@ -676,23 +940,58 @@ export default function ExercisesScreen() {
           )}
         </View>
 
-        {/* Progress Summary - based on database exercises */}
-        <View style={styles.progressSummary}>
-          <Text style={styles.progressTitle}>Today's Progress</Text>
-          <View style={styles.progressStats}>
-            <View style={styles.progressStat}>
-              <CheckCircle size={20} color="#10B981" />
-              <Text style={styles.progressStatText}>
-                {exercises.filter(ex => ex.completed).length} completed
-              </Text>
-            </View>
-            <View style={styles.progressStat}>
-              <Calendar size={20} color={colors.primary[500]} />
-              <Text style={styles.progressStatText}>
-                {exercises.length} total exercises
-              </Text>
-            </View>
+        {/* Saved Exercises Section */}
+        <View style={styles.savedExercisesSection}>
+          <View style={styles.savedExercisesHeader}>
+            <Star size={20} color="#F59E0B" fill="#F59E0B" />
+            <Text style={styles.savedExercisesTitle}>Saved Exercises</Text>
+            <Text style={styles.savedExercisesCount}>({favoriteExercises.length})</Text>
           </View>
+
+          {!currentUserId ? (
+            <View style={styles.signInPrompt}>
+              <Text style={styles.signInPromptText}>
+                Sign in to save your favorite exercises for quick access
+              </Text>
+              <TouchableOpacity
+                style={styles.signInButton}
+                onPress={() => router.push('/account')}
+              >
+                <Text style={styles.signInButtonText}>Sign In</Text>
+              </TouchableOpacity>
+            </View>
+          ) : isLoadingFavorites ? (
+            <ActivityIndicator size="small" color={colors.primary[500]} />
+          ) : favoriteExercises.length === 0 ? (
+            <Text style={styles.noFavoritesText}>
+              Tap the star icon on any exercise to save it here
+            </Text>
+          ) : (
+            favoriteExercises.map((exercise) => (
+              <View key={exercise.id} style={styles.favoriteExerciseCard}>
+                <View style={styles.favoriteExerciseInfo}>
+                  <Text style={styles.favoriteExerciseTitle}>{exercise.title}</Text>
+                  <Text style={styles.favoriteExerciseMeta}>
+                    {exercise.bodyPart} • {exercise.difficulty}
+                  </Text>
+                </View>
+                <View style={styles.favoriteExerciseActions}>
+                  <TouchableOpacity
+                    style={styles.favoritePlayButton}
+                    onPress={() => openExerciseVideo(exercise.url, { id: exercise.id, title: exercise.title })}
+                  >
+                    <Play size={16} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.favoriteRemoveButton}
+                    onPress={() => toggleFavorite(exercise.id)}
+                  >
+                    <Star size={16} color="#F59E0B" fill="#F59E0B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
         </View>
 
         <View style={styles.bottomSpacer} />
@@ -1167,7 +1466,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  completeButton: {
+  favoriteButton: {
     padding: 4,
   },
   exerciseDescription: {
@@ -1190,35 +1489,166 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  progressSummary: {
-    margin: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+  // AI Search Results styles
+  aiSearchResults: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E0F2FE',
   },
-  progressTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1F2937',
+  aiSearchResultsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0C4A6E',
     marginBottom: 12,
   },
-  progressStats: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  progressStat: {
+  aiSearchResultCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+  },
+  aiSearchResultInfo: {
+    flex: 1,
+  },
+  aiSearchResultTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 2,
+  },
+  aiSearchResultMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  aiSearchResultActions: {
+    flexDirection: 'row',
     gap: 8,
   },
-  progressStatText: {
-    fontSize: 14,
+  aiSearchPlayButton: {
+    backgroundColor: colors.primary[500],
+    borderRadius: 6,
+    padding: 8,
+  },
+  aiSearchStarButton: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    padding: 8,
+  },
+  aiSearchTip: {
+    fontSize: 12,
     color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  fullAssessmentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.primary[500],
+    borderRadius: 8,
+    paddingVertical: 10,
+    marginTop: 12,
+    gap: 6,
+  },
+  fullAssessmentText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary[500],
+  },
+
+  // Saved Exercises Section styles
+  savedExercisesSection: {
+    margin: 16,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+  },
+  savedExercisesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  savedExercisesTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#92400E',
+  },
+  savedExercisesCount: {
+    fontSize: 14,
+    color: '#B45309',
+  },
+  signInPrompt: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  signInPromptText: {
+    fontSize: 14,
+    color: '#92400E',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  signInButton: {
+    backgroundColor: colors.primary[500],
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  signInButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  noFavoritesText: {
+    fontSize: 14,
+    color: '#92400E',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  favoriteExerciseCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  favoriteExerciseInfo: {
+    flex: 1,
+  },
+  favoriteExerciseTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 2,
+  },
+  favoriteExerciseMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  favoriteExerciseActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  favoritePlayButton: {
+    backgroundColor: colors.primary[500],
+    borderRadius: 6,
+    padding: 8,
+  },
+  favoriteRemoveButton: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    padding: 8,
   },
   bottomSpacer: {
     height: 20,
