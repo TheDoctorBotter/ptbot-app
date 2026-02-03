@@ -14,6 +14,18 @@ export interface AssessmentData {
   timestamp: string;
 }
 
+export interface PostOpData {
+  surgeryStatus: string;
+  postOpRegion: string | null;
+  surgeryType: string | null;
+  procedureModifier: string | null;
+  weeksSinceSurgery: string | null;
+  weightBearingStatus: string | null;
+  surgeonPrecautions: string | null;
+  protocolKey: string | null;
+  phaseNumber: number | null;
+}
+
 export interface ExerciseDosage {
   sets: number;
   reps?: number;
@@ -85,7 +97,7 @@ export class AssessmentService {
     // Uses Supabase for exercise data
   }
 
-  async processAssessment(assessmentData: AssessmentData): Promise<AssessmentResult> {
+  async processAssessment(assessmentData: AssessmentData, postOpData?: PostOpData): Promise<AssessmentResult> {
     try {
       console.log('🔍 Processing comprehensive assessment...');
 
@@ -96,11 +108,18 @@ export class AssessmentService {
       let recommendations: ExerciseRecommendation[] = [];
 
       if (riskLevel !== 'critical') {
-        recommendations = await this.generateExerciseRecommendations(assessmentData);
+        // Check if this is a post-op assessment with protocol data
+        if (postOpData?.surgeryStatus === 'post_op' && postOpData?.protocolKey && postOpData?.phaseNumber) {
+          console.log(`📋 Post-op assessment detected: ${postOpData.protocolKey}, Phase ${postOpData.phaseNumber}`);
+          recommendations = await this.generateProtocolExerciseRecommendations(assessmentData, postOpData);
+        } else {
+          // Standard body-part based recommendations
+          recommendations = await this.generateExerciseRecommendations(assessmentData);
+        }
       }
 
       // Generate next steps based on assessment
-      const nextSteps = this.generateNextSteps(assessmentData, riskLevel);
+      const nextSteps = this.generateNextSteps(assessmentData, riskLevel, postOpData);
 
       const result: AssessmentResult = {
         id: Date.now().toString(),
@@ -252,6 +271,235 @@ export class AssessmentService {
       console.error('Error generating exercise recommendations:', error);
       return [];
     }
+  }
+
+  // Generate exercise recommendations based on protocol and phase for post-op patients
+  private async generateProtocolExerciseRecommendations(
+    assessment: AssessmentData,
+    postOpData: PostOpData
+  ): Promise<ExerciseRecommendation[]> {
+    if (!supabase) {
+      console.warn('Supabase not configured, returning empty recommendations');
+      return [];
+    }
+
+    try {
+      console.log(`🔍 Looking for protocol: key="${postOpData.protocolKey}", phase=${postOpData.phaseNumber}`);
+
+      // Step 1: Get the protocol ID from protocol_key
+      const { data: protocol, error: protocolError } = await supabase
+        .from('protocols')
+        .select('id, surgery_name')
+        .eq('protocol_key', postOpData.protocolKey)
+        .eq('is_active', true)
+        .single();
+
+      if (protocolError) {
+        console.log(`❌ Protocol query error:`, protocolError);
+        return this.generateExerciseRecommendations(assessment);
+      }
+
+      if (!protocol) {
+        console.log(`❌ Protocol not found for key: ${postOpData.protocolKey}, falling back to standard recommendations`);
+        return this.generateExerciseRecommendations(assessment);
+      }
+
+      console.log(`✅ Found protocol: ${protocol.surgery_name} (ID: ${protocol.id})`);
+
+
+      // Step 2: Get exercises for this protocol and phase
+      const { data: protocolExercises, error: exercisesError } = await supabase
+        .from('protocol_phase_exercises')
+        .select(`
+          display_order,
+          phase_sets,
+          phase_reps,
+          phase_hold_seconds,
+          phase_frequency,
+          phase_notes,
+          exercise_videos (
+            id,
+            youtube_video_id,
+            title,
+            description,
+            thumbnail_url,
+            difficulty,
+            body_parts,
+            conditions,
+            keywords,
+            recommended_sets,
+            recommended_reps,
+            recommended_hold_seconds,
+            recommended_frequency,
+            contraindications,
+            safety_notes,
+            display_order,
+            section_id
+          )
+        `)
+        .eq('protocol_id', protocol.id)
+        .eq('phase_number', postOpData.phaseNumber)
+        .order('display_order', { ascending: true });
+
+      if (exercisesError) {
+        console.error('❌ Error fetching protocol exercises:', exercisesError);
+        return this.generateExerciseRecommendations(assessment);
+      }
+
+      console.log(`🔍 Protocol exercises query result: ${protocolExercises?.length || 0} exercises found for phase ${postOpData.phaseNumber}`);
+
+      if (!protocolExercises || protocolExercises.length === 0) {
+        console.log(`No exercises found for ${postOpData.protocolKey} Phase ${postOpData.phaseNumber}, falling back to standard recommendations`);
+        return this.generateExerciseRecommendations(assessment);
+      }
+
+      console.log(`✅ Found ${protocolExercises.length} protocol exercises for ${protocol.surgery_name} Phase ${postOpData.phaseNumber}`);
+
+      // Step 3: Build recommendations from protocol exercises
+      const recommendations: ExerciseRecommendation[] = protocolExercises
+        .filter(pe => pe.exercise_videos) // Filter out any null exercises
+        .map((pe) => {
+          const exercise = pe.exercise_videos as unknown as DatabaseExercise;
+
+          // Use phase-specific dosage if provided, otherwise use exercise defaults
+          const dosage: ExerciseDosage = {
+            sets: pe.phase_sets || exercise.recommended_sets || 2,
+            reps: pe.phase_reps || exercise.recommended_reps || undefined,
+            frequency: pe.phase_frequency || exercise.recommended_frequency || 'Daily',
+            holdTime: (pe.phase_hold_seconds || exercise.recommended_hold_seconds)
+              ? `${pe.phase_hold_seconds || exercise.recommended_hold_seconds} seconds`
+              : undefined,
+          };
+
+          // Build YouTube video URL
+          const videoUrl = exercise.youtube_video_id
+            ? `https://www.youtube.com/watch?v=${exercise.youtube_video_id}`
+            : undefined;
+
+          // Build thumbnail URL
+          const thumbnailUrl = exercise.youtube_video_id
+            ? `https://img.youtube.com/vi/${exercise.youtube_video_id}/hqdefault.jpg`
+            : exercise.thumbnail_url || undefined;
+
+          // Generate safety notes with post-op specific guidance
+          const safetyNotes = this.generatePostOpSafetyNotes(assessment, exercise, postOpData, pe.phase_notes);
+
+          return {
+            exercise: {
+              id: exercise.id,
+              name: exercise.title,
+              description: exercise.description || '',
+              videoUrl,
+              thumbnailUrl,
+              bodyParts: exercise.body_parts || [],
+              difficulty: exercise.difficulty || 'Beginner',
+              category: this.inferCategory(exercise),
+            },
+            dosage,
+            relevanceScore: 100, // Protocol exercises are always highly relevant
+            reasoning: `Part of your ${protocol.surgery_name} rehabilitation protocol - Phase ${postOpData.phaseNumber}`,
+            safetyNotes,
+            redFlagWarnings: this.generatePostOpRedFlagWarnings(exercise, postOpData),
+            progressionTips: this.generatePostOpProgressionTips(exercise, postOpData),
+          };
+        });
+
+      return recommendations;
+    } catch (error) {
+      console.error('Error generating protocol exercise recommendations:', error);
+      return this.generateExerciseRecommendations(assessment);
+    }
+  }
+
+  // Generate safety notes specific to post-op patients
+  private generatePostOpSafetyNotes(
+    assessment: AssessmentData,
+    exercise: DatabaseExercise,
+    postOpData: PostOpData,
+    phaseNotes: string | null
+  ): string[] {
+    const notes: string[] = [];
+
+    // Include phase-specific notes first
+    if (phaseNotes) {
+      notes.push(phaseNotes);
+    }
+
+    // Include exercise-specific safety notes from database
+    if (exercise.safety_notes && exercise.safety_notes.length > 0) {
+      notes.push(...exercise.safety_notes);
+    }
+
+    // Weight-bearing precautions for lower extremity
+    if (postOpData.weightBearingStatus && postOpData.weightBearingStatus !== 'full_weight_bearing') {
+      const wbNotes: Record<string, string> = {
+        'non_weight_bearing': '⚠️ Non-weight bearing: Do not put any weight through the surgical leg.',
+        'toe_touch_weight_bearing': '⚠️ Toe-touch weight bearing only: Light touch for balance only.',
+        'partial_weight_bearing': '⚠️ Partial weight bearing: Use crutches/walker as instructed.',
+        'weight_bearing_as_tolerated': 'Weight bearing as tolerated with assistive device if needed.',
+      };
+      if (wbNotes[postOpData.weightBearingStatus]) {
+        notes.push(wbNotes[postOpData.weightBearingStatus]);
+      }
+    }
+
+    // Surgeon precautions
+    if (postOpData.surgeonPrecautions) {
+      notes.push(`Surgeon precautions: ${postOpData.surgeonPrecautions}`);
+    }
+
+    // Pain level guidance for post-op
+    if (assessment.painLevel >= 6) {
+      notes.push('Higher pain levels are expected after surgery. Perform exercises gently within tolerable range.');
+    }
+
+    // Include exercise-specific contraindications
+    if (exercise.contraindications && exercise.contraindications.length > 0) {
+      notes.push(`Avoid if you have: ${exercise.contraindications.join(', ')}.`);
+    }
+
+    // General post-op reminder
+    notes.push('Follow your surgeon\'s specific instructions. Contact your care team if you experience increased swelling, redness, or fever.');
+
+    return notes;
+  }
+
+  // Generate red flag warnings for post-op patients
+  private generatePostOpRedFlagWarnings(exercise: DatabaseExercise, postOpData: PostOpData): string[] {
+    const warnings: string[] = [];
+
+    if (exercise.contraindications && exercise.contraindications.length > 0) {
+      warnings.push(`Do not perform if you have: ${exercise.contraindications.join(', ')}`);
+    }
+
+    // Post-op specific red flags
+    warnings.push('Stop immediately and contact your surgeon if you experience:');
+    warnings.push('- Sudden severe pain or popping sensation');
+    warnings.push('- Significant increase in swelling');
+    warnings.push('- Signs of infection (fever, increased redness, drainage)');
+    warnings.push('- Numbness or tingling that doesn\'t resolve');
+
+    return warnings;
+  }
+
+  // Generate progression tips for post-op patients
+  private generatePostOpProgressionTips(exercise: DatabaseExercise, postOpData: PostOpData): string[] {
+    const tips: string[] = [];
+
+    tips.push('Follow your rehabilitation timeline - do not rush progression');
+    tips.push('Your therapist or surgeon will clear you to advance to the next phase');
+
+    if (exercise.difficulty === 'Beginner') {
+      tips.push('Focus on proper form and gentle movement before increasing intensity');
+    } else if (exercise.difficulty === 'Intermediate') {
+      tips.push('Ensure you can perform beginner exercises pain-free before progressing');
+    }
+
+    if (postOpData.phaseNumber && postOpData.phaseNumber < 4) {
+      tips.push(`Phase ${postOpData.phaseNumber} exercises build the foundation for later phases`);
+    }
+
+    return tips;
   }
 
   private bodyPartToSectionSlug(painLocation: string): string {
@@ -459,9 +707,35 @@ export class AssessmentService {
     return tips;
   }
 
-  private generateNextSteps(assessment: AssessmentData, riskLevel: string): string[] {
+  private generateNextSteps(assessment: AssessmentData, riskLevel: string, postOpData?: PostOpData): string[] {
     const steps: string[] = [];
 
+    // Post-op specific next steps
+    if (postOpData?.surgeryStatus === 'post_op') {
+      if (riskLevel === 'critical') {
+        steps.push('🚨 Contact your surgeon immediately');
+        steps.push('📞 If unable to reach surgeon, go to emergency room');
+        steps.push('🏥 Bring your surgical information with you');
+        return steps;
+      }
+
+      steps.push('📋 Follow your post-operative protocol exercises below');
+      steps.push(`📅 You are in Phase ${postOpData.phaseNumber} of your rehabilitation`);
+      steps.push('🩺 Attend all scheduled follow-up appointments with your surgeon');
+      steps.push('📊 Track your progress and report concerns to your care team');
+
+      if (postOpData.weightBearingStatus && postOpData.weightBearingStatus !== 'full_weight_bearing') {
+        steps.push('🦿 Follow weight-bearing restrictions as prescribed');
+      }
+
+      if (assessment.location.toLowerCase().includes('texas')) {
+        steps.push('💻 Consider booking virtual PT session with Dr. Lemmo for guidance');
+      }
+
+      return steps;
+    }
+
+    // Standard non-post-op next steps
     switch (riskLevel) {
       case 'critical':
         steps.push('🚨 Seek immediate medical attention');

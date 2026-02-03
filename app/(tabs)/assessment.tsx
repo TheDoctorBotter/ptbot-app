@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Activity, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Stethoscope, Brain, Heart, Shield, Dumbbell, Target, Info, Play, LogIn, Phone, Square, CheckSquare } from 'lucide-react-native';
 import { AssessmentService } from '@/services/assessmentService';
-import type { AssessmentData, AssessmentResult, ExerciseRecommendation } from '@/services/assessmentService';
+import type { AssessmentData, AssessmentResult, ExerciseRecommendation, PostOpData } from '@/services/assessmentService';
 import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -304,8 +304,21 @@ export default function AssessmentScreen() {
       const protocolKey = generateProtocolKey();
       const safePhase = getSafePhase();
 
+      // Build post-op data object if applicable
+      const postOpDataForProcessing: PostOpData | undefined = surgeryStatus === 'post_op' ? {
+        surgeryStatus,
+        postOpRegion,
+        surgeryType,
+        procedureModifier,
+        weeksSinceSurgery,
+        weightBearingStatus,
+        surgeonPrecautions,
+        protocolKey,
+        phaseNumber: safePhase,
+      } : undefined;
+
       // Process the assessment with post-op data
-      const result = await assessmentService.processAssessment(assessmentData as AssessmentData);
+      const result = await assessmentService.processAssessment(assessmentData as AssessmentData, postOpDataForProcessing);
 
       // Save the result with consent and post-op data
       await assessmentService.saveAssessmentResult(result, {
