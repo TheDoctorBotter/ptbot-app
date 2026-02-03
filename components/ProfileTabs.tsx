@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -36,33 +36,37 @@ interface EmailPreferences {
 
 interface ProfileTabsProps {
   user: any;
+  initialProfile?: UserProfile | null;
+  initialEmailPreferences?: EmailPreferences | null;
   onProfileUpdate: (updatedProfile: Partial<UserProfile>) => void;
   onPasswordChange: (oldPassword: string, newPassword: string) => void;
   onEmailPreferencesUpdate: (preferences: EmailPreferences) => void;
 }
 
-export default function ProfileTabs({ 
-  user, 
-  onProfileUpdate, 
-  onPasswordChange, 
-  onEmailPreferencesUpdate 
+export default function ProfileTabs({
+  user,
+  initialProfile,
+  initialEmailPreferences,
+  onProfileUpdate,
+  onPasswordChange,
+  onEmailPreferencesUpdate
 }: ProfileTabsProps) {
   const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'email'>('profile');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Profile state
+  // Profile state - use initial profile if provided
   const [profile, setProfile] = useState<UserProfile>({
-    firstName: user?.firstName || '',
-    lastName: user?.lastName || '',
+    firstName: initialProfile?.firstName || user?.firstName || '',
+    lastName: initialProfile?.lastName || user?.lastName || '',
     email: user?.email || '',
-    phone: '',
-    dateOfBirth: '',
-    location: '',
-    emergencyContact: '',
-    emergencyPhone: '',
-    medicalConditions: '',
-    currentMedications: '',
-    preferredLanguage: 'English',
+    phone: initialProfile?.phone || '',
+    dateOfBirth: initialProfile?.dateOfBirth || '',
+    location: initialProfile?.location || '',
+    emergencyContact: initialProfile?.emergencyContact || '',
+    emergencyPhone: initialProfile?.emergencyPhone || '',
+    medicalConditions: initialProfile?.medicalConditions || '',
+    currentMedications: initialProfile?.currentMedications || '',
+    preferredLanguage: initialProfile?.preferredLanguage || 'English',
   });
 
   // Password state
@@ -77,15 +81,48 @@ export default function ProfileTabs({
     confirm: false,
   });
 
-  // Email preferences state
+  // Email preferences state - use initial preferences if provided
   const [emailPrefs, setEmailPrefs] = useState<EmailPreferences>({
-    exerciseReminders: true,
-    progressUpdates: true,
-    appointmentReminders: true,
-    marketingEmails: false,
-    redFlagAlerts: true,
-    weeklyReports: true,
+    exerciseReminders: initialEmailPreferences?.exerciseReminders ?? true,
+    progressUpdates: initialEmailPreferences?.progressUpdates ?? true,
+    appointmentReminders: initialEmailPreferences?.appointmentReminders ?? true,
+    marketingEmails: initialEmailPreferences?.marketingEmails ?? false,
+    redFlagAlerts: initialEmailPreferences?.redFlagAlerts ?? true,
+    weeklyReports: initialEmailPreferences?.weeklyReports ?? true,
   });
+
+  // Update profile state when initialProfile loads
+  useEffect(() => {
+    if (initialProfile) {
+      setProfile({
+        firstName: initialProfile.firstName || user?.firstName || '',
+        lastName: initialProfile.lastName || user?.lastName || '',
+        email: user?.email || '',
+        phone: initialProfile.phone || '',
+        dateOfBirth: initialProfile.dateOfBirth || '',
+        location: initialProfile.location || '',
+        emergencyContact: initialProfile.emergencyContact || '',
+        emergencyPhone: initialProfile.emergencyPhone || '',
+        medicalConditions: initialProfile.medicalConditions || '',
+        currentMedications: initialProfile.currentMedications || '',
+        preferredLanguage: initialProfile.preferredLanguage || 'English',
+      });
+    }
+  }, [initialProfile]);
+
+  // Update email prefs when initialEmailPreferences loads
+  useEffect(() => {
+    if (initialEmailPreferences) {
+      setEmailPrefs({
+        exerciseReminders: initialEmailPreferences.exerciseReminders ?? true,
+        progressUpdates: initialEmailPreferences.progressUpdates ?? true,
+        appointmentReminders: initialEmailPreferences.appointmentReminders ?? true,
+        marketingEmails: initialEmailPreferences.marketingEmails ?? false,
+        redFlagAlerts: initialEmailPreferences.redFlagAlerts ?? true,
+        weeklyReports: initialEmailPreferences.weeklyReports ?? true,
+      });
+    }
+  }, [initialEmailPreferences]);
 
   const handleProfileSave = async () => {
     if (!profile.firstName.trim() || !profile.lastName.trim()) {

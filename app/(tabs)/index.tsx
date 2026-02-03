@@ -12,9 +12,18 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MessageCircle, Send, Bot, User, ExternalLink, MapPin, Youtube } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { MessageCircle, Send, Bot, User, ExternalLink, MapPin, Youtube, Play, Target } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import { openaiProxy } from '@/services/openaiProxyService';
+import { supabase } from '@/lib/supabase';
+
+interface ExerciseSuggestion {
+  id: string;
+  title: string;
+  bodyPart: string;
+  url: string;
+}
 
 interface ChatMessage {
   id: string;
@@ -24,6 +33,7 @@ interface ChatMessage {
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -34,7 +44,95 @@ export default function HomeScreen() {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [exerciseSuggestions, setExerciseSuggestions] = useState<ExerciseSuggestion[]>([]);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Search for exercises based on symptoms
+  const searchExercisesForSymptoms = async (userMessage: string): Promise<ExerciseSuggestion[]> => {
+    if (!supabase) return [];
+
+    try {
+      const query = userMessage.toLowerCase();
+
+      // Symptom keywords to body parts mapping
+      const bodyPartKeywords: Record<string, string[]> = {
+        'Lower Back': ['lower back', 'lumbar', 'back pain', 'sciatica', 'spine'],
+        'Neck': ['neck', 'cervical', 'stiff neck', 'neck pain', 'neck stiffness'],
+        'Shoulder': ['shoulder', 'rotator cuff', 'shoulder pain'],
+        'Hip': ['hip', 'hip pain', 'hip flexor', 'glute'],
+        'Knee': ['knee', 'knee pain', 'quad', 'patella'],
+        'Upper Back': ['upper back', 'thoracic', 'posture'],
+      };
+
+      // Find matching body parts
+      const matchingBodyParts: string[] = [];
+      for (const [bodyPart, keywords] of Object.entries(bodyPartKeywords)) {
+        if (keywords.some(kw => query.includes(kw))) {
+          matchingBodyParts.push(bodyPart);
+        }
+      }
+
+      // Search for common symptom terms
+      const symptomTerms = ['pain', 'stiff', 'tight', 'ache', 'sore', 'weak', 'numb', 'tingling'];
+      const hasSymptoms = symptomTerms.some(term => query.includes(term));
+
+      if (matchingBodyParts.length === 0 && !hasSymptoms) {
+        return [];
+      }
+
+      // Query exercises from database
+      let dbQuery = supabase
+        .from('exercise_videos')
+        .select('id, title, body_parts, youtube_video_id')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true })
+        .limit(20);
+
+      const { data, error } = await dbQuery;
+
+      if (error || !data) return [];
+
+      // Score exercises based on matches
+      const scored = data.map((ex: any) => {
+        let score = 0;
+        const exBodyParts = (ex.body_parts || []).map((b: string) => b.toLowerCase());
+
+        for (const bodyPart of matchingBodyParts) {
+          if (exBodyParts.some((bp: string) => bp.toLowerCase().includes(bodyPart.toLowerCase()) ||
+              bodyPart.toLowerCase().includes(bp.toLowerCase()))) {
+            score += 20;
+          }
+        }
+
+        // Prefer beginner exercises for pain/symptoms
+        const titleLower = ex.title.toLowerCase();
+        if (titleLower.includes('stretch') || titleLower.includes('gentle') || titleLower.includes('relief')) {
+          score += 10;
+        }
+
+        return { exercise: ex, score };
+      });
+
+      // Get top 2 exercises
+      const topExercises = scored
+        .filter((s: any) => s.score > 0)
+        .sort((a: any, b: any) => b.score - a.score)
+        .slice(0, 2)
+        .map((s: any) => ({
+          id: s.exercise.id,
+          title: s.exercise.title,
+          bodyPart: s.exercise.body_parts?.[0] || 'General',
+          url: s.exercise.youtube_video_id
+            ? `https://www.youtube.com/watch?v=${s.exercise.youtube_video_id}`
+            : 'https://youtube.com/@justinlemmodpt',
+        }));
+
+      return topExercises;
+    } catch (error) {
+      console.error('Error searching exercises:', error);
+      return [];
+    }
+  };
 
   useEffect(() => {
     // Auto-scroll to bottom when new messages are added
@@ -46,9 +144,10 @@ export default function HomeScreen() {
   const sendMessage = async () => {
     if (!inputText.trim()) return;
 
+    const userMessageText = inputText.trim();
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
-      text: inputText.trim(),
+      text: userMessageText,
       isUser: true,
       timestamp: new Date(),
     };
@@ -56,19 +155,30 @@ export default function HomeScreen() {
     setMessages(prev => [...prev, userMessage]);
     setInputText('');
     setIsLoading(true);
+    setExerciseSuggestions([]);
 
     try {
+      // Search for exercise suggestions based on symptoms
+      const suggestions = await searchExercisesForSymptoms(userMessageText);
+      setExerciseSuggestions(suggestions);
+
+      // Build context about found exercises for the AI
+      let exerciseContext = '';
+      if (suggestions.length > 0) {
+        exerciseContext = `\n\nI found ${suggestions.length} exercise(s) that might help: ${suggestions.map(s => s.title).join(', ')}. Mention these exercises in your response and encourage the user to try them. Also suggest they complete a full assessment for a personalized recovery plan.`;
+      }
+
       const systemPrompt = `You are PTBot, a helpful virtual physical therapy assistant created by Dr. Justin Lemmo, PT, DPT. You provide educational information about physical therapy, exercises, and general wellness.
 
 IMPORTANT GUIDELINES:
 - Always emphasize that you provide educational information, not medical diagnosis
+- If the user mentions pain or symptoms, acknowledge their concern and provide brief general advice
 - Recommend users complete the Assessment tab for personalized exercise recommendations
 - For Texas residents, mention they can book virtual consultations with Dr. Lemmo at justinlemmodpt.com
-- Direct users to the Exercises tab to find specific exercise videos from Dr. Lemmo's YouTube channel
-- If users describe pain or symptoms, suggest they use the Assessment tab for proper evaluation
 - Be encouraging and supportive about their recovery journey
-- Keep responses concise and actionable
-- Always remind users to consult healthcare providers for serious concerns
+- Keep responses concise (2-3 short paragraphs max) and actionable
+- If exercises were found for their symptoms, mention them and encourage trying them
+- Always remind users to consult healthcare providers for serious concerns${exerciseContext}
 
 NEVER:
 - Provide specific medical diagnoses
@@ -84,11 +194,11 @@ Your goal is to guide users through the app features while providing helpful, sa
           role: msg.isUser ? 'user' as const : 'assistant' as const,
           content: msg.text,
         })),
-        { role: 'user' as const, content: inputText.trim() },
+        { role: 'user' as const, content: userMessageText },
       ];
 
       const responseText = await openaiProxy.chat(chatMessages, {
-        max_tokens: 300,
+        max_tokens: 350,
         temperature: 0.7,
       });
 
@@ -243,6 +353,39 @@ Your goal is to guide users through the app features while providing helpful, sa
               <View style={styles.loadingBubble}>
                 <Text style={styles.loadingText}>PTBot is typing...</Text>
               </View>
+            </View>
+          )}
+
+          {/* Exercise Suggestions */}
+          {exerciseSuggestions.length > 0 && !isLoading && (
+            <View style={styles.suggestionsContainer}>
+              <View style={styles.suggestionsHeader}>
+                <Target size={16} color="#059669" />
+                <Text style={styles.suggestionsTitle}>Suggested Exercises</Text>
+              </View>
+              {exerciseSuggestions.map((exercise) => (
+                <TouchableOpacity
+                  key={exercise.id}
+                  style={styles.suggestionCard}
+                  onPress={() => Linking.openURL(exercise.url)}
+                >
+                  <View style={styles.suggestionInfo}>
+                    <Text style={styles.suggestionTitle}>{exercise.title}</Text>
+                    <Text style={styles.suggestionMeta}>{exercise.bodyPart}</Text>
+                  </View>
+                  <View style={styles.suggestionPlayButton}>
+                    <Play size={16} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={styles.fullAssessmentPrompt}
+                onPress={() => router.push('/assessment')}
+              >
+                <Text style={styles.fullAssessmentText}>
+                  Want a complete recovery plan? Take a full assessment →
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
         </ScrollView>
@@ -476,5 +619,62 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     marginTop: 8,
+  },
+  // Exercise Suggestions styles
+  suggestionsContainer: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  suggestionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 6,
+  },
+  suggestionsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#065F46',
+  },
+  suggestionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
+  },
+  suggestionInfo: {
+    flex: 1,
+  },
+  suggestionTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1F2937',
+    marginBottom: 2,
+  },
+  suggestionMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  suggestionPlayButton: {
+    backgroundColor: '#059669',
+    borderRadius: 6,
+    padding: 8,
+  },
+  fullAssessmentPrompt: {
+    paddingVertical: 8,
+  },
+  fullAssessmentText: {
+    fontSize: 13,
+    color: '#059669',
+    textAlign: 'center',
+    fontWeight: '500',
   },
 });
