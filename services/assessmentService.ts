@@ -357,12 +357,26 @@ export class AssessmentService {
   // Match routines to assessment based on target_symptoms
   private matchRoutineToSymptoms(routines: DatabaseRoutine[], assessment: AssessmentData): MatchedRoutine | null {
     const assessmentTerms = this.buildAssessmentSearchTerms(assessment);
+    const painLocationLower = assessment.painLocation.toLowerCase();
 
     let bestMatch: MatchedRoutine | null = null;
 
     for (const routine of routines) {
       let matchScore = 0;
       const matchedSymptoms: string[] = [];
+
+      // CRITICAL: Check body part match first - routine must target the same area
+      const routineText = `${routine.name} ${routine.description}`.toLowerCase();
+      const bodyPartMatches = this.routineMatchesBodyPart(routineText, painLocationLower);
+
+      if (!bodyPartMatches) {
+        // Skip this routine entirely if body part doesn't match
+        continue;
+      }
+
+      // Body part matches - give significant score
+      matchScore += 40;
+      matchedSymptoms.push(`Targets ${assessment.painLocation}`);
 
       // Check each target symptom against assessment
       for (const targetSymptom of routine.target_symptoms) {
@@ -371,19 +385,12 @@ export class AssessmentService {
         for (const term of assessmentTerms) {
           // Check for meaningful overlap (not just single word matches)
           if (this.symptomsMatch(targetLower, term)) {
-            matchScore += 15;
+            matchScore += 10;
             if (!matchedSymptoms.includes(targetSymptom)) {
               matchedSymptoms.push(targetSymptom);
             }
           }
         }
-      }
-
-      // Bonus for body part match in routine name/description
-      const routineText = `${routine.name} ${routine.description}`.toLowerCase();
-      if (routineText.includes(assessment.painLocation.toLowerCase())) {
-        matchScore += 25;
-        matchedSymptoms.push(`Targets ${assessment.painLocation}`);
       }
 
       // Bonus for pain type match
@@ -401,6 +408,39 @@ export class AssessmentService {
     }
 
     return bestMatch;
+  }
+
+  // Check if routine targets the same body part as assessment
+  private routineMatchesBodyPart(routineText: string, painLocation: string): boolean {
+    // Define body part groupings
+    const bodyPartMappings: Record<string, string[]> = {
+      'lower back': ['lower back', 'lumbar', 'low back'],
+      'upper back': ['upper back', 'thoracic', 'mid back'],
+      'neck': ['neck', 'cervical'],
+      'shoulder': ['shoulder', 'rotator cuff'],
+      'knee': ['knee', 'patella', 'anterior knee'],
+      'hip': ['hip', 'piriformis'],
+      'ankle': ['ankle', 'foot'],
+      'elbow': ['elbow', 'wrist'],
+    };
+
+    // Find which body part the pain location belongs to
+    let painBodyPart: string | null = null;
+    for (const [bodyPart, terms] of Object.entries(bodyPartMappings)) {
+      if (terms.some(term => painLocation.includes(term))) {
+        painBodyPart = bodyPart;
+        break;
+      }
+    }
+
+    if (!painBodyPart) {
+      // If we can't identify the body part, check direct inclusion
+      return routineText.includes(painLocation);
+    }
+
+    // Check if routine text contains any terms for this body part
+    const relevantTerms = bodyPartMappings[painBodyPart] || [painBodyPart];
+    return relevantTerms.some(term => routineText.includes(term));
   }
 
   // Check if two symptom descriptions match meaningfully
