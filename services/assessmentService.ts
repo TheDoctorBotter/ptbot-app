@@ -90,6 +90,35 @@ interface ScoredExercise {
   matchReasons: string[];
 }
 
+// Routine types
+interface DatabaseRoutine {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  target_symptoms: string[];
+  exclusion_criteria: string[];
+  disclaimer: string;
+  difficulty: string;
+  estimated_duration_minutes: number;
+}
+
+interface DatabaseRoutineItem {
+  id: string;
+  sequence_order: number;
+  phase: string;
+  phase_notes: string | null;
+  transition_notes: string | null;
+  is_optional: boolean;
+  exercise_videos: DatabaseExercise;
+}
+
+interface MatchedRoutine {
+  routine: DatabaseRoutine;
+  matchScore: number;
+  matchedSymptoms: string[];
+}
+
 const STORAGE_KEY = 'ptbot_assessments';
 
 export class AssessmentService {
@@ -177,6 +206,15 @@ export class AssessmentService {
     }
 
     try {
+      // Step 0: Try to match a curated routine first
+      console.log('🔍 Checking for matching exercise routine...');
+      const routineRecommendations = await this.tryMatchRoutine(assessment);
+      if (routineRecommendations && routineRecommendations.length > 0) {
+        console.log(`✅ Using matched routine with ${routineRecommendations.length} exercises`);
+        return routineRecommendations;
+      }
+      console.log('📋 No routine match, falling back to individual exercise matching');
+
       // Step 1: Get the section ID for the body part
       const sectionSlug = this.bodyPartToSectionSlug(assessment.painLocation);
 
@@ -271,6 +309,369 @@ export class AssessmentService {
       console.error('Error generating exercise recommendations:', error);
       return [];
     }
+  }
+
+  // Try to match assessment to a curated routine first
+  private async tryMatchRoutine(assessment: AssessmentData): Promise<ExerciseRecommendation[] | null> {
+    if (!supabase) {
+      return null;
+    }
+
+    try {
+      // Fetch all active routines
+      const { data: routines, error: routinesError } = await supabase
+        .from('exercise_routines')
+        .select('*')
+        .eq('is_active', true);
+
+      if (routinesError || !routines || routines.length === 0) {
+        console.log('No routines found or error fetching routines');
+        return null;
+      }
+
+      // Match routines to assessment symptoms
+      const matchedRoutine = this.matchRoutineToSymptoms(routines as DatabaseRoutine[], assessment);
+
+      if (!matchedRoutine || matchedRoutine.matchScore < 30) {
+        console.log('No routine matched with sufficient score');
+        return null;
+      }
+
+      console.log(`✅ Matched routine: ${matchedRoutine.routine.name} (score: ${matchedRoutine.matchScore})`);
+      console.log(`   Matched symptoms: ${matchedRoutine.matchedSymptoms.join(', ')}`);
+
+      // Check exclusion criteria
+      if (this.checkExclusionCriteria(matchedRoutine.routine, assessment)) {
+        console.log('❌ Routine excluded due to exclusion criteria');
+        return null;
+      }
+
+      // Fetch routine exercises in order
+      return await this.generateRoutineRecommendations(matchedRoutine.routine, assessment);
+    } catch (error) {
+      console.error('Error matching routine:', error);
+      return null;
+    }
+  }
+
+  // Match routines to assessment based on target_symptoms
+  private matchRoutineToSymptoms(routines: DatabaseRoutine[], assessment: AssessmentData): MatchedRoutine | null {
+    const assessmentTerms = this.buildAssessmentSearchTerms(assessment);
+
+    let bestMatch: MatchedRoutine | null = null;
+
+    for (const routine of routines) {
+      let matchScore = 0;
+      const matchedSymptoms: string[] = [];
+
+      // Check each target symptom against assessment
+      for (const targetSymptom of routine.target_symptoms) {
+        const targetLower = targetSymptom.toLowerCase();
+
+        for (const term of assessmentTerms) {
+          // Check for meaningful overlap (not just single word matches)
+          if (this.symptomsMatch(targetLower, term)) {
+            matchScore += 15;
+            if (!matchedSymptoms.includes(targetSymptom)) {
+              matchedSymptoms.push(targetSymptom);
+            }
+          }
+        }
+      }
+
+      // Bonus for body part match in routine name/description
+      const routineText = `${routine.name} ${routine.description}`.toLowerCase();
+      if (routineText.includes(assessment.painLocation.toLowerCase())) {
+        matchScore += 25;
+        matchedSymptoms.push(`Targets ${assessment.painLocation}`);
+      }
+
+      // Bonus for pain type match
+      if (assessment.painType) {
+        const painTypeLower = assessment.painType.toLowerCase();
+        if (routineText.includes(painTypeLower) ||
+            routine.target_symptoms.some(s => s.toLowerCase().includes(painTypeLower))) {
+          matchScore += 10;
+        }
+      }
+
+      if (!bestMatch || matchScore > bestMatch.matchScore) {
+        bestMatch = { routine, matchScore, matchedSymptoms };
+      }
+    }
+
+    return bestMatch;
+  }
+
+  // Check if two symptom descriptions match meaningfully
+  private symptomsMatch(routineSymptom: string, assessmentTerm: string): boolean {
+    // Direct inclusion
+    if (routineSymptom.includes(assessmentTerm) || assessmentTerm.includes(routineSymptom)) {
+      return true;
+    }
+
+    // Key symptom mappings
+    const mappings: Record<string, string[]> = {
+      'stiffness': ['stiff', 'tight', 'limited mobility', 'restricted'],
+      'aching': ['ache', 'dull pain', 'sore'],
+      'sitting': ['prolonged sitting', 'desk', 'sedentary'],
+      'morning': ['morning stiffness', 'wake up', 'first thing'],
+      'stairs': ['going down stairs', 'climbing', 'steps'],
+      'kneecap': ['patella', 'anterior knee', 'front of knee'],
+      'squatting': ['squat', 'bending knee', 'deep knee bend'],
+    };
+
+    for (const [key, synonyms] of Object.entries(mappings)) {
+      if (routineSymptom.includes(key) && synonyms.some(s => assessmentTerm.includes(s))) {
+        return true;
+      }
+      if (assessmentTerm.includes(key) && synonyms.some(s => routineSymptom.includes(s))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Build search terms from assessment data
+  private buildAssessmentSearchTerms(assessment: AssessmentData): string[] {
+    const terms: string[] = [];
+
+    // Pain location variations
+    if (assessment.painLocation) {
+      terms.push(assessment.painLocation.toLowerCase());
+      // Add common variations
+      if (assessment.painLocation.toLowerCase().includes('lower back')) {
+        terms.push('lumbar', 'low back', 'back pain');
+      }
+      if (assessment.painLocation.toLowerCase().includes('knee')) {
+        terms.push('patella', 'kneecap', 'anterior knee');
+      }
+    }
+
+    // Pain type
+    if (assessment.painType) {
+      terms.push(assessment.painType.toLowerCase());
+      if (assessment.painType.toLowerCase().includes('ach')) {
+        terms.push('dull pain', 'aching');
+      }
+      if (assessment.painType.toLowerCase().includes('stiff')) {
+        terms.push('stiffness', 'tight');
+      }
+    }
+
+    // Additional symptoms
+    for (const symptom of assessment.additionalSymptoms) {
+      terms.push(symptom.toLowerCase());
+    }
+
+    // Pain duration context
+    if (assessment.painDuration) {
+      const duration = assessment.painDuration.toLowerCase();
+      if (duration.includes('gradual') || duration.includes('week') || duration.includes('month')) {
+        terms.push('builds gradually', 'wax and wane');
+      }
+    }
+
+    return terms;
+  }
+
+  // Check if routine should be excluded based on assessment
+  private checkExclusionCriteria(routine: DatabaseRoutine, assessment: AssessmentData): boolean {
+    if (!routine.exclusion_criteria || routine.exclusion_criteria.length === 0) {
+      return false;
+    }
+
+    const assessmentText = [
+      assessment.painType,
+      assessment.mechanismOfInjury,
+      ...assessment.additionalSymptoms,
+      ...assessment.redFlags,
+    ].join(' ').toLowerCase();
+
+    for (const exclusion of routine.exclusion_criteria) {
+      const exclusionLower = exclusion.toLowerCase();
+
+      // Check for trauma exclusion
+      if (exclusionLower.includes('trauma') &&
+          (assessmentText.includes('fall') || assessmentText.includes('accident') ||
+           assessmentText.includes('injury') || assessmentText.includes('hit'))) {
+        return true;
+      }
+
+      // Check for neurological exclusion
+      if (exclusionLower.includes('neurological') &&
+          (assessmentText.includes('numbness') || assessmentText.includes('tingling') ||
+           assessmentText.includes('weakness'))) {
+        return true;
+      }
+
+      // Check for direct match
+      if (assessmentText.includes(exclusionLower.split(' ')[0])) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Generate recommendations from a matched routine
+  private async generateRoutineRecommendations(
+    routine: DatabaseRoutine,
+    assessment: AssessmentData
+  ): Promise<ExerciseRecommendation[]> {
+    if (!supabase) {
+      return [];
+    }
+
+    // Fetch routine items with exercises
+    const { data: routineItems, error } = await supabase
+      .from('exercise_routine_items')
+      .select(`
+        id,
+        sequence_order,
+        phase,
+        phase_notes,
+        transition_notes,
+        is_optional,
+        exercise_videos (*)
+      `)
+      .eq('routine_id', routine.id)
+      .order('sequence_order', { ascending: true });
+
+    if (error || !routineItems || routineItems.length === 0) {
+      console.log('No routine items found');
+      return [];
+    }
+
+    console.log(`📋 Building recommendations from ${routineItems.length} routine exercises`);
+
+    // Build recommendations from routine items
+    const recommendations: ExerciseRecommendation[] = routineItems
+      .filter(item => item.exercise_videos)
+      .map((item) => {
+        const exercise = item.exercise_videos as unknown as DatabaseExercise;
+        const routineItem = item as unknown as DatabaseRoutineItem;
+
+        // Build dosage from exercise
+        const dosage: ExerciseDosage = {
+          sets: exercise.recommended_sets || 2,
+          reps: exercise.recommended_reps || undefined,
+          frequency: exercise.recommended_frequency || 'Daily',
+          holdTime: exercise.recommended_hold_seconds
+            ? `${exercise.recommended_hold_seconds} seconds`
+            : undefined,
+        };
+
+        // Build YouTube video URL
+        const videoUrl = exercise.youtube_video_id
+          ? `https://www.youtube.com/watch?v=${exercise.youtube_video_id}`
+          : undefined;
+
+        // Build thumbnail URL
+        const thumbnailUrl = exercise.youtube_video_id
+          ? `https://img.youtube.com/vi/${exercise.youtube_video_id}/hqdefault.jpg`
+          : exercise.thumbnail_url || undefined;
+
+        // Build reasoning with phase info
+        let reasoning = `Part of your personalized ${routine.name}`;
+        if (routineItem.phase) {
+          reasoning += ` - ${routineItem.phase} Phase`;
+        }
+        reasoning += ` (Exercise ${routineItem.sequence_order} of ${routineItems.length})`;
+
+        // Build safety notes including phase notes
+        const safetyNotes = this.generateRoutineSafetyNotes(assessment, exercise, routineItem);
+
+        return {
+          exercise: {
+            id: exercise.id,
+            name: exercise.title,
+            description: exercise.description || '',
+            videoUrl,
+            thumbnailUrl,
+            bodyParts: exercise.body_parts || [],
+            difficulty: exercise.difficulty || 'Beginner',
+            category: this.inferCategory(exercise),
+          },
+          dosage,
+          relevanceScore: 100 - routineItem.sequence_order, // Earlier exercises score higher
+          reasoning,
+          safetyNotes,
+          redFlagWarnings: this.generateRedFlagWarnings(exercise),
+          progressionTips: this.generateRoutineProgressionTips(exercise, routineItem, routineItems.length),
+        };
+      });
+
+    // Add routine disclaimer to first exercise
+    if (recommendations.length > 0 && routine.disclaimer) {
+      recommendations[0].safetyNotes.unshift(`📋 ${routine.disclaimer}`);
+    }
+
+    return recommendations;
+  }
+
+  // Generate safety notes for routine exercises
+  private generateRoutineSafetyNotes(
+    assessment: AssessmentData,
+    exercise: DatabaseExercise,
+    routineItem: DatabaseRoutineItem
+  ): string[] {
+    const notes: string[] = [];
+
+    // Add phase notes first
+    if (routineItem.phase_notes) {
+      notes.push(routineItem.phase_notes);
+    }
+
+    // Add transition notes
+    if (routineItem.transition_notes) {
+      notes.push(`💡 ${routineItem.transition_notes}`);
+    }
+
+    // Include exercise-specific safety notes
+    if (exercise.safety_notes && exercise.safety_notes.length > 0) {
+      notes.push(...exercise.safety_notes);
+    }
+
+    // Pain level guidance
+    if (assessment.painLevel >= 7) {
+      notes.push('Start very gently given your current pain level.');
+    }
+
+    // Contraindications
+    if (exercise.contraindications && exercise.contraindications.length > 0) {
+      notes.push(`Avoid if you have: ${exercise.contraindications.join(', ')}.`);
+    }
+
+    return notes;
+  }
+
+  // Generate progression tips for routine exercises
+  private generateRoutineProgressionTips(
+    exercise: DatabaseExercise,
+    routineItem: DatabaseRoutineItem,
+    totalExercises: number
+  ): string[] {
+    const tips: string[] = [];
+
+    if (routineItem.sequence_order < totalExercises) {
+      tips.push(`Once comfortable, progress to Exercise ${routineItem.sequence_order + 1}`);
+    }
+
+    if (routineItem.phase === 'Symptom Relief') {
+      tips.push('Focus on pain relief before advancing to strengthening exercises');
+    } else if (routineItem.phase === 'Strengthening') {
+      tips.push('Ensure symptom relief exercises are comfortable before progressing');
+    } else if (routineItem.phase === 'Integration') {
+      tips.push('This exercise integrates previous movements into functional patterns');
+    }
+
+    if (exercise.difficulty === 'Beginner') {
+      tips.push('Increase hold time or repetitions as this becomes easier');
+    }
+
+    return tips;
   }
 
   // Generate exercise recommendations based on protocol and phase for post-op patients
