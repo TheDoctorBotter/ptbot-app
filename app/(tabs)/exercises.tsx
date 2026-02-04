@@ -421,6 +421,111 @@ export default function ExercisesScreen() {
     }
   };
 
+  // Share Assessment-Based Recommendations
+  const handleShareAssessmentPlan = async () => {
+    if (!latestAssessment || latestAssessment.recommendations.length === 0) {
+      Alert.alert('No Plan to Share', 'Complete an assessment to get a personalized exercise plan to share.');
+      return;
+    }
+
+    setIsSharing(true);
+    try {
+      // Build share payload from assessment recommendations
+      const planExercises: PlanExercise[] = latestAssessment.recommendations.map((rec) => ({
+        id: rec.exercise.id,
+        title: rec.exercise.name,
+        description: rec.reasoning || undefined,
+        youtubeUrl: rec.exercise.videoUrl || undefined,
+        difficulty: rec.exercise.difficulty,
+        sets: rec.dosage?.sets,
+        reps: rec.dosage?.reps,
+        holdSeconds: rec.dosage?.holdTime ? parseInt(rec.dosage.holdTime) || undefined : undefined,
+      }));
+
+      const payload = sharePlanService.buildSharePayload(
+        branding,
+        `Exercise Plan for ${latestAssessment.assessment.painLocation || 'Pain Relief'}`,
+        'symptom',
+        null,
+        null,
+        null,
+        latestAssessment.assessment.painLocation || null,
+        null,
+        planExercises,
+        [],
+        latestAssessment.createdAt || latestAssessment.assessment.timestamp || null
+      );
+
+      const result = await sharePlanService.createShareLink(payload);
+
+      if (result.success && result.shareUrl) {
+        await Share.share({
+          message: `Check out my exercise plan: ${result.shareUrl}`,
+          url: result.shareUrl,
+        });
+      } else {
+        Alert.alert('Share Failed', result.error || 'Unable to create share link.');
+      }
+    } catch (err) {
+      console.error('Error sharing assessment plan:', err);
+      Alert.alert('Error', 'Failed to share plan. Please try again.');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  // Export Assessment-Based Recommendations as PDF
+  const handleExportAssessmentPdf = async () => {
+    if (!latestAssessment || latestAssessment.recommendations.length === 0) {
+      Alert.alert('No Plan to Export', 'Complete an assessment to get a personalized exercise plan to export.');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      // Build share payload from assessment recommendations
+      const planExercises: PlanExercise[] = latestAssessment.recommendations.map((rec) => ({
+        id: rec.exercise.id,
+        title: rec.exercise.name,
+        description: rec.reasoning || undefined,
+        youtubeUrl: rec.exercise.videoUrl || undefined,
+        difficulty: rec.exercise.difficulty,
+        sets: rec.dosage?.sets,
+        reps: rec.dosage?.reps,
+        holdSeconds: rec.dosage?.holdTime ? parseInt(rec.dosage.holdTime) || undefined : undefined,
+      }));
+
+      const payload = sharePlanService.buildSharePayload(
+        branding,
+        `Exercise Plan for ${latestAssessment.assessment.painLocation || 'Pain Relief'}`,
+        'symptom',
+        null,
+        null,
+        null,
+        latestAssessment.assessment.painLocation || null,
+        null,
+        planExercises,
+        [],
+        latestAssessment.createdAt || latestAssessment.assessment.timestamp || null
+      );
+
+      // For now, offer to share the link instead
+      Alert.alert(
+        'Export PDF',
+        'PDF export requires opening the plan in a browser. Would you like to share the plan link instead?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Share Link', onPress: handleShareAssessmentPlan },
+        ]
+      );
+    } catch (err) {
+      console.error('Error exporting assessment PDF:', err);
+      Alert.alert('Error', 'Failed to export PDF. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // Fetch exercises from Supabase when body part changes
   useEffect(() => {
     fetchExercisesByBodyPart(selectedBodyPart);
@@ -1017,6 +1122,38 @@ export default function ExercisesScreen() {
             <Text style={styles.recommendationsSubtitle}>
               Based on your recent assessment, here are exercises specifically chosen for your condition:
             </Text>
+
+            {/* Share/Export Actions for Assessment Recommendations */}
+            <View style={styles.shareActionsContainer}>
+              <TouchableOpacity
+                style={styles.shareActionButton}
+                onPress={handleShareAssessmentPlan}
+                disabled={isSharing || latestAssessment!.recommendations.length === 0}
+              >
+                {isSharing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Share2 size={16} color="#FFFFFF" />
+                    <Text style={styles.shareActionText}>Share Plan</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.shareActionButton, styles.exportActionButton]}
+                onPress={handleExportAssessmentPdf}
+                disabled={isExporting || latestAssessment!.recommendations.length === 0}
+              >
+                {isExporting ? (
+                  <ActivityIndicator size="small" color={colors.primary[500]} />
+                ) : (
+                  <>
+                    <FileText size={16} color={colors.primary[500]} />
+                    <Text style={[styles.shareActionText, styles.exportActionText]}>Export PDF</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
             
             {latestAssessment!.recommendations.map((recommendation, index) => {
               // Format dosage for display
