@@ -136,12 +136,14 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
       }
 
       // Pick image with base64 encoding for mobile compatibility
+      // Note: On iOS, base64: true is critical for reliable uploads
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
-        base64: true, // Request base64 data for mobile upload
+        quality: 0.7, // Slightly lower quality for faster upload
+        base64: true, // Critical for iOS - ensures we get base64 data
+        exif: false, // Don't need EXIF data, reduces payload
       });
 
       if (result.canceled || !result.assets[0]) {
@@ -149,10 +151,21 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
       }
 
       const asset = result.assets[0];
+
+      // Debug: Log what we received
+      console.log('ImagePicker result:', {
+        hasBase64: !!asset.base64,
+        base64Length: asset.base64?.length || 0,
+        uri: asset.uri?.substring(0, 50),
+        width: asset.width,
+        height: asset.height,
+        mimeType: asset.mimeType,
+      });
+
       await uploadLogo(asset);
     } catch (err) {
       console.error('Error picking image:', err);
-      Alert.alert('Error', 'Failed to pick image');
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
 
@@ -199,44 +212,68 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
       // Determine file extension from mimeType or URI
       let ext = 'jpg';
       if (asset.mimeType) {
-        ext = asset.mimeType.split('/')[1] || 'jpg';
+        const mimeExt = asset.mimeType.split('/')[1];
+        if (mimeExt && ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].includes(mimeExt.toLowerCase())) {
+          ext = mimeExt.toLowerCase();
+        }
       } else if (asset.uri) {
         const uriExt = asset.uri.split('.').pop()?.toLowerCase();
-        if (uriExt && ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(uriExt)) {
+        if (uriExt && ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].includes(uriExt)) {
           ext = uriExt;
         }
       }
 
-      // Normalize jpeg to jpg
+      // Normalize extensions
       if (ext === 'jpeg') ext = 'jpg';
+      if (ext === 'heic') ext = 'jpg'; // HEIC gets converted by ImagePicker
 
       const fileName = `clinic-logos/${clinicId}/logo.${ext}`;
       const contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
 
-      let uploadData: ArrayBuffer | Blob;
+      console.log('Upload attempt:', {
+        hasBase64: !!asset.base64,
+        uri: asset.uri?.substring(0, 50),
+        mimeType: asset.mimeType,
+        platform: Platform.OS
+      });
 
-      // Use base64 if available (more reliable on mobile)
+      let uploadData: Uint8Array | Blob;
+
+      // Priority 1: Use base64 if available (most reliable on iOS/Android)
       if (asset.base64) {
-        // Convert base64 to Uint8Array using cross-platform decoder
-        uploadData = base64ToUint8Array(asset.base64).buffer;
-      } else if (Platform.OS === 'web') {
-        // Web: use fetch to get blob
+        console.log('Using base64 data, length:', asset.base64.length);
+        uploadData = base64ToUint8Array(asset.base64);
+      }
+      // Priority 2: Web platform - use fetch blob
+      else if (Platform.OS === 'web') {
+        console.log('Web platform: fetching blob');
         const response = await fetch(asset.uri);
         uploadData = await response.blob();
-      } else {
-        // Mobile fallback: try fetch with file:// URI
-        try {
-          const response = await fetch(asset.uri);
-          const blob = await response.blob();
-          // Convert blob to array buffer for upload
-          const arrayBuffer = await new Response(blob).arrayBuffer();
-          uploadData = arrayBuffer;
-        } catch (fetchErr) {
-          console.error('Fetch fallback failed:', fetchErr);
-          Alert.alert('Upload Failed', 'Could not read the image file. Please try again.');
-          return;
-        }
       }
+      // Priority 3: iOS/Android - use XMLHttpRequest which handles local files better
+      else {
+        console.log('Mobile fallback: using XMLHttpRequest');
+        uploadData = await new Promise<Uint8Array>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('GET', asset.uri, true);
+          xhr.responseType = 'arraybuffer';
+
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 0) { // 0 for local files
+              resolve(new Uint8Array(xhr.response));
+            } else {
+              reject(new Error(`XHR failed with status ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error('XHR network error'));
+          xhr.ontimeout = () => reject(new Error('XHR timeout'));
+          xhr.timeout = 30000;
+          xhr.send();
+        });
+      }
+
+      console.log('Upload data ready, size:', uploadData instanceof Uint8Array ? uploadData.length : 'blob');
 
       // Upload to Supabase Storage
       const { data, error } = await supabase.storage
@@ -247,10 +284,12 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
         });
 
       if (error) {
-        console.error('Upload error:', error);
+        console.error('Supabase upload error:', error);
         Alert.alert('Upload Failed', error.message || 'Failed to upload logo. Please try again.');
         return;
       }
+
+      console.log('Upload successful:', data);
 
       // Get public URL with cache busting
       const { data: urlData } = supabase.storage
@@ -264,7 +303,8 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
       }
     } catch (err) {
       console.error('Error uploading logo:', err);
-      Alert.alert('Error', 'Failed to upload logo. Please check your connection and try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      Alert.alert('Upload Error', `Failed to upload logo: ${errorMessage}`);
     } finally {
       setIsUploading(false);
     }
