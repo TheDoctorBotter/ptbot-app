@@ -1040,18 +1040,30 @@ export class AssessmentService {
         score += 5;
       }
 
-      // Use display order as tiebreaker (lower order = earlier in sequence = higher score)
-      score += Math.max(0, 10 - (exercise.display_order || 0));
+      // Note: display_order is used for sorting, not scoring
+      // Exercises with display_order 0-250 are regular exercises
+      // Exercises with display_order 251+ are protocol-only (excluded from browse)
 
       return { exercise, score, matchReasons };
     });
 
-    // Sort by score descending, then by display_order ascending, then by id for determinism
-    return scored.sort((a, b) => {
+    // Filter to relevant exercises (minimum score threshold for body part match)
+    const MIN_RELEVANCE_SCORE = 40;
+    const relevantExercises = scored.filter(s => s.score >= MIN_RELEVANCE_SCORE);
+
+    // Sort primarily by display_order (clinical progression order), then by score as tiebreaker
+    // This ensures exercises appear in the clinically intended sequence
+    return relevantExercises.sort((a, b) => {
+      const orderA = a.exercise.display_order ?? 999;
+      const orderB = b.exercise.display_order ?? 999;
+
+      // Primary sort: display_order ascending (lower = earlier in clinical sequence)
+      if (orderA !== orderB) return orderA - orderB;
+
+      // Secondary sort: score descending (higher relevance wins ties)
       if (b.score !== a.score) return b.score - a.score;
-      const orderDiff = (a.exercise.display_order || 0) - (b.exercise.display_order || 0);
-      if (orderDiff !== 0) return orderDiff;
-      // Tertiary sort by id ensures consistent ordering when score and display_order are equal
+
+      // Tertiary sort: id for determinism
       return a.exercise.id.localeCompare(b.exercise.id);
     });
   }

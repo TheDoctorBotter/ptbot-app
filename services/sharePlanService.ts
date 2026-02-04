@@ -12,13 +12,15 @@ import type { Precaution } from '@/components/shared/PrecautionsCard';
 export interface PlanExercise {
   id: string;
   title: string;
-  description?: string;
+  description?: string;  // "Why this helps" reasoning
   youtubeUrl?: string;
   thumbnailUrl?: string;
   difficulty?: string;
   sets?: number;
   reps?: number;
   holdSeconds?: number;
+  frequency?: string;     // e.g., "2x/day", "Daily"
+  safetyNotes?: string[]; // Max 2 bullet points
 }
 
 export interface SharePlanPayload {
@@ -200,232 +202,388 @@ class SharePlanService {
   }
 
   /**
-   * Generate HTML for PDF export
+   * Truncate text to max length with ellipsis
+   */
+  private truncateText(text: string | undefined, maxLength: number): string {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
+  }
+
+  /**
+   * Format dosage string from exercise data
+   */
+  private formatDosage(ex: PlanExercise): string {
+    const parts: string[] = [];
+    if (ex.sets && ex.reps) {
+      parts.push(`${ex.sets} × ${ex.reps}`);
+    } else if (ex.sets) {
+      parts.push(`${ex.sets} sets`);
+    } else if (ex.reps) {
+      parts.push(`${ex.reps} reps`);
+    }
+    if (ex.holdSeconds) {
+      parts.push(`${ex.holdSeconds}s hold`);
+    }
+    if (ex.frequency) {
+      parts.push(ex.frequency);
+    }
+    return parts.join(' • ') || '—';
+  }
+
+  /**
+   * Generate HTML for PDF export - ONE PAGE, ALL EXERCISES
+   * Uses two-column layout for 6+ exercises to fit on single page
    */
   generatePrintHtml(payload: SharePlanPayload): string {
-    const exerciseListHtml = payload.exercises
-      .map(
-        (ex, index) => `
-        <div class="exercise">
-          <div class="exercise-number">${index + 1}</div>
-          <div class="exercise-content">
-            <h3 class="exercise-title">${ex.title}</h3>
-            ${ex.description ? `<p class="exercise-description">${ex.description}</p>` : ''}
-            <div class="exercise-dosage">
-              ${ex.sets ? `<span>Sets: ${ex.sets}</span>` : ''}
-              ${ex.reps ? `<span>Reps: ${ex.reps}</span>` : ''}
-              ${ex.holdSeconds ? `<span>Hold: ${ex.holdSeconds}s</span>` : ''}
-            </div>
-            ${ex.youtubeUrl ? `<p class="exercise-link">Video: <a href="${ex.youtubeUrl}">${ex.youtubeUrl}</a></p>` : ''}
+    const exerciseCount = payload.exercises.length;
+    const useTwoColumns = exerciseCount >= 6;
+
+    // Build exercise items
+    const exerciseItems = payload.exercises.map((ex, index) => {
+      const dosage = this.formatDosage(ex);
+      const description = this.truncateText(ex.description, 80);
+      const videoId = ex.youtubeUrl?.match(/(?:v=|\/)([\w-]{11})/)?.[1];
+      const shortVideoUrl = videoId ? `youtu.be/${videoId}` : '';
+      const safetyHtml = ex.safetyNotes && ex.safetyNotes.length > 0
+        ? `<div class="exercise-safety">${ex.safetyNotes.slice(0, 2).map(n => this.truncateText(n, 60)).join(' • ')}</div>`
+        : '';
+
+      return `
+        <div class="exercise-item">
+          <div class="exercise-num">${index + 1}</div>
+          <div class="exercise-details">
+            <div class="exercise-name">${ex.title}</div>
+            <div class="exercise-dosage">${dosage}</div>
+            ${description ? `<div class="exercise-why">${description}</div>` : ''}
+            ${safetyHtml}
+            ${shortVideoUrl ? `<div class="exercise-video">${shortVideoUrl}</div>` : ''}
           </div>
         </div>
-      `
-      )
-      .join('');
+      `;
+    }).join('');
 
-    const precautionsHtml = payload.precautions
-      .map(
-        (p) => `
-        <div class="precaution ${p.severity}">
-          <h4>${p.title}</h4>
-          <ul>
-            ${p.bullets.map((b) => `<li>${b}</li>`).join('')}
-          </ul>
+    // Build precautions (compact, max 2 bullets each)
+    const precautionsHtml = payload.precautions.length > 0 ? `
+      <div class="precautions-section">
+        <div class="section-label">Safety Notes</div>
+        <div class="precautions-list">
+          ${payload.precautions.slice(0, 2).map(p => `
+            <div class="precaution-item">
+              <strong>${p.title}:</strong> ${p.bullets.slice(0, 2).join(' • ')}
+            </div>
+          `).join('')}
         </div>
-      `
-      )
-      .join('');
+      </div>
+    ` : '';
+
+    // Context line (protocol/phase or condition)
+    let contextLine = '';
+    if (payload.protocolKey && payload.phaseNumber) {
+      contextLine = `${payload.planTitle}`;
+    } else if (payload.painLocation) {
+      contextLine = `${payload.painLocation} Exercise Program`;
+    }
 
     return `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${payload.planTitle} - ${payload.clinicName}</title>
+        <title>PTBOT Exercise Plan</title>
         <style>
+          @page {
+            size: letter;
+            margin: 0.4in;
+          }
           * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
           }
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            line-height: 1.6;
-            color: #1f2937;
+          html, body {
+            width: 100%;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-size: 10px;
+            line-height: 1.3;
+            color: #1a1a1a;
             background: #fff;
-            padding: 20px;
-            max-width: 800px;
-            margin: 0 auto;
           }
+          .page {
+            width: 100%;
+            max-width: 7.5in;
+            margin: 0 auto;
+            padding: 0.3in;
+          }
+
+          /* Header */
           .header {
-            background: ${payload.primaryColor};
-            color: white;
-            padding: 24px;
-            border-radius: 12px;
-            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding-bottom: 10px;
+            border-bottom: 2px solid ${payload.primaryColor};
+            margin-bottom: 12px;
+          }
+          .header-left {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 10px;
           }
-          .header img {
-            width: 48px;
-            height: 48px;
-            border-radius: 8px;
-            background: white;
+          .clinic-logo {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            object-fit: cover;
           }
-          .header-text h1 {
-            font-size: 20px;
-            margin-bottom: 4px;
-          }
-          .header-text p {
-            font-size: 14px;
-            opacity: 0.9;
-          }
-          .plan-info {
-            background: #f3f4f6;
-            padding: 16px;
-            border-radius: 8px;
-            margin-bottom: 24px;
-          }
-          .plan-info h2 {
+          .header-title {
             font-size: 18px;
-            margin-bottom: 8px;
+            font-weight: 700;
+            color: ${payload.primaryColor};
+          }
+          .header-subtitle {
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+          }
+          .header-right {
+            text-align: right;
+            font-size: 9px;
+            color: #666;
+          }
+          .header-date {
+            font-weight: 600;
+            color: #333;
+          }
+
+          /* Plan Context */
+          .plan-context {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+          }
+          .plan-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1a1a1a;
           }
           .plan-meta {
-            font-size: 14px;
-            color: #6b7280;
+            font-size: 9px;
+            color: #666;
+            margin-top: 3px;
           }
-          .section-title {
-            font-size: 16px;
-            font-weight: 600;
-            margin: 24px 0 12px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid ${payload.primaryColor};
+
+          /* Precautions */
+          .precautions-section {
+            background: #fff8e6;
+            border: 1px solid #f0c36d;
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin-bottom: 12px;
           }
-          .exercise {
+          .section-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #8a6d3b;
+            margin-bottom: 4px;
+          }
+          .precautions-list {
+            font-size: 9px;
+            color: #5a4a2a;
+          }
+          .precaution-item {
+            margin-bottom: 3px;
+          }
+
+          /* Exercises Section */
+          .exercises-header {
+            font-size: 12px;
+            font-weight: 700;
+            color: ${payload.primaryColor};
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #e0e0e0;
+          }
+
+          /* Exercise Grid - Two Column */
+          .exercises-grid {
+            display: ${useTwoColumns ? 'grid' : 'block'};
+            grid-template-columns: ${useTwoColumns ? '1fr 1fr' : '1fr'};
+            gap: ${useTwoColumns ? '8px 16px' : '6px'};
+          }
+
+          /* Exercise Item */
+          .exercise-item {
             display: flex;
-            gap: 12px;
-            padding: 16px 0;
-            border-bottom: 1px solid #e5e7eb;
+            gap: 8px;
+            padding: 6px 0;
+            border-bottom: 1px solid #eee;
+            page-break-inside: avoid;
           }
-          .exercise-number {
-            width: 28px;
-            height: 28px;
-            background: ${payload.secondaryColor};
+          .exercise-num {
+            width: 20px;
+            height: 20px;
+            background: ${payload.primaryColor};
             color: white;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 9px;
+            font-weight: 700;
             flex-shrink: 0;
           }
-          .exercise-content {
+          .exercise-details {
             flex: 1;
+            min-width: 0;
           }
-          .exercise-title {
-            font-size: 15px;
-            margin-bottom: 4px;
-          }
-          .exercise-description {
-            font-size: 13px;
-            color: #6b7280;
-            margin-bottom: 8px;
+          .exercise-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: #1a1a1a;
+            line-height: 1.2;
           }
           .exercise-dosage {
-            display: flex;
-            gap: 16px;
-            font-size: 13px;
-            color: #374151;
-          }
-          .exercise-link {
-            font-size: 12px;
-            color: #6b7280;
-            margin-top: 8px;
-          }
-          .exercise-link a {
+            font-size: 10px;
             color: ${payload.primaryColor};
+            font-weight: 600;
+            margin-top: 2px;
           }
-          .precaution {
-            padding: 16px;
-            border-radius: 8px;
-            margin-bottom: 12px;
+          .exercise-why {
+            font-size: 9px;
+            color: #666;
+            margin-top: 2px;
+            line-height: 1.25;
           }
-          .precaution.warning {
-            background: #fef3c7;
-            border: 1px solid #f59e0b;
+          .exercise-video {
+            font-size: 8px;
+            color: #0066cc;
+            margin-top: 2px;
           }
-          .precaution.info {
-            background: #e0f2fe;
-            border: 1px solid #0ea5e9;
+          .exercise-safety {
+            font-size: 8px;
+            color: #b45309;
+            margin-top: 2px;
+            font-style: italic;
           }
-          .precaution h4 {
-            font-size: 14px;
-            margin-bottom: 8px;
-          }
-          .precaution ul {
-            margin-left: 20px;
-            font-size: 13px;
-          }
-          .precaution li {
-            margin-bottom: 4px;
-          }
+
+          /* Footer */
           .footer {
-            margin-top: 32px;
-            padding-top: 16px;
-            border-top: 1px solid #e5e7eb;
-            font-size: 12px;
-            color: #9ca3af;
+            margin-top: 12px;
+            padding-top: 8px;
+            border-top: 1px solid #e0e0e0;
             text-align: center;
+            font-size: 8px;
+            color: #999;
           }
+          .footer-disclaimer {
+            margin-bottom: 3px;
+          }
+          .footer-branding {
+            color: #666;
+          }
+
+          /* Print Specific */
           @media print {
-            body {
-              padding: 0;
+            html, body {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
-            .header {
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
+            .page {
+              padding: 0;
             }
           }
         </style>
       </head>
       <body>
-        <div class="header">
-          ${payload.clinicLogoUrl ? `<img src="${payload.clinicLogoUrl}" alt="Logo">` : ''}
-          <div class="header-text">
-            <h1>${payload.clinicName}</h1>
-            <p>Exercise Program</p>
+        <div class="page">
+          <!-- Header -->
+          <div class="header">
+            <div class="header-left">
+              ${payload.clinicLogoUrl ? `<img src="${payload.clinicLogoUrl}" alt="" class="clinic-logo">` : ''}
+              <div>
+                <div class="header-title">PTBOT Exercise Plan</div>
+                <div class="header-subtitle">${payload.clinicName}</div>
+              </div>
+            </div>
+            <div class="header-right">
+              <div class="header-date">Generated: ${new Date(payload.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+              ${payload.patientFirstName ? `<div>For: ${payload.patientFirstName}</div>` : ''}
+            </div>
           </div>
-        </div>
 
-        <div class="plan-info">
-          <h2>${payload.planTitle}</h2>
-          <div class="plan-meta">
-            ${payload.patientFirstName ? `<p>Prepared for: ${payload.patientFirstName}</p>` : ''}
-            ${payload.phaseNumber ? `<p>Phase ${payload.phaseNumber}${payload.phaseName ? `: ${payload.phaseName}` : ''}</p>` : ''}
-            ${payload.painLocation ? `<p>Focus Area: ${payload.painLocation}</p>` : ''}
-            <p>Created: ${new Date(payload.createdAt).toLocaleDateString()}</p>
+          <!-- Plan Context -->
+          ${contextLine ? `
+          <div class="plan-context">
+            <div class="plan-title">${contextLine}</div>
+            ${payload.phaseNumber ? `<div class="plan-meta">Phase ${payload.phaseNumber}${payload.phaseName ? ` — ${payload.phaseName}` : ''}</div>` : ''}
           </div>
-        </div>
+          ` : ''}
 
-        ${
-          payload.precautions.length > 0
-            ? `
-          <h3 class="section-title">Important Precautions</h3>
+          <!-- Precautions -->
           ${precautionsHtml}
-        `
-            : ''
-        }
 
-        <h3 class="section-title">Your Exercises (${payload.exercises.length})</h3>
-        ${exerciseListHtml}
+          <!-- Exercises -->
+          <div class="exercises-header">Your Exercises (${exerciseCount})</div>
+          <div class="exercises-grid">
+            ${exerciseItems}
+          </div>
 
-        <div class="footer">
-          <p>This exercise program is for educational purposes only.</p>
-          <p>Always consult your healthcare provider before starting any exercise program.</p>
-          <p>Generated by ${payload.clinicName} via PTBOT</p>
+          <!-- Footer -->
+          <div class="footer">
+            <div class="footer-disclaimer">This exercise program is for educational purposes. Consult your healthcare provider before starting.</div>
+            <div class="footer-branding">Generated by ${payload.clinicName} via PTBOT</div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  /**
+   * Generate empty plan HTML when no exercises
+   */
+  generateEmptyPlanHtml(clinicName: string, primaryColor: string): string {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>PTBOT Exercise Plan</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #f8f9fa;
+          }
+          .message {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+          h1 {
+            color: ${primaryColor};
+            font-size: 24px;
+            margin-bottom: 12px;
+          }
+          p {
+            color: #666;
+            font-size: 14px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="message">
+          <h1>No Exercises in Plan</h1>
+          <p>Complete an assessment to receive personalized exercise recommendations.</p>
         </div>
       </body>
       </html>
