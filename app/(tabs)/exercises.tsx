@@ -826,10 +826,15 @@ export default function ExercisesScreen() {
         return { exercise: ex, score };
       });
 
-      // Filter exercises with score > 0 and sort by score
+      // Filter exercises with score > 0, sort by display_order first (clinical progression), then score
       const matches = scoredExercises
         .filter((s: any) => s.score > 0)
-        .sort((a: any, b: any) => b.score - a.score)
+        .sort((a: any, b: any) => {
+          const orderA = a.exercise.display_order ?? 999;
+          const orderB = b.exercise.display_order ?? 999;
+          if (orderA !== orderB) return orderA - orderB;
+          return b.score - a.score;
+        })
         .slice(0, 10);
 
       if (matches.length > 0) {

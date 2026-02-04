@@ -233,20 +233,32 @@ class SharePlanService {
 
   /**
    * Generate HTML for PDF export - ONE PAGE, ALL EXERCISES
-   * Uses two-column layout for 6+ exercises to fit on single page
+   * Uses dynamic sizing and two-column layout to fit on single page
    */
   generatePrintHtml(payload: SharePlanPayload): string {
     const exerciseCount = payload.exercises.length;
-    const useTwoColumns = exerciseCount >= 6;
+
+    // Dynamic layout: 2 columns for 6+, 3 columns for 12+
+    const useThreeColumns = exerciseCount >= 12;
+    const useTwoColumns = exerciseCount >= 6 && !useThreeColumns;
+
+    // Dynamic font sizing based on exercise count
+    const baseFontSize = exerciseCount > 10 ? '8px' : exerciseCount > 6 ? '9px' : '10px';
+    const exerciseNameSize = exerciseCount > 10 ? '9px' : exerciseCount > 6 ? '10px' : '11px';
+    const headerTitleSize = exerciseCount > 10 ? '14px' : '16px';
+
+    // Reduce description length for many exercises
+    const descMaxLen = exerciseCount > 10 ? 50 : exerciseCount > 6 ? 65 : 80;
 
     // Build exercise items
     const exerciseItems = payload.exercises.map((ex, index) => {
       const dosage = this.formatDosage(ex);
-      const description = this.truncateText(ex.description, 80);
+      const description = this.truncateText(ex.description, descMaxLen);
       const videoId = ex.youtubeUrl?.match(/(?:v=|\/)([\w-]{11})/)?.[1];
       const shortVideoUrl = videoId ? `youtu.be/${videoId}` : '';
-      const safetyHtml = ex.safetyNotes && ex.safetyNotes.length > 0
-        ? `<div class="exercise-safety">${ex.safetyNotes.slice(0, 2).map(n => this.truncateText(n, 60)).join(' • ')}</div>`
+      // Skip safety notes for very long lists to save space
+      const safetyHtml = exerciseCount <= 8 && ex.safetyNotes && ex.safetyNotes.length > 0
+        ? `<div class="exercise-safety">${ex.safetyNotes.slice(0, 1).map(n => this.truncateText(n, 40)).join('')}</div>`
         : '';
 
       return `
@@ -263,8 +275,8 @@ class SharePlanService {
       `;
     }).join('');
 
-    // Build precautions (compact, max 2 bullets each)
-    const precautionsHtml = payload.precautions.length > 0 ? `
+    // Build precautions (compact, max 2 bullets each) - skip for many exercises
+    const precautionsHtml = exerciseCount <= 8 && payload.precautions.length > 0 ? `
       <div class="precautions-section">
         <div class="section-label">Safety Notes</div>
         <div class="precautions-list">
@@ -285,6 +297,10 @@ class SharePlanService {
       contextLine = `${payload.painLocation} Exercise Program`;
     }
 
+    // Grid columns based on exercise count
+    const gridColumns = useThreeColumns ? '1fr 1fr 1fr' : useTwoColumns ? '1fr 1fr' : '1fr';
+    const gridGap = useThreeColumns ? '4px 12px' : useTwoColumns ? '6px 14px' : '4px';
+
     return `
       <!DOCTYPE html>
       <html>
@@ -294,7 +310,7 @@ class SharePlanService {
         <style>
           @page {
             size: letter;
-            margin: 0.4in;
+            margin: 0.3in;
           }
           * {
             margin: 0;
@@ -305,16 +321,19 @@ class SharePlanService {
             width: 100%;
             height: 100%;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            font-size: 10px;
-            line-height: 1.3;
+            font-size: ${baseFontSize};
+            line-height: 1.2;
             color: #1a1a1a;
             background: #fff;
+            overflow: hidden;
           }
           .page {
             width: 100%;
-            max-width: 7.5in;
-            margin: 0 auto;
-            padding: 0.3in;
+            height: 100%;
+            max-height: 10in;
+            padding: 0.2in;
+            display: flex;
+            flex-direction: column;
           }
 
           /* Header */
@@ -322,34 +341,35 @@ class SharePlanService {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            padding-bottom: 10px;
+            padding-bottom: 6px;
             border-bottom: 2px solid ${payload.primaryColor};
-            margin-bottom: 12px;
+            margin-bottom: 8px;
+            flex-shrink: 0;
           }
           .header-left {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
           }
           .clinic-logo {
-            width: 36px;
-            height: 36px;
-            border-radius: 6px;
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
             object-fit: cover;
           }
           .header-title {
-            font-size: 18px;
+            font-size: ${headerTitleSize};
             font-weight: 700;
             color: ${payload.primaryColor};
           }
           .header-subtitle {
-            font-size: 11px;
+            font-size: 9px;
             color: #666;
-            margin-top: 2px;
+            margin-top: 1px;
           }
           .header-right {
             text-align: right;
-            font-size: 9px;
+            font-size: 8px;
             color: #666;
           }
           .header-date {
@@ -360,78 +380,88 @@ class SharePlanService {
           /* Plan Context */
           .plan-context {
             background: #f8f9fa;
-            border-radius: 6px;
-            padding: 10px 12px;
-            margin-bottom: 12px;
+            border-radius: 4px;
+            padding: 6px 8px;
+            margin-bottom: 8px;
+            flex-shrink: 0;
           }
           .plan-title {
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 600;
             color: #1a1a1a;
           }
           .plan-meta {
-            font-size: 9px;
+            font-size: 8px;
             color: #666;
-            margin-top: 3px;
+            margin-top: 2px;
           }
 
           /* Precautions */
           .precautions-section {
             background: #fff8e6;
             border: 1px solid #f0c36d;
-            border-radius: 6px;
-            padding: 8px 10px;
-            margin-bottom: 12px;
+            border-radius: 4px;
+            padding: 5px 8px;
+            margin-bottom: 8px;
+            flex-shrink: 0;
           }
           .section-label {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             color: #8a6d3b;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
           }
           .precautions-list {
-            font-size: 9px;
+            font-size: 8px;
             color: #5a4a2a;
           }
           .precaution-item {
-            margin-bottom: 3px;
+            margin-bottom: 2px;
           }
 
           /* Exercises Section */
+          .exercises-section {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+          }
           .exercises-header {
-            font-size: 12px;
+            font-size: 10px;
             font-weight: 700;
             color: ${payload.primaryColor};
-            margin-bottom: 8px;
-            padding-bottom: 4px;
+            margin-bottom: 6px;
+            padding-bottom: 3px;
             border-bottom: 1px solid #e0e0e0;
+            flex-shrink: 0;
           }
 
-          /* Exercise Grid - Two Column */
+          /* Exercise Grid */
           .exercises-grid {
-            display: ${useTwoColumns ? 'grid' : 'block'};
-            grid-template-columns: ${useTwoColumns ? '1fr 1fr' : '1fr'};
-            gap: ${useTwoColumns ? '8px 16px' : '6px'};
+            display: grid;
+            grid-template-columns: ${gridColumns};
+            gap: ${gridGap};
+            flex: 1;
+            align-content: start;
           }
 
           /* Exercise Item */
           .exercise-item {
             display: flex;
-            gap: 8px;
-            padding: 6px 0;
-            border-bottom: 1px solid #eee;
-            page-break-inside: avoid;
+            gap: 6px;
+            padding: 4px 0;
+            border-bottom: 1px solid #f0f0f0;
           }
           .exercise-num {
-            width: 20px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
             background: ${payload.primaryColor};
             color: white;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 9px;
+            font-size: 8px;
             font-weight: 700;
             flex-shrink: 0;
           }
@@ -440,59 +470,57 @@ class SharePlanService {
             min-width: 0;
           }
           .exercise-name {
-            font-size: 11px;
+            font-size: ${exerciseNameSize};
             font-weight: 600;
             color: #1a1a1a;
-            line-height: 1.2;
+            line-height: 1.15;
           }
           .exercise-dosage {
-            font-size: 10px;
+            font-size: 9px;
             color: ${payload.primaryColor};
             font-weight: 600;
-            margin-top: 2px;
+            margin-top: 1px;
           }
           .exercise-why {
-            font-size: 9px;
+            font-size: 8px;
             color: #666;
-            margin-top: 2px;
-            line-height: 1.25;
+            margin-top: 1px;
+            line-height: 1.2;
           }
           .exercise-video {
-            font-size: 8px;
+            font-size: 7px;
             color: #0066cc;
-            margin-top: 2px;
+            margin-top: 1px;
           }
           .exercise-safety {
-            font-size: 8px;
+            font-size: 7px;
             color: #b45309;
-            margin-top: 2px;
+            margin-top: 1px;
             font-style: italic;
           }
 
           /* Footer */
           .footer {
-            margin-top: 12px;
-            padding-top: 8px;
+            margin-top: 6px;
+            padding-top: 4px;
             border-top: 1px solid #e0e0e0;
             text-align: center;
-            font-size: 8px;
+            font-size: 7px;
             color: #999;
-          }
-          .footer-disclaimer {
-            margin-bottom: 3px;
-          }
-          .footer-branding {
-            color: #666;
+            flex-shrink: 0;
           }
 
-          /* Print Specific */
+          /* Print Specific - Force single page */
           @media print {
             html, body {
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
+              height: 100%;
+              overflow: hidden;
             }
             .page {
-              padding: 0;
+              page-break-after: avoid;
+              page-break-inside: avoid;
             }
           }
         </style>
@@ -509,7 +537,7 @@ class SharePlanService {
               </div>
             </div>
             <div class="header-right">
-              <div class="header-date">Generated: ${new Date(payload.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+              <div class="header-date">${new Date(payload.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
               ${payload.patientFirstName ? `<div>For: ${payload.patientFirstName}</div>` : ''}
             </div>
           </div>
@@ -526,15 +554,16 @@ class SharePlanService {
           ${precautionsHtml}
 
           <!-- Exercises -->
-          <div class="exercises-header">Your Exercises (${exerciseCount})</div>
-          <div class="exercises-grid">
-            ${exerciseItems}
+          <div class="exercises-section">
+            <div class="exercises-header">Your Exercises (${exerciseCount})</div>
+            <div class="exercises-grid">
+              ${exerciseItems}
+            </div>
           </div>
 
           <!-- Footer -->
           <div class="footer">
-            <div class="footer-disclaimer">This exercise program is for educational purposes. Consult your healthcare provider before starting.</div>
-            <div class="footer-branding">Generated by ${payload.clinicName} via PTBOT</div>
+            This exercise program is for educational purposes. Consult your healthcare provider before starting. | Generated via PTBOT
           </div>
         </div>
       </body>
