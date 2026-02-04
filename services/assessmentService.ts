@@ -1102,7 +1102,6 @@ export class AssessmentService {
     };
 
     return relevantExercises.sort((a, b) => {
-
       const orderA =
         (a.exercise.display_order ?? 999) +
         difficultyWeight(a.exercise.difficulty) +
@@ -1111,6 +1110,14 @@ export class AssessmentService {
         (b.exercise.display_order ?? 999) +
         difficultyWeight(b.exercise.difficulty) +
         lowerBackPriorityAdjustment(b.exercise);
+      const difficultyWeight = (difficulty?: string) => {
+        if (difficulty === 'Advanced') return 1000;
+        if (difficulty === 'Intermediate') return 500;
+        return 0;
+      };
+      const orderA = (a.exercise.display_order ?? 999) + difficultyWeight(a.exercise.difficulty);
+      const orderB = (b.exercise.display_order ?? 999) + difficultyWeight(b.exercise.difficulty);
+main
 
       // Primary sort: display_order ascending (lower = earlier in clinical sequence)
       if (orderA !== orderB) return orderA - orderB;
