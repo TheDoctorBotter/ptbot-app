@@ -36,6 +36,13 @@ interface LatestAssessment {
   created_at: string;
 }
 
+// Configuration for re-check prompts
+const REASSESSMENT_CONFIG = {
+  regularIntervalDays: 7, // Re-check every 7 days
+  postOpIntervalDays: 14, // Post-op patients: every 2 weeks
+  phaseTransitionPromptDays: 21, // Suggest phase transition check after 3 weeks
+};
+
 interface PatientDashboardProps {
   userId: string | null;
   firstName: string | null;
@@ -170,6 +177,69 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
     return { label: "View Today's Exercises", route: '/(tabs)/exercises' };
   };
 
+  // Check if reassessment is due
+  const getReassessmentStatus = (): {
+    isDue: boolean;
+    daysSinceAssessment: number;
+    type: 'regular' | 'phase_transition' | 'high_pain' | null;
+    message: string | null;
+  } => {
+    if (!latestAssessment) {
+      return { isDue: false, daysSinceAssessment: 0, type: null, message: null };
+    }
+
+    const assessmentDate = new Date(latestAssessment.created_at);
+    const daysSince = Math.floor(
+      (new Date().getTime() - assessmentDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    // High pain - should reassess
+    if (latestAssessment.pain_level >= 7) {
+      return {
+        isDue: true,
+        daysSinceAssessment: daysSince,
+        type: 'high_pain',
+        message: "Your last assessment showed high pain levels. A new assessment can help us adjust your plan."
+      };
+    }
+
+    // Phase transition check for post-op patients
+    if (latestAssessment.protocol_key_selected &&
+        latestAssessment.phase_number_selected &&
+        daysSince >= REASSESSMENT_CONFIG.phaseTransitionPromptDays) {
+      return {
+        isDue: true,
+        daysSinceAssessment: daysSince,
+        type: 'phase_transition',
+        message: `You've been in Phase ${latestAssessment.phase_number_selected} for ${daysSince} days. Ready to see if you can progress?`
+      };
+    }
+
+    // Regular reassessment for post-op
+    if (latestAssessment.protocol_key_selected &&
+        daysSince >= REASSESSMENT_CONFIG.postOpIntervalDays) {
+      return {
+        isDue: true,
+        daysSinceAssessment: daysSince,
+        type: 'regular',
+        message: "It's been a while since your last check-in. A quick assessment helps us track your recovery."
+      };
+    }
+
+    // Regular reassessment for general pain
+    if (!latestAssessment.protocol_key_selected &&
+        daysSince >= REASSESSMENT_CONFIG.regularIntervalDays) {
+      return {
+        isDue: true,
+        daysSinceAssessment: daysSince,
+        type: 'regular',
+        message: "Time for a quick check-in! Reassessing helps us keep your exercises on target."
+      };
+    }
+
+    return { isDue: false, daysSinceAssessment: daysSince, type: null, message: null };
+  };
+
   // Check for safety reminders
   const getSafetyReminder = (): string | null => {
     if (!latestAssessment) return null;
@@ -206,6 +276,7 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
   const reassurance = getReassuranceMessage();
   const nextAction = getNextAction();
   const safetyReminder = getSafetyReminder();
+  const reassessmentStatus = getReassessmentStatus();
   const hasRedFlags = latestAssessment?.red_flags && latestAssessment.red_flags.length > 0;
 
   if (isLoading) {
@@ -358,8 +429,81 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         </Text>
       </View>
 
-      {/* Section 4: Next Step CTA */}
-      {!hasRedFlags && (
+      {/* Section 4: Re-check Prompt (when due) */}
+      {reassessmentStatus.isDue && (
+        <View style={[
+          styles.recheckCard,
+          reassessmentStatus.type === 'high_pain' && styles.recheckCardUrgent,
+          reassessmentStatus.type === 'phase_transition' && styles.recheckCardProgress,
+        ]}>
+          <View style={styles.recheckHeader}>
+            <View style={[
+              styles.recheckIcon,
+              reassessmentStatus.type === 'high_pain' && styles.recheckIconUrgent,
+              reassessmentStatus.type === 'phase_transition' && styles.recheckIconProgress,
+            ]}>
+              <RefreshCw
+                size={24}
+                color={
+                  reassessmentStatus.type === 'high_pain'
+                    ? colors.error[600]
+                    : reassessmentStatus.type === 'phase_transition'
+                      ? colors.success[600]
+                      : colors.primary[600]
+                }
+              />
+            </View>
+            <View style={styles.recheckTextContainer}>
+              <Text style={[
+                styles.recheckTitle,
+                reassessmentStatus.type === 'high_pain' && styles.recheckTitleUrgent,
+                reassessmentStatus.type === 'phase_transition' && styles.recheckTitleProgress,
+              ]}>
+                {reassessmentStatus.type === 'phase_transition'
+                  ? 'Ready to Progress?'
+                  : reassessmentStatus.type === 'high_pain'
+                    ? 'Pain Check-in Recommended'
+                    : 'Time for a Re-check'}
+              </Text>
+              <Text style={[
+                styles.recheckDays,
+                reassessmentStatus.type === 'high_pain' && styles.recheckDaysUrgent,
+              ]}>
+                Last assessment: {reassessmentStatus.daysSinceAssessment} days ago
+              </Text>
+            </View>
+          </View>
+
+          {reassessmentStatus.message && (
+            <Text style={[
+              styles.recheckMessage,
+              reassessmentStatus.type === 'high_pain' && styles.recheckMessageUrgent,
+              reassessmentStatus.type === 'phase_transition' && styles.recheckMessageProgress,
+            ]}>
+              {reassessmentStatus.message}
+            </Text>
+          )}
+
+          <TouchableOpacity
+            style={[
+              styles.recheckButton,
+              reassessmentStatus.type === 'high_pain' && styles.recheckButtonUrgent,
+              reassessmentStatus.type === 'phase_transition' && styles.recheckButtonProgress,
+            ]}
+            onPress={() => router.push('/(tabs)/assessment')}
+          >
+            <Text style={styles.recheckButtonText}>
+              {reassessmentStatus.type === 'phase_transition'
+                ? 'Check Progress'
+                : 'Start Re-assessment'}
+            </Text>
+            <ArrowRight size={16} color={colors.white} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Section 5: Next Step CTA */}
+      {!hasRedFlags && !reassessmentStatus.isDue && (
         <TouchableOpacity
           style={styles.ctaButton}
           onPress={() => router.push(nextAction.route as any)}
@@ -369,7 +513,7 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         </TouchableOpacity>
       )}
 
-      {/* Section 5: Safety Reminder (conditional) */}
+      {/* Section 6: Safety Reminder (conditional) */}
       {safetyReminder && (
         <View style={[
           styles.safetyCard,
@@ -633,5 +777,97 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 32,
+  },
+  // Re-check card styles
+  recheckCard: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: colors.primary[50],
+    borderWidth: 2,
+    borderColor: colors.primary[200],
+  },
+  recheckCardUrgent: {
+    backgroundColor: colors.error[50],
+    borderColor: colors.error[200],
+  },
+  recheckCardProgress: {
+    backgroundColor: colors.success[50],
+    borderColor: colors.success[200],
+  },
+  recheckHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  recheckIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  recheckIconUrgent: {
+    backgroundColor: colors.error[100],
+  },
+  recheckIconProgress: {
+    backgroundColor: colors.success[100],
+  },
+  recheckTextContainer: {
+    flex: 1,
+  },
+  recheckTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.primary[700],
+    marginBottom: 2,
+  },
+  recheckTitleUrgent: {
+    color: colors.error[700],
+  },
+  recheckTitleProgress: {
+    color: colors.success[700],
+  },
+  recheckDays: {
+    fontSize: 12,
+    color: colors.primary[600],
+  },
+  recheckDaysUrgent: {
+    color: colors.error[600],
+  },
+  recheckMessage: {
+    fontSize: 14,
+    color: colors.primary[700],
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  recheckMessageUrgent: {
+    color: colors.error[700],
+  },
+  recheckMessageProgress: {
+    color: colors.success[700],
+  },
+  recheckButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary[500],
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  recheckButtonUrgent: {
+    backgroundColor: colors.error[500],
+  },
+  recheckButtonProgress: {
+    backgroundColor: colors.success[500],
+  },
+  recheckButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.white,
   },
 });

@@ -10,13 +10,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus } from 'lucide-react-native';
+import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus, Building2 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import ProfileTabs from '@/components/ProfileTabs';
+import ClinicSettings from '@/components/account/ClinicSettings';
 import { colors } from '@/constants/theme';
 import { AssessmentService } from '@/services/assessmentService';
+import { useUserRole } from '@/hooks/useUserRole';
 import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 interface UserProfile {
@@ -47,6 +50,12 @@ export default function AccountScreen() {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+
+  // User role for clinic access
+  const { roleData, isClinicStaff, refreshRole } = useUserRole();
+
+  // Clinic settings modal state
+  const [showClinicSettings, setShowClinicSettings] = useState(false);
 
   // Form state
   const [isSignUp, setIsSignUp] = useState(true);
@@ -693,6 +702,21 @@ export default function AccountScreen() {
               <Text style={styles.actionButtonText}>Email Preferences</Text>
               <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
+
+            {/* Clinic Settings - only for clinicians/admins with a clinic */}
+            {isClinicStaff && roleData?.clinicId && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => setShowClinicSettings(true)}
+              >
+                <Building2 size={20} color={colors.primary[500]} />
+                <View style={styles.actionButtonContent}>
+                  <Text style={styles.clinicSettingsTitle}>Clinic Settings</Text>
+                  <Text style={styles.actionButtonSubtext}>{roleData.clinicName}</Text>
+                </View>
+                <Text style={styles.actionButtonArrow}>→</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Sign Out */}
@@ -708,6 +732,24 @@ export default function AccountScreen() {
 
           <View style={styles.bottomSpacer} />
         </ScrollView>
+
+        {/* Clinic Settings Modal */}
+        {isClinicStaff && roleData?.clinicId && (
+          <Modal
+            visible={showClinicSettings}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={() => setShowClinicSettings(false)}
+          >
+            <ClinicSettings
+              clinicId={roleData.clinicId}
+              onClose={() => setShowClinicSettings(false)}
+              onSave={() => {
+                refreshRole();
+              }}
+            />
+          </Modal>
+        )}
       </SafeAreaView>
     );
   }
@@ -1277,11 +1319,25 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.neutral[200],
   },
+  actionButtonContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
   actionButtonText: {
     flex: 1,
     fontSize: 16,
     color: colors.neutral[700],
     marginLeft: 12,
+  },
+  actionButtonSubtext: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    marginTop: 2,
+    marginLeft: 0,
+  },
+  clinicSettingsTitle: {
+    fontSize: 16,
+    color: colors.neutral[700],
   },
   actionButtonArrow: {
     fontSize: 18,
