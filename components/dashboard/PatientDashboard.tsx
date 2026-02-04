@@ -19,10 +19,24 @@ import {
   Clock,
   Calendar,
   RefreshCw,
+  Play,
+  Dumbbell,
 } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { activityService } from '@/services/activityService';
+
+interface ExerciseRecommendation {
+  exercise: {
+    id: string;
+    name: string;
+    videoUrl?: string;
+  };
+  dosage?: {
+    sets?: number;
+    reps?: number;
+  };
+}
 
 interface LatestAssessment {
   id: string;
@@ -34,6 +48,7 @@ interface LatestAssessment {
   red_flags: string[];
   surgery_type: string | null;
   created_at: string;
+  recommendations: ExerciseRecommendation[] | null;
 }
 
 // Configuration for re-check prompts
@@ -63,10 +78,10 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
     }
 
     try {
-      // Fetch latest assessment
+      // Fetch latest assessment with recommendations
       const { data: assessment, error: assessmentError } = await supabase
         .from('assessments')
-        .select('id, pain_level, pain_location, risk_level, protocol_key_selected, phase_number_selected, red_flags, surgery_type, created_at')
+        .select('id, pain_level, pain_location, risk_level, protocol_key_selected, phase_number_selected, red_flags, surgery_type, created_at, recommendations')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -403,7 +418,56 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         </View>
       </View>
 
-      {/* Section 3: Reassurance Messaging */}
+      {/* Section 3: Your Exercises (from assessment recommendations) */}
+      {latestAssessment?.recommendations && latestAssessment.recommendations.length > 0 && (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Dumbbell size={20} color={colors.primary[500]} />
+            <Text style={styles.cardTitle}>Your Exercises</Text>
+          </View>
+
+          <View style={styles.exerciseList}>
+            {latestAssessment.recommendations.slice(0, 3).map((rec, index) => (
+              <View key={rec.exercise.id || index} style={styles.exerciseItem}>
+                <View style={styles.exerciseNumber}>
+                  <Text style={styles.exerciseNumberText}>{index + 1}</Text>
+                </View>
+                <View style={styles.exerciseInfo}>
+                  <Text style={styles.exerciseName} numberOfLines={1}>
+                    {rec.exercise.name}
+                  </Text>
+                  {rec.dosage && (
+                    <Text style={styles.exerciseDosage}>
+                      {rec.dosage.sets && `${rec.dosage.sets} sets`}
+                      {rec.dosage.sets && rec.dosage.reps && ' × '}
+                      {rec.dosage.reps && `${rec.dosage.reps} reps`}
+                    </Text>
+                  )}
+                </View>
+                {rec.exercise.videoUrl && (
+                  <Play size={16} color={colors.primary[500]} />
+                )}
+              </View>
+            ))}
+          </View>
+
+          {latestAssessment.recommendations.length > 3 && (
+            <Text style={styles.moreExercisesText}>
+              +{latestAssessment.recommendations.length - 3} more exercises
+            </Text>
+          )}
+
+          <TouchableOpacity
+            style={styles.viewExercisesButton}
+            onPress={() => router.push('/(tabs)/exercises')}
+          >
+            <Text style={styles.viewExercisesButtonText}>View All Exercises</Text>
+            <ArrowRight size={16} color={colors.primary[500]} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Section 4: Reassurance Messaging */}
       <View style={[
         styles.reassuranceCard,
         reassurance.type === 'success' && styles.reassuranceSuccess,
@@ -869,5 +933,63 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.white,
+  },
+  // Exercise list styles
+  exerciseList: {
+    marginBottom: 12,
+  },
+  exerciseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral[100],
+  },
+  exerciseNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  exerciseNumberText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary[700],
+  },
+  exerciseInfo: {
+    flex: 1,
+  },
+  exerciseName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.neutral[800],
+  },
+  exerciseDosage: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    marginTop: 2,
+  },
+  moreExercisesText: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  viewExercisesButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral[100],
+    gap: 8,
+  },
+  viewExercisesButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary[500],
   },
 });
