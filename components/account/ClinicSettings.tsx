@@ -135,12 +135,13 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
         return;
       }
 
-      // Pick image
+      // Pick image with base64 encoding for mobile compatibility
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
+        base64: true, // Request base64 data for mobile upload
       });
 
       if (result.canceled || !result.assets[0]) {
@@ -148,52 +149,80 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
       }
 
       const asset = result.assets[0];
-      await uploadLogo(asset.uri);
+      await uploadLogo(asset);
     } catch (err) {
       console.error('Error picking image:', err);
       Alert.alert('Error', 'Failed to pick image');
     }
   };
 
-  const uploadLogo = async (uri: string) => {
+  const uploadLogo = async (asset: ImagePicker.ImagePickerAsset) => {
     if (!supabase || !clinicId) return;
 
     setIsUploading(true);
 
     try {
-      // Get file extension
-      const ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
-      const fileName = `clinic-logos/${clinicId}/logo.${ext}`;
+      // Determine file extension from mimeType or URI
+      let ext = 'jpg';
+      if (asset.mimeType) {
+        ext = asset.mimeType.split('/')[1] || 'jpg';
+      } else if (asset.uri) {
+        const uriExt = asset.uri.split('.').pop()?.toLowerCase();
+        if (uriExt && ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(uriExt)) {
+          ext = uriExt;
+        }
+      }
 
-      // Fetch the image
-      const response = await fetch(uri);
-      const blob = await response.blob();
+      // Normalize jpeg to jpg
+      if (ext === 'jpeg') ext = 'jpg';
+
+      const fileName = `clinic-logos/${clinicId}/logo.${ext}`;
+      const contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+
+      let uploadData: Blob | ArrayBuffer;
+
+      // Use base64 if available (more reliable on mobile)
+      if (asset.base64) {
+        // Convert base64 to ArrayBuffer
+        const binaryString = atob(asset.base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        uploadData = bytes.buffer;
+      } else {
+        // Fallback to fetch for web or if base64 not available
+        const response = await fetch(asset.uri);
+        uploadData = await response.blob();
+      }
 
       // Upload to Supabase Storage
       const { data, error } = await supabase.storage
         .from('public')
-        .upload(fileName, blob, {
-          contentType: `image/${ext}`,
+        .upload(fileName, uploadData, {
+          contentType,
           upsert: true,
         });
 
       if (error) {
         console.error('Upload error:', error);
-        Alert.alert('Upload Failed', 'Failed to upload logo. Please try again.');
+        Alert.alert('Upload Failed', error.message || 'Failed to upload logo. Please try again.');
         return;
       }
 
-      // Get public URL
+      // Get public URL with cache busting
       const { data: urlData } = supabase.storage
         .from('public')
         .getPublicUrl(fileName);
 
       if (urlData?.publicUrl) {
-        setLogoUrl(urlData.publicUrl);
+        // Add timestamp to bust cache
+        setLogoUrl(`${urlData.publicUrl}?t=${Date.now()}`);
+        Alert.alert('Success', 'Logo uploaded successfully!');
       }
     } catch (err) {
       console.error('Error uploading logo:', err);
-      Alert.alert('Error', 'Failed to upload logo');
+      Alert.alert('Error', 'Failed to upload logo. Please check your connection and try again.');
     } finally {
       setIsUploading(false);
     }

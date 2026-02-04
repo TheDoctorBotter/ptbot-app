@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Share,
   Modal,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -26,6 +27,8 @@ import { protocolExerciseService, type ProtocolPhaseInfo, type ProtocolExercise 
 import { sharePlanService, type PlanExercise } from '@/services/sharePlanService';
 import { useClinicBranding } from '@/hooks/useClinicBranding';
 import PrecautionsCard from '@/components/shared/PrecautionsCard';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 interface Exercise {
   id: string;
@@ -397,22 +400,30 @@ export default function ExercisesScreen() {
         protocolPhaseInfo.assessmentDate
       );
 
-      // Generate HTML and open in browser for printing
+      // Generate HTML for PDF
       const html = sharePlanService.generatePrintHtml(payload);
 
-      // Create a data URL for the HTML
-      const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+      // Generate PDF file
+      const { uri } = await Print.printToFileAsync({
+        html,
+        base64: false,
+      });
 
-      // For now, show an alert with instructions
-      // In a full implementation, you'd use a library like expo-print or react-native-html-to-pdf
-      Alert.alert(
-        'Export PDF',
-        'PDF export requires opening the plan in a browser. Would you like to share the plan link instead?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Share Link', onPress: handleSharePlan },
-        ]
-      );
+      // Check if sharing is available
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share Exercise Plan PDF',
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        // Fallback for platforms where sharing isn't available
+        Alert.alert(
+          'PDF Generated',
+          'Your exercise plan PDF has been created. Sharing is not available on this device.',
+          [{ text: 'OK' }]
+        );
+      }
     } catch (err) {
       console.error('Error exporting PDF:', err);
       Alert.alert('Error', 'Failed to export PDF. Please try again.');
@@ -509,15 +520,30 @@ export default function ExercisesScreen() {
         latestAssessment.createdAt || latestAssessment.assessment.timestamp || null
       );
 
-      // For now, offer to share the link instead
-      Alert.alert(
-        'Export PDF',
-        'PDF export requires opening the plan in a browser. Would you like to share the plan link instead?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Share Link', onPress: handleShareAssessmentPlan },
-        ]
-      );
+      // Generate HTML for PDF
+      const html = sharePlanService.generatePrintHtml(payload);
+
+      // Generate PDF file
+      const { uri } = await Print.printToFileAsync({
+        html,
+        base64: false,
+      });
+
+      // Check if sharing is available
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Share Exercise Plan PDF',
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        // Fallback for platforms where sharing isn't available
+        Alert.alert(
+          'PDF Generated',
+          'Your exercise plan PDF has been created. Sharing is not available on this device.',
+          [{ text: 'OK' }]
+        );
+      }
     } catch (err) {
       console.error('Error exporting assessment PDF:', err);
       Alert.alert('Error', 'Failed to export PDF. Please try again.');
