@@ -19,6 +19,7 @@ import { ExerciseRecommendationService } from '@/services/exerciseRecommendation
 import type { ExerciseRecommendation } from '@/services/assessmentService';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/constants/theme';
+import { activityService } from '@/services/activityService';
 
 interface Exercise {
   id: string;
@@ -406,9 +407,16 @@ export default function ExercisesScreen() {
       console.log('🎬 [VIDEO TAP]', { url: videoUrl });
     }
 
-    Linking.openURL(videoUrl).catch(() => {
-      Alert.alert('Error', 'Unable to open video. Please try again later.');
-    });
+    Linking.openURL(videoUrl)
+      .then(() => {
+        // Log activity event for video opened
+        if (debugInfo?.id && debugInfo?.title) {
+          activityService.logVideoOpened(debugInfo.id, debugInfo.title);
+        }
+      })
+      .catch(() => {
+        Alert.alert('Error', 'Unable to open video. Please try again later.');
+      });
   };
 
   const openAssessmentExerciseVideo = async (exerciseId: string, exerciseTitle: string, fallbackUrl?: string) => {
