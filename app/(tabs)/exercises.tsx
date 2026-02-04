@@ -774,115 +774,108 @@ export default function ExercisesScreen() {
     setAiSearchResults([]);
 
     try {
-      // Parse search terms from query
-      const query = searchQuery.toLowerCase();
-      const searchTerms = query.split(/\s+/).filter(term => term.length > 2);
+      const query = searchQuery.toLowerCase().trim();
 
-      // Build search conditions for keywords, conditions, and body parts
-      const { data, error } = await supabase
-        .from('exercise_videos')
-        .select('*')
-        .eq('is_active', true)
-        .order('display_order', { ascending: true });
+      // Simple keyword matching for routines
+      // Back pain variants → lower back routine
+      const isBackPain = /\b(back|lower\s*back|lumbar|spine|spinal)\b/.test(query);
+      // Knee pain variants → knee routine
+      const isKneePain = /\b(knee|patella|kneecap|anterior\s*knee)\b/.test(query);
+      // Shoulder pain variants → shoulder routine
+      const isShoulderPain = /\b(shoulder|rotator|deltoid)\b/.test(query);
 
-      if (error) throw error;
+      let routineSlug: string | null = null;
+      let bodyPartFilter: string | null = null;
 
-      if (!data || data.length === 0) {
+      if (isBackPain) {
+        routineSlug = 'lower-back-pain-relief';
+        bodyPartFilter = 'lower back';
+      } else if (isKneePain) {
+        routineSlug = 'knee-pain-relief';
+        bodyPartFilter = 'knee';
+      } else if (isShoulderPain) {
+        routineSlug = 'shoulder-pain-relief';
+        bodyPartFilter = 'shoulder';
+      }
+
+      let exercises: any[] = [];
+
+      // Try to fetch from routine first
+      if (routineSlug) {
+        // Get the routine
+        const { data: routineData } = await supabase
+          .from('exercise_routines')
+          .select('id, name')
+          .eq('slug', routineSlug)
+          .eq('is_active', true)
+          .single();
+
+        if (routineData) {
+          // Get routine exercises in order
+          const { data: routineItems } = await supabase
+            .from('exercise_routine_items')
+            .select(`
+              sequence_order,
+              exercise_videos!video_id (*)
+            `)
+            .eq('routine_id', routineData.id)
+            .order('sequence_order', { ascending: true });
+
+          if (routineItems && routineItems.length > 0) {
+            exercises = routineItems
+              .filter((item: any) => item.exercise_videos)
+              .map((item: any) => item.exercise_videos);
+          }
+        }
+      }
+
+      // Fallback: If no routine found, fetch by body part from exercise_videos
+      if (exercises.length === 0 && bodyPartFilter) {
+        const { data } = await supabase
+          .from('exercise_videos')
+          .select('*')
+          .eq('is_active', true)
+          .contains('body_parts', [bodyPartFilter])
+          .order('display_order', { ascending: true })
+          .limit(10);
+
+        if (data) {
+          exercises = data;
+        }
+      }
+
+      // If still no results, show message
+      if (exercises.length === 0) {
         Alert.alert(
-          'No Exercises Found',
-          'No exercises found in the database. Please try again later.',
+          'No Routine Found',
+          'We currently have routines for back pain, knee pain, and shoulder pain. Please try one of these or complete a full assessment for personalized recommendations.',
           [{ text: 'OK' }]
         );
         return;
       }
 
-      // Score and filter exercises based on search query
-      const scoredExercises = data.map((ex: any) => {
-        let score = 0;
-        const bodyPartsLower = (ex.body_parts || []).map((b: string) => b.toLowerCase());
-        const keywordsLower = (ex.keywords || []).map((k: string) => k.toLowerCase());
-        const conditionsLower = (ex.conditions || []).map((c: string) => c.toLowerCase());
-        const titleLower = ex.title.toLowerCase();
-        const descLower = (ex.description || '').toLowerCase();
+      // Map to Exercise format
+      const mappedExercises: Exercise[] = exercises.map((ex: any) => ({
+        id: ex.id,
+        title: ex.title,
+        bodyPart: ex.body_parts?.[0] || 'General',
+        duration: ex.recommended_hold_seconds
+          ? `${ex.recommended_hold_seconds}s hold`
+          : `${ex.recommended_sets || 2} sets`,
+        difficulty: ex.difficulty || 'Beginner',
+        description: ex.description || '',
+        url: ex.youtube_video_id
+          ? `https://www.youtube.com/watch?v=${ex.youtube_video_id}`
+          : 'https://youtube.com/@justinlemmodpt',
+        completed: false,
+      }));
 
-        // Check for body part matches
-        for (const term of searchTerms) {
-          if (bodyPartsLower.some((bp: string) => bp.includes(term) || term.includes(bp))) {
-            score += 30;
-          }
-          if (conditionsLower.some((c: string) => c.includes(term))) {
-            score += 25;
-          }
-          if (keywordsLower.some((k: string) => k.includes(term))) {
-            score += 20;
-          }
-          if (titleLower.includes(term)) {
-            score += 15;
-          }
-          if (descLower.includes(term)) {
-            score += 10;
-          }
-        }
-
-        // Check for common symptom keywords
-        const symptomMatches = [
-          { terms: ['stiff', 'stiffness', 'tight', 'tightness'], keywords: ['stretch', 'mobility', 'flexibility'] },
-          { terms: ['pain', 'ache', 'hurt', 'sore'], keywords: ['relief', 'gentle', 'beginner'] },
-          { terms: ['weak', 'weakness'], keywords: ['strengthen', 'strengthening', 'stability'] },
-          { terms: ['numb', 'tingling', 'nerve'], keywords: ['nerve', 'glide', 'mobility'] },
-        ];
-
-        for (const match of symptomMatches) {
-          if (match.terms.some(t => query.includes(t))) {
-            if (match.keywords.some(k => keywordsLower.some((kw: string) => kw.includes(k)))) {
-              score += 15;
-            }
-          }
-        }
-
-        return { exercise: ex, score };
-      });
-
-      // Filter exercises with score > 0, sort by display_order first (clinical progression), then score
-      const matches = scoredExercises
-        .filter((s: any) => s.score > 0)
-        .sort((a: any, b: any) => {
-          const orderA = a.exercise.display_order ?? 999;
-          const orderB = b.exercise.display_order ?? 999;
-          if (orderA !== orderB) return orderA - orderB;
-          return b.score - a.score;
-        })
-        .slice(0, 10);
-
-      if (matches.length > 0) {
-        const mappedExercises: Exercise[] = matches.map((m: any) => ({
-          id: m.exercise.id,
-          title: m.exercise.title,
-          bodyPart: m.exercise.body_parts?.[0] || 'General',
-          duration: m.exercise.recommended_hold_seconds
-            ? `${m.exercise.recommended_hold_seconds}s hold`
-            : `${m.exercise.recommended_sets || 2} sets`,
-          difficulty: m.exercise.difficulty || 'Beginner',
-          description: m.exercise.description || '',
-          url: m.exercise.youtube_video_id
-            ? `https://www.youtube.com/watch?v=${m.exercise.youtube_video_id}`
-            : 'https://youtube.com/@justinlemmodpt',
-          completed: false,
-        }));
-
-        setAiSearchResults(mappedExercises);
-      } else {
-        Alert.alert(
-          'No Matches',
-          'No specific exercises found for your description. Try browsing the exercises below or complete a full assessment for personalized recommendations.',
-          [{ text: 'OK' }]
-        );
-      }
+      setAiSearchResults(mappedExercises);
     } catch (error) {
       console.error('Exercise search error:', error);
       Alert.alert(
         'Search Error',
-        'Unable to search exercises right now. Please try browsing the exercises below.',
+        'Unable to search exercises right now. Please try again.',
         [{ text: 'OK' }]
       );
     } finally {
