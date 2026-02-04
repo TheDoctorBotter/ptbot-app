@@ -94,7 +94,7 @@ export default function HomeScreen() {
       // Query exercises from database
       let dbQuery = supabase
         .from('exercise_videos')
-        .select('id, title, body_parts, youtube_video_id')
+        .select('id, title, body_parts, youtube_video_id, display_order')
         .eq('is_active', true)
         .order('display_order', { ascending: true })
         .limit(20);
@@ -130,10 +130,15 @@ export default function HomeScreen() {
         return { exercise: ex, score };
       });
 
-      // Get top 2 exercises
+      // Get top 2 exercises - sort by display_order first (clinical progression), then score
       const topExercises = scored
         .filter((s: any) => s.score > 0)
-        .sort((a: any, b: any) => b.score - a.score)
+        .sort((a: any, b: any) => {
+          const orderA = a.exercise.display_order ?? 999;
+          const orderB = b.exercise.display_order ?? 999;
+          if (orderA !== orderB) return orderA - orderB;
+          return b.score - a.score;
+        })
         .slice(0, 2)
         .map((s: any) => ({
           id: s.exercise.id,
