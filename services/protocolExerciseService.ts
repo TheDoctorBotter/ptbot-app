@@ -2,7 +2,7 @@
  * Protocol Exercise Service
  *
  * Fetches exercises based on protocol and phase assignments from assessments.
- * Uses phase_routines mapping to get the appropriate exercise routines.
+ * Uses protocol_phase_exercises table to get protocol-specific exercises.
  */
 
 import { supabase } from '@/lib/supabase';
@@ -131,107 +131,55 @@ class ProtocolExerciseService {
     }
 
     try {
-      // First, try to find a routine mapped to this protocol/phase via phase_routines
-      // Check both by protocol_key/phase_number and by protocol_phase_id
-      let phaseRoutine = null;
-      let routineError = null;
-
-      // Try querying by protocol_key and phase_number first
-      const { data: routineByKey, error: keyError } = await supabase
-        .from('phase_routines')
-        .select(`
-          routine_id,
-          exercise_routines (
-            id,
-            name,
-            description
-          )
-        `)
+      // First get the protocol_id from protocol_key
+      const { data: protocolData, error: protocolError } = await supabase
+        .from('protocols')
+        .select('id, name, surgery_name')
         .eq('protocol_key', protocolKey)
-        .eq('phase_number', phaseNumber)
         .maybeSingle();
 
-      if (!keyError && routineByKey) {
-        phaseRoutine = routineByKey;
-      } else {
-        // Fall back to querying by protocol_phase_id
-        // First get the protocol_phase_id
-        const { data: protocolData } = await supabase
-          .from('protocols')
-          .select('id')
-          .eq('protocol_key', protocolKey)
-          .maybeSingle();
-
-        if (protocolData?.id) {
-          const { data: phaseData } = await supabase
-            .from('protocol_phases')
-            .select('id')
-            .eq('protocol_id', protocolData.id)
-            .eq('phase_number', phaseNumber)
-            .maybeSingle();
-
-          if (phaseData?.id) {
-            const { data: routineByPhase, error: phaseError } = await supabase
-              .from('phase_routines')
-              .select(`
-                routine_id,
-                exercise_routines (
-                  id,
-                  name,
-                  description
-                )
-              `)
-              .eq('protocol_phase_id', phaseData.id)
-              .maybeSingle();
-
-            if (!phaseError && routineByPhase) {
-              phaseRoutine = routineByPhase;
-            }
-            routineError = phaseError;
-          }
-        }
+      if (protocolError || !protocolData) {
+        console.log('[ProtocolExerciseService] Protocol not found:', protocolKey, protocolError);
+        return { exercises: [], routineId: null, routineName: null };
       }
 
-      if (routineError) {
-        console.log('[ProtocolExerciseService] No phase routine mapping found, using fallback');
+      // Query protocol_phase_exercises with joined exercise data
+      const { data: phaseExercises, error: exercisesError } = await supabase
+        .from('protocol_phase_exercises')
+        .select(`
+          display_order,
+          phase_sets,
+          phase_reps,
+          phase_hold_seconds,
+          phase_frequency,
+          phase_notes,
+          exercise_videos (
+            id,
+            title,
+            description,
+            body_parts,
+            difficulty,
+            youtube_video_id,
+            thumbnail_url,
+            recommended_sets,
+            recommended_reps,
+            recommended_hold_seconds
+          )
+        `)
+        .eq('protocol_id', protocolData.id)
+        .eq('phase_number', phaseNumber)
+        .order('display_order', { ascending: true });
+
+      if (exercisesError) {
+        console.error('[ProtocolExerciseService] Error fetching protocol exercises:', exercisesError);
+        return { exercises: [], routineId: null, routineName: null };
       }
 
-      // If we found a routine, get its exercises
-      if (phaseRoutine?.routine_id) {
-        const routine = phaseRoutine.exercise_routines as { id: string; name: string; description: string | null } | null;
-
-        const { data: routineExercises, error: exerciseError } = await supabase
-          .from('routine_exercises')
-          .select(`
-            display_order,
-            sets_override,
-            reps_override,
-            hold_seconds_override,
-            exercise_videos (
-              id,
-              title,
-              description,
-              body_parts,
-              difficulty,
-              youtube_video_id,
-              thumbnail_url,
-              recommended_sets,
-              recommended_reps,
-              recommended_hold_seconds
-            )
-          `)
-          .eq('routine_id', phaseRoutine.routine_id)
-          .order('display_order', { ascending: true });
-
-        if (exerciseError) {
-          console.error('[ProtocolExerciseService] Error fetching routine exercises:', exerciseError);
-          return { exercises: [], routineId: phaseRoutine.routine_id, routineName: routine?.name || null };
-        }
-
-        const exercises: ProtocolExercise[] = (routineExercises || [])
-          .filter((re: any) => re.exercise_videos)
-          .map((re: any) => {
-            const ex = re.exercise_videos;
+      if (phaseExercises && phaseExercises.length > 0) {
+        const exercises: ProtocolExercise[] = phaseExercises
+          .filter((pe: any) => pe.exercise_videos)
+          .map((pe: any) => {
+            const ex = pe.exercise_videos;
             return {
               id: ex.id,
               title: ex.title,
@@ -240,22 +188,23 @@ class ProtocolExerciseService {
               difficulty: ex.difficulty || 'Beginner',
               youtubeVideoId: ex.youtube_video_id,
               thumbnailUrl: ex.thumbnail_url,
-              recommendedSets: re.sets_override || ex.recommended_sets,
-              recommendedReps: re.reps_override || ex.recommended_reps,
-              recommendedHoldSeconds: re.hold_seconds_override || ex.recommended_hold_seconds,
-              displayOrder: re.display_order,
+              recommendedSets: pe.phase_sets || ex.recommended_sets,
+              recommendedReps: pe.phase_reps || ex.recommended_reps,
+              recommendedHoldSeconds: pe.phase_hold_seconds || ex.recommended_hold_seconds,
+              displayOrder: pe.display_order,
             };
           });
 
+        console.log(`[ProtocolExerciseService] Found ${exercises.length} exercises for ${protocolKey} phase ${phaseNumber}`);
         return {
           exercises,
-          routineId: phaseRoutine.routine_id,
-          routineName: routine?.name || null,
+          routineId: protocolData.id,
+          routineName: protocolData.name || protocolData.surgery_name,
         };
       }
 
       // Fallback: Search for exercises by body part matching the protocol region
-      console.log('[ProtocolExerciseService] No mapped routine, searching by protocol region/keywords');
+      console.log('[ProtocolExerciseService] No protocol exercises found, using fallback by body part');
 
       // Extract body part from protocol key (e.g., "knee_acl_reconstruction" -> "Knee")
       const regionMatch = protocolKey.match(/^(shoulder|knee|hip|elbow|foot_ankle|ankle)/i);
