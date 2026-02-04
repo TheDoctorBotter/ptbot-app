@@ -156,6 +156,40 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
     }
   };
 
+  /**
+   * Decode base64 string to Uint8Array (cross-platform, works in React Native)
+   */
+  const base64ToUint8Array = (base64: string): Uint8Array => {
+    // Base64 character set
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+    // Remove padding and whitespace
+    const cleanBase64 = base64.replace(/[\s=]/g, '');
+
+    // Calculate output length
+    const len = cleanBase64.length;
+    const outputLen = Math.floor((len * 3) / 4);
+    const bytes = new Uint8Array(outputLen);
+
+    let p = 0;
+    for (let i = 0; i < len; i += 4) {
+      const c1 = chars.indexOf(cleanBase64[i]);
+      const c2 = chars.indexOf(cleanBase64[i + 1]);
+      const c3 = i + 2 < len ? chars.indexOf(cleanBase64[i + 2]) : 64;
+      const c4 = i + 3 < len ? chars.indexOf(cleanBase64[i + 3]) : 64;
+
+      bytes[p++] = (c1 << 2) | (c2 >> 4);
+      if (c3 !== 64) {
+        bytes[p++] = ((c2 & 15) << 4) | (c3 >> 2);
+      }
+      if (c4 !== 64) {
+        bytes[p++] = ((c3 & 3) << 6) | c4;
+      }
+    }
+
+    return bytes.slice(0, p);
+  };
+
   const uploadLogo = async (asset: ImagePicker.ImagePickerAsset) => {
     if (!supabase || !clinicId) return;
 
@@ -179,21 +213,29 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
       const fileName = `clinic-logos/${clinicId}/logo.${ext}`;
       const contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
 
-      let uploadData: Blob | ArrayBuffer;
+      let uploadData: Uint8Array | Blob;
 
       // Use base64 if available (more reliable on mobile)
       if (asset.base64) {
-        // Convert base64 to ArrayBuffer
-        const binaryString = atob(asset.base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        uploadData = bytes.buffer;
-      } else {
-        // Fallback to fetch for web or if base64 not available
+        // Convert base64 to Uint8Array using cross-platform decoder
+        uploadData = base64ToUint8Array(asset.base64);
+      } else if (Platform.OS === 'web') {
+        // Web: use fetch to get blob
         const response = await fetch(asset.uri);
         uploadData = await response.blob();
+      } else {
+        // Mobile fallback: try fetch with file:// URI
+        try {
+          const response = await fetch(asset.uri);
+          const blob = await response.blob();
+          // Convert blob to array buffer for upload
+          const arrayBuffer = await new Response(blob).arrayBuffer();
+          uploadData = new Uint8Array(arrayBuffer);
+        } catch (fetchErr) {
+          console.error('Fetch fallback failed:', fetchErr);
+          Alert.alert('Upload Failed', 'Could not read the image file. Please try again.');
+          return;
+        }
       }
 
       // Upload to Supabase Storage
