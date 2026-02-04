@@ -9,17 +9,23 @@ import {
   Linking,
   TextInput,
   ActivityIndicator,
+  Share,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Heart, Dumbbell, Search, Sparkles, Target } from 'lucide-react-native';
+import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Heart, Dumbbell, Search, Sparkles, Target, Share2, FileText, AlertTriangle, ChevronRight } from 'lucide-react-native';
 import { useAssessmentResults } from '@/hooks/useAssessmentResults';
 import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
 import type { ExerciseRecommendation } from '@/services/assessmentService';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/constants/theme';
 import { activityService } from '@/services/activityService';
+import { protocolExerciseService, type ProtocolPhaseInfo, type ProtocolExercise } from '@/services/protocolExerciseService';
+import { sharePlanService, type PlanExercise } from '@/services/sharePlanService';
+import { useClinicBranding } from '@/hooks/useClinicBranding';
+import PrecautionsCard from '@/components/shared/PrecautionsCard';
 
 interface Exercise {
   id: string;
@@ -122,6 +128,20 @@ export default function ExercisesScreen() {
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { latestAssessment, isLoading: assessmentLoading, refreshAssessment } = useAssessmentResults();
+
+  // Protocol Mode state
+  const [protocolPhaseInfo, setProtocolPhaseInfo] = useState<ProtocolPhaseInfo | null>(null);
+  const [protocolExercises, setProtocolExercises] = useState<ProtocolExercise[]>([]);
+  const [protocolRoutineName, setProtocolRoutineName] = useState<string | null>(null);
+  const [isLoadingProtocol, setIsLoadingProtocol] = useState(false);
+  const [showProtocolMode, setShowProtocolMode] = useState(true);
+
+  // Share Plan state
+  const [isSharing, setIsSharing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Clinic branding for share
+  const { branding } = useClinicBranding();
 
   const bodyParts = ['All', 'Lower Back', 'Upper Back', 'Neck', 'Shoulder', 'Hip', 'Hamstrings', 'Knee', 'Ankle'];
 
@@ -264,11 +284,142 @@ export default function ExercisesScreen() {
   useFocusEffect(
     useCallback(() => {
       refreshAssessment();
+      loadProtocolExercises();
       if (currentUserId) {
         loadFavorites(currentUserId);
       }
     }, [refreshAssessment, currentUserId])
   );
+
+  // Load protocol exercises
+  const loadProtocolExercises = async () => {
+    setIsLoadingProtocol(true);
+    try {
+      const result = await protocolExerciseService.getCurrentUserProtocolExercises();
+      setProtocolPhaseInfo(result.phaseInfo);
+      setProtocolExercises(result.exercises);
+      setProtocolRoutineName(result.routineName);
+    } catch (err) {
+      console.error('Error loading protocol exercises:', err);
+    } finally {
+      setIsLoadingProtocol(false);
+    }
+  };
+
+  // Share Plan functionality
+  const handleSharePlan = async () => {
+    if (!protocolPhaseInfo || protocolExercises.length === 0) {
+      Alert.alert('No Plan to Share', 'Complete an assessment to get a personalized exercise plan to share.');
+      return;
+    }
+
+    setIsSharing(true);
+    try {
+      // Build share payload
+      const planExercises: PlanExercise[] = protocolExercises.map((ex) => ({
+        id: ex.id,
+        title: ex.title,
+        description: ex.description || undefined,
+        youtubeUrl: ex.youtubeVideoId ? `https://www.youtube.com/watch?v=${ex.youtubeVideoId}` : undefined,
+        thumbnailUrl: ex.thumbnailUrl || undefined,
+        difficulty: ex.difficulty,
+        sets: ex.recommendedSets || undefined,
+        reps: ex.recommendedReps || undefined,
+        holdSeconds: ex.recommendedHoldSeconds || undefined,
+      }));
+
+      const payload = sharePlanService.buildSharePayload(
+        branding,
+        `${protocolPhaseInfo.protocolName} - Phase ${protocolPhaseInfo.phaseNumber}`,
+        'protocol',
+        protocolPhaseInfo.protocolKey,
+        protocolPhaseInfo.phaseNumber,
+        protocolPhaseInfo.phaseName,
+        protocolPhaseInfo.painLocation,
+        null, // patient name - not included for privacy
+        planExercises,
+        [], // precautions - could be loaded separately
+        protocolPhaseInfo.assessmentDate
+      );
+
+      const result = await sharePlanService.createShareLink(payload);
+
+      if (result.success && result.shareUrl) {
+        // Use native share
+        await Share.share({
+          message: `Check out my exercise plan: ${result.shareUrl}`,
+          url: result.shareUrl,
+        });
+      } else {
+        Alert.alert('Share Failed', result.error || 'Unable to create share link.');
+      }
+    } catch (err) {
+      console.error('Error sharing plan:', err);
+      Alert.alert('Error', 'Failed to share plan. Please try again.');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  // Export PDF functionality
+  const handleExportPdf = async () => {
+    if (!protocolPhaseInfo || protocolExercises.length === 0) {
+      Alert.alert('No Plan to Export', 'Complete an assessment to get a personalized exercise plan to export.');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      // Build share payload for PDF
+      const planExercises: PlanExercise[] = protocolExercises.map((ex) => ({
+        id: ex.id,
+        title: ex.title,
+        description: ex.description || undefined,
+        youtubeUrl: ex.youtubeVideoId ? `https://www.youtube.com/watch?v=${ex.youtubeVideoId}` : undefined,
+        thumbnailUrl: ex.thumbnailUrl || undefined,
+        difficulty: ex.difficulty,
+        sets: ex.recommendedSets || undefined,
+        reps: ex.recommendedReps || undefined,
+        holdSeconds: ex.recommendedHoldSeconds || undefined,
+      }));
+
+      const payload = sharePlanService.buildSharePayload(
+        branding,
+        `${protocolPhaseInfo.protocolName} - Phase ${protocolPhaseInfo.phaseNumber}`,
+        'protocol',
+        protocolPhaseInfo.protocolKey,
+        protocolPhaseInfo.phaseNumber,
+        protocolPhaseInfo.phaseName,
+        protocolPhaseInfo.painLocation,
+        null,
+        planExercises,
+        [],
+        protocolPhaseInfo.assessmentDate
+      );
+
+      // Generate HTML and open in browser for printing
+      const html = sharePlanService.generatePrintHtml(payload);
+
+      // Create a data URL for the HTML
+      const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+
+      // For now, show an alert with instructions
+      // In a full implementation, you'd use a library like expo-print or react-native-html-to-pdf
+      Alert.alert(
+        'Export PDF',
+        'PDF export requires opening the plan in a browser. Would you like to share the plan link instead?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Share Link', onPress: handleSharePlan },
+        ]
+      );
+    } catch (err) {
+      console.error('Error exporting PDF:', err);
+      Alert.alert('Error', 'Failed to export PDF. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Fetch exercises from Supabase when body part changes
   useEffect(() => {
@@ -676,6 +827,186 @@ export default function ExercisesScreen() {
             </View>
           )}
         </View>
+
+        {/* Protocol Mode Section */}
+        {protocolPhaseInfo && showProtocolMode && (
+          <View style={styles.protocolModeContainer}>
+            <View style={styles.protocolModeHeader}>
+              <View style={styles.protocolModeBadge}>
+                <Target size={16} color="#FFFFFF" />
+                <Text style={styles.protocolModeBadgeText}>Protocol Mode</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.protocolModeClose}
+                onPress={() => setShowProtocolMode(false)}
+              >
+                <Text style={styles.protocolModeCloseText}>Browse All</Text>
+                <ChevronRight size={16} color={colors.primary[500]} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.protocolModeInfo}>
+              <Text style={styles.protocolModeName}>{protocolPhaseInfo.protocolName}</Text>
+              <Text style={styles.protocolModePhase}>
+                Phase {protocolPhaseInfo.phaseNumber}: {protocolPhaseInfo.phaseName}
+              </Text>
+              {protocolPhaseInfo.phaseDescription && (
+                <Text style={styles.protocolModeDescription}>
+                  {protocolPhaseInfo.phaseDescription}
+                </Text>
+              )}
+              <Text style={styles.protocolModeWeeks}>
+                Weeks {protocolPhaseInfo.weekStart}
+                {protocolPhaseInfo.weekEnd ? `-${protocolPhaseInfo.weekEnd}` : '+'}
+              </Text>
+            </View>
+
+            {/* Precautions Card */}
+            <PrecautionsCard
+              protocolKey={protocolPhaseInfo.protocolKey}
+              phaseNumber={protocolPhaseInfo.phaseNumber}
+              compact
+            />
+
+            {/* Share/Export Actions */}
+            <View style={styles.shareActionsContainer}>
+              <TouchableOpacity
+                style={styles.shareActionButton}
+                onPress={handleSharePlan}
+                disabled={isSharing || protocolExercises.length === 0}
+              >
+                {isSharing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Share2 size={16} color="#FFFFFF" />
+                    <Text style={styles.shareActionText}>Share Plan</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.shareActionButton, styles.exportActionButton]}
+                onPress={handleExportPdf}
+                disabled={isExporting || protocolExercises.length === 0}
+              >
+                {isExporting ? (
+                  <ActivityIndicator size="small" color={colors.primary[500]} />
+                ) : (
+                  <>
+                    <FileText size={16} color={colors.primary[500]} />
+                    <Text style={[styles.shareActionText, styles.exportActionText]}>Export PDF</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Protocol Exercises */}
+            {isLoadingProtocol ? (
+              <View style={styles.protocolLoadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary[500]} />
+                <Text style={styles.protocolLoadingText}>Loading your exercises...</Text>
+              </View>
+            ) : protocolExercises.length > 0 ? (
+              <View style={styles.protocolExercisesList}>
+                <Text style={styles.protocolExercisesTitle}>
+                  {protocolRoutineName || 'Your Exercises'} ({protocolExercises.length})
+                </Text>
+                {protocolExercises.map((exercise, index) => (
+                  <View key={exercise.id} style={styles.protocolExerciseCard}>
+                    <View style={styles.protocolExerciseNumber}>
+                      <Text style={styles.protocolExerciseNumberText}>{index + 1}</Text>
+                    </View>
+                    <View style={styles.protocolExerciseContent}>
+                      <Text style={styles.protocolExerciseTitle}>{exercise.title}</Text>
+                      <View style={styles.protocolExerciseMeta}>
+                        {exercise.recommendedSets && (
+                          <Text style={styles.protocolExerciseMetaText}>
+                            {exercise.recommendedSets} sets
+                          </Text>
+                        )}
+                        {exercise.recommendedReps && (
+                          <Text style={styles.protocolExerciseMetaText}>
+                            {exercise.recommendedReps} reps
+                          </Text>
+                        )}
+                        {exercise.recommendedHoldSeconds && (
+                          <Text style={styles.protocolExerciseMetaText}>
+                            {exercise.recommendedHoldSeconds}s hold
+                          </Text>
+                        )}
+                        <View
+                          style={[
+                            styles.difficultyBadge,
+                            { backgroundColor: getDifficultyColor(exercise.difficulty) + '20' }
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.difficultyText,
+                              { color: getDifficultyColor(exercise.difficulty) }
+                            ]}
+                          >
+                            {exercise.difficulty}
+                          </Text>
+                        </View>
+                      </View>
+                      {exercise.description && (
+                        <Text style={styles.protocolExerciseDescription} numberOfLines={2}>
+                          {exercise.description}
+                        </Text>
+                      )}
+                    </View>
+                    <TouchableOpacity
+                      style={styles.protocolExercisePlayButton}
+                      onPress={() => {
+                        if (exercise.youtubeVideoId) {
+                          openExerciseVideo(
+                            `https://www.youtube.com/watch?v=${exercise.youtubeVideoId}`,
+                            { id: exercise.id, title: exercise.title, youtubeVideoId: exercise.youtubeVideoId }
+                          );
+                        } else {
+                          openExerciseVideo('https://youtube.com/@justinlemmodpt', { id: exercise.id, title: exercise.title });
+                        }
+                      }}
+                    >
+                      <Play size={18} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                <TouchableOpacity
+                  style={styles.newAssessmentButton}
+                  onPress={() => router.push('/assessment')}
+                >
+                  <Sparkles size={16} color={colors.primary[500]} />
+                  <Text style={styles.newAssessmentText}>Update Assessment</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.noProtocolExercises}>
+                <Text style={styles.noProtocolExercisesText}>
+                  No specific exercises mapped for this protocol phase yet.
+                </Text>
+                <Text style={styles.noProtocolExercisesSubtext}>
+                  Browse the exercise library below or check back later.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Show protocol mode toggle if hidden */}
+        {protocolPhaseInfo && !showProtocolMode && (
+          <TouchableOpacity
+            style={styles.showProtocolModeButton}
+            onPress={() => setShowProtocolMode(true)}
+          >
+            <Target size={16} color={colors.primary[500]} />
+            <Text style={styles.showProtocolModeText}>
+              Return to {protocolPhaseInfo.protocolName} Protocol
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* Assessment-Based Recommendations */}
         {hasRecommendations && (
@@ -1708,5 +2039,211 @@ const styles = StyleSheet.create({
     color: '#10B981',
     marginBottom: 12,
     fontStyle: 'italic',
+  },
+  // Protocol Mode styles
+  protocolModeContainer: {
+    margin: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 2,
+    borderColor: colors.primary[500],
+  },
+  protocolModeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  protocolModeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary[500],
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
+    gap: 6,
+  },
+  protocolModeBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  protocolModeClose: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  protocolModeCloseText: {
+    fontSize: 14,
+    color: colors.primary[500],
+  },
+  protocolModeInfo: {
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral[200],
+  },
+  protocolModeName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.neutral[900],
+    marginBottom: 4,
+  },
+  protocolModePhase: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primary[600],
+    marginBottom: 4,
+  },
+  protocolModeDescription: {
+    fontSize: 14,
+    color: colors.neutral[600],
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  protocolModeWeeks: {
+    fontSize: 12,
+    color: colors.neutral[500],
+  },
+  shareActionsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  shareActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary[500],
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  exportActionButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: colors.primary[500],
+  },
+  shareActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  exportActionText: {
+    color: colors.primary[500],
+  },
+  protocolLoadingContainer: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  protocolLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: colors.neutral[600],
+  },
+  protocolExercisesList: {
+    marginTop: 8,
+  },
+  protocolExercisesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.neutral[800],
+    marginBottom: 12,
+  },
+  protocolExerciseCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral[50],
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  protocolExerciseNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary[500],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  protocolExerciseNumberText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  protocolExerciseContent: {
+    flex: 1,
+    marginRight: 8,
+  },
+  protocolExerciseTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.neutral[800],
+    marginBottom: 4,
+  },
+  protocolExerciseMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  protocolExerciseMetaText: {
+    fontSize: 12,
+    color: colors.neutral[600],
+  },
+  protocolExerciseDescription: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    marginTop: 4,
+  },
+  protocolExercisePlayButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary[500],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noProtocolExercises: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  noProtocolExercisesText: {
+    fontSize: 14,
+    color: colors.neutral[600],
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  noProtocolExercisesSubtext: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    textAlign: 'center',
+  },
+  showProtocolModeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: 16,
+    marginBottom: 0,
+    padding: 12,
+    backgroundColor: colors.primary[50],
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.primary[200],
+    gap: 8,
+  },
+  showProtocolModeText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary[600],
   },
 });
