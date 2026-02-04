@@ -450,6 +450,8 @@ export default function ExercisesScreen() {
         sets: rec.dosage?.sets,
         reps: rec.dosage?.reps,
         holdSeconds: rec.dosage?.holdTime ? parseInt(rec.dosage.holdTime) || undefined : undefined,
+        frequency: rec.dosage?.frequency || undefined,
+        safetyNotes: rec.safetyNotes || undefined,
       }));
 
       const payload = sharePlanService.buildSharePayload(
@@ -503,6 +505,8 @@ export default function ExercisesScreen() {
         sets: rec.dosage?.sets,
         reps: rec.dosage?.reps,
         holdSeconds: rec.dosage?.holdTime ? parseInt(rec.dosage.holdTime) || undefined : undefined,
+        frequency: rec.dosage?.frequency || undefined,
+        safetyNotes: rec.safetyNotes || undefined,
       }));
 
       const payload = sharePlanService.buildSharePayload(
@@ -519,7 +523,7 @@ export default function ExercisesScreen() {
         latestAssessment.createdAt || latestAssessment.assessment.timestamp || null
       );
 
-      // Generate HTML for PDF
+      // Generate HTML for PDF - uses all exercises from data array, not UI
       const html = sharePlanService.generatePrintHtml(payload);
 
       // Generate PDF file
