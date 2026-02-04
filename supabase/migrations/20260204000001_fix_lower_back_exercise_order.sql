@@ -23,17 +23,14 @@ WHERE title ILIKE '%Standing Hip Extension%Superman%'
   AND section_id = (SELECT id FROM exercise_sections WHERE slug = 'lower-back');
 
 -- Remove 'lower back' from clamshell exercises to prevent them from appearing in lower back results
+-- Chain array_remove calls to handle different capitalizations
 UPDATE exercise_videos
-SET body_parts = array_remove(body_parts, 'lower back'),
-    body_parts = array_remove(body_parts, 'Lower Back'),
-    body_parts = array_remove(body_parts, 'Lower back')
+SET body_parts = array_remove(array_remove(array_remove(body_parts, 'lower back'), 'Lower Back'), 'Lower back')
 WHERE title ILIKE '%Clamshell%';
 
 -- Remove 'lower back' from side lying hip abduction exercises
 UPDATE exercise_videos
-SET body_parts = array_remove(body_parts, 'lower back'),
-    body_parts = array_remove(body_parts, 'Lower Back'),
-    body_parts = array_remove(body_parts, 'Lower back')
+SET body_parts = array_remove(array_remove(array_remove(body_parts, 'lower back'), 'Lower Back'), 'Lower back')
 WHERE title ILIKE '%Hip Abduction%' OR title ILIKE '%Side%Lying%Hip%';
 
 -- Ensure clamshells and hip abduction have high display_order so they don't appear early

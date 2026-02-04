@@ -569,19 +569,20 @@ export class AssessmentService {
     }
 
     // Fetch routine items with exercises
+    // Use explicit FK hint since column is 'video_id' not 'exercise_videos_id'
     const { data: routineItems, error } = await supabase
       .from('exercise_routine_items')
       .select(`
         id,
         sequence_order,
-        display_order,
         phase,
         phase_notes,
         transition_notes,
         is_optional,
-        exercise_videos (*)
+        exercise_videos!video_id (*)
       `)
-      .eq('routine_id', routine.id);
+      .eq('routine_id', routine.id)
+      .order('sequence_order', { ascending: true });
 
     if (error || !routineItems || routineItems.length === 0) {
       console.log('No routine items found');
