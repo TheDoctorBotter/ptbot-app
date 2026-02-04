@@ -27,8 +27,19 @@ import { protocolExerciseService, type ProtocolPhaseInfo, type ProtocolExercise 
 import { sharePlanService, type PlanExercise } from '@/services/sharePlanService';
 import { useClinicBranding } from '@/hooks/useClinicBranding';
 import PrecautionsCard from '@/components/shared/PrecautionsCard';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+
+// Conditionally import expo-print and expo-sharing (not available on web)
+let Print: typeof import('expo-print') | null = null;
+let Sharing: typeof import('expo-sharing') | null = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    Print = require('expo-print');
+    Sharing = require('expo-sharing');
+  } catch (e) {
+    console.log('expo-print/sharing not available');
+  }
+}
 
 interface Exercise {
   id: string;
@@ -379,6 +390,12 @@ export default function ExercisesScreen() {
 
       await new Promise((resolve) => setTimeout(resolve, 250));
       printWindow.print();
+      return;
+    }
+
+    // Check if Print and Sharing are available (native only)
+    if (!Print || !Sharing) {
+      Alert.alert('Not Available', 'PDF export is not available on this platform.');
       return;
     }
 
