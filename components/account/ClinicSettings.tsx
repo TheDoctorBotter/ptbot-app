@@ -275,9 +275,9 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
 
       console.log('Upload data ready, size:', uploadData instanceof Uint8Array ? uploadData.length : 'blob');
 
-      // Upload to Supabase Storage
+      // Upload to Supabase Storage (bucket: clinic-assets)
       const { data, error } = await supabase.storage
-        .from('public')
+        .from('clinic-assets')
         .upload(fileName, uploadData, {
           contentType,
           upsert: true,
@@ -293,7 +293,7 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
 
       // Get public URL with cache busting
       const { data: urlData } = supabase.storage
-        .from('public')
+        .from('clinic-assets')
         .getPublicUrl(fileName);
 
       if (urlData?.publicUrl) {
