@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { activityService } from '@/services/activityService';
 
 export interface AssessmentData {
   painLevel: number;
@@ -1271,7 +1272,7 @@ export class AssessmentService {
       // Get current user (may be null for anonymous assessments)
       const { data: { user } } = await supabase.auth.getUser();
 
-      const { error } = await supabase
+      const { data: insertedAssessment, error } = await supabase
         .from('assessments')
         .insert({
           user_id: user?.id || null,
@@ -1303,12 +1304,26 @@ export class AssessmentService {
           surgeon_precautions: consentData?.surgeonPrecautions || null,
           protocol_key_selected: consentData?.protocolKeySelected || null,
           phase_number_selected: consentData?.phaseNumberSelected || null,
-        });
+        })
+        .select('id')
+        .single();
 
       if (error) {
         console.error('Error saving assessment to Supabase:', error);
       } else {
         console.log('Assessment saved to Supabase for user:', consentData?.userEmail || user?.email || 'anonymous');
+
+        // Log activity event for assessment completion
+        if (user?.id && insertedAssessment?.id) {
+          await activityService.logAssessmentCompleted(
+            insertedAssessment.id,
+            result.assessment.painLocation,
+            result.assessment.painLevel,
+            result.riskLevel,
+            consentData?.protocolKeySelected || undefined,
+            consentData?.phaseNumberSelected || undefined
+          );
+        }
       }
     } catch (error) {
       console.error('Error saving assessment to Supabase:', error);
