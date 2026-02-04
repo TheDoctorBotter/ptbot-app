@@ -69,6 +69,13 @@ class ProtocolExerciseService {
         return null;
       }
 
+      console.log('[ProtocolExerciseService] Found assessment with protocol:', {
+        assessmentId: assessment.id,
+        protocolKey: assessment.protocol_key_selected,
+        phaseNumber: assessment.phase_number_selected,
+        painLocation: assessment.pain_location,
+      });
+
       // Fetch protocol separately
       const { data: protocol, error: protocolError } = await supabase
         .from('protocols')
@@ -77,9 +84,17 @@ class ProtocolExerciseService {
         .maybeSingle();
 
       if (protocolError || !protocol) {
-        console.log('[ProtocolExerciseService] Protocol not found:', protocolError);
+        console.log('[ProtocolExerciseService] Protocol not found for key:', assessment.protocol_key_selected, protocolError);
+        // List available protocols for debugging
+        const { data: allProtocols } = await supabase
+          .from('protocols')
+          .select('protocol_key, name')
+          .limit(20);
+        console.log('[ProtocolExerciseService] Available protocols:', allProtocols?.map(p => p.protocol_key));
         return null;
       }
+
+      console.log('[ProtocolExerciseService] Found protocol:', protocol);
 
       // Fetch phase separately
       const { data: phase, error: phaseError } = await supabase
@@ -143,6 +158,13 @@ class ProtocolExerciseService {
         return { exercises: [], routineId: null, routineName: null };
       }
 
+      console.log('[ProtocolExerciseService] Fetching exercises for protocol:', {
+        protocolId: protocolData.id,
+        protocolKey,
+        phaseNumber,
+        protocolName: protocolData.name || protocolData.surgery_name,
+      });
+
       // Query protocol_phase_exercises with joined exercise data
       const { data: phaseExercises, error: exercisesError } = await supabase
         .from('protocol_phase_exercises')
@@ -169,6 +191,11 @@ class ProtocolExerciseService {
         .eq('protocol_id', protocolData.id)
         .eq('phase_number', phaseNumber)
         .order('display_order', { ascending: true });
+
+      console.log('[ProtocolExerciseService] Protocol phase exercises query result:', {
+        count: phaseExercises?.length || 0,
+        error: exercisesError,
+      });
 
       if (exercisesError) {
         console.error('[ProtocolExerciseService] Error fetching protocol exercises:', exercisesError);
