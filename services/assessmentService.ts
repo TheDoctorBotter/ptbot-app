@@ -1076,9 +1076,45 @@ export class AssessmentService {
         if (difficulty === 'Advanced') return 1000;
         if (difficulty === 'Intermediate') return 500;
         return 0;
+      }; 
+      
+codex/fix-export-pdf-function-for-exercises-ke9hup
+      const lowerBackPriorityAdjustment = (exercise: DatabaseExercise) => {
+        if (!painLocation.includes('lower back')) return 0;
+        const title = exercise.title.toLowerCase();
+        const keywords = (exercise.keywords || []).join(' ').toLowerCase();
+
+        const isPriority =
+          title.includes('bird dog') ||
+          title.includes('standing hip extension') ||
+          title.includes('superman') ||
+          keywords.includes('bird dog') ||
+          keywords.includes('standing hip extension') ||
+          keywords.includes('superman');
+
+        const isDeprioritized =
+          title.includes('clamshell') ||
+          title.includes('hip abduction') ||
+          keywords.includes('clamshell') ||
+          keywords.includes('hip abduction');
+
+        if (isPriority) return -100;
+        if (isDeprioritized) return 100;
+        return 0;
       };
+
+      const orderA =
+        (a.exercise.display_order ?? 999) +
+        difficultyWeight(a.exercise.difficulty) +
+        lowerBackPriorityAdjustment(a.exercise);
+      const orderB =
+        (b.exercise.display_order ?? 999) +
+        difficultyWeight(b.exercise.difficulty) +
+        lowerBackPriorityAdjustment(b.exercise);
+
       const orderA = (a.exercise.display_order ?? 999) + difficultyWeight(a.exercise.difficulty);
       const orderB = (b.exercise.display_order ?? 999) + difficultyWeight(b.exercise.difficulty);
+ main
 
       // Primary sort: display_order ascending (lower = earlier in clinical sequence)
       if (orderA !== orderB) return orderA - orderB;
