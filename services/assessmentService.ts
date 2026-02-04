@@ -1018,8 +1018,30 @@ export class AssessmentService {
       const matchReasons: string[] = [];
 
       // Check body part match (highest priority)
+      // Use stricter matching to avoid false positives (e.g., "hip" matching "lower back")
       const bodyPartsLower = (exercise.body_parts || []).map(b => b.toLowerCase());
-      if (bodyPartsLower.some(bp => painLocation.includes(bp) || bp.includes(painLocation.split(' ')[0]))) {
+      const painLocationWords = painLocation.split(' ');
+
+      // Require either:
+      // 1. Exact match of the full pain location in body_parts, OR
+      // 2. Pain location contains the body part exactly (e.g., "lumbar spine" for "lower back"), OR
+      // 3. Body part contains the full pain location
+      const hasBodyPartMatch = bodyPartsLower.some(bp => {
+        // Exact or near-exact matches
+        if (bp === painLocation) return true;
+        if (painLocation.includes(bp) && bp.length >= 4) return true; // e.g., "lumbar" in "lower back lumbar"
+        if (bp.includes(painLocation)) return true; // e.g., "lower back pain" contains "lower back"
+
+        // For multi-word pain locations like "lower back", require both words to match
+        if (painLocationWords.length >= 2) {
+          return painLocationWords.every(word => bp.includes(word) || word.length < 3);
+        }
+
+        // Single word: require substantial overlap
+        return bp.includes(painLocation) || painLocation.includes(bp);
+      });
+
+      if (hasBodyPartMatch) {
         score += 40;
         matchReasons.push(`Targets ${assessment.painLocation}`);
       }
