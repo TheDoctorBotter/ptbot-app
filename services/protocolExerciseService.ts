@@ -55,58 +55,60 @@ class ProtocolExerciseService {
       if (!user) return null;
 
       // Get latest assessment with protocol assignment
-      const { data: assessment, error } = await supabase
+      const { data: assessment, error: assessmentError } = await supabase
         .from('assessments')
-        .select(`
-          id,
-          created_at,
-          pain_location,
-          protocol_key_selected,
-          phase_number_selected,
-          protocols (
-            key,
-            name
-          ),
-          protocol_phases (
-            phase_number,
-            name,
-            description,
-            week_start,
-            week_end
-          )
-        `)
+        .select('id, created_at, pain_location, protocol_key_selected, phase_number_selected')
         .eq('user_id', user.id)
         .not('protocol_key_selected', 'is', null)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (error || !assessment) {
-        console.log('[ProtocolExerciseService] No protocol assignment found');
+      if (assessmentError || !assessment) {
+        console.log('[ProtocolExerciseService] No protocol assignment found:', assessmentError);
         return null;
       }
 
-      const protocol = assessment.protocols as { key: string; name: string } | null;
-      const phase = assessment.protocol_phases as {
-        phase_number: number;
-        name: string;
-        description: string | null;
-        week_start: number;
-        week_end: number | null;
-      } | null;
+      // Fetch protocol separately
+      const { data: protocol, error: protocolError } = await supabase
+        .from('protocols')
+        .select('protocol_key, name, surgery_name')
+        .eq('protocol_key', assessment.protocol_key_selected)
+        .maybeSingle();
 
-      if (!protocol || !phase) {
+      if (protocolError || !protocol) {
+        console.log('[ProtocolExerciseService] Protocol not found:', protocolError);
         return null;
       }
+
+      // Fetch phase separately
+      const { data: phase, error: phaseError } = await supabase
+        .from('protocol_phases')
+        .select('phase_number, name, description, week_start, week_end')
+        .eq('protocol_id', (
+          await supabase
+            .from('protocols')
+            .select('id')
+            .eq('protocol_key', assessment.protocol_key_selected)
+            .single()
+        ).data?.id)
+        .eq('phase_number', assessment.phase_number_selected || 1)
+        .maybeSingle();
+
+      // Use defaults if phase not found
+      const phaseName = phase?.name || `Phase ${assessment.phase_number_selected || 1}`;
+      const phaseDescription = phase?.description || null;
+      const weekStart = phase?.week_start || 0;
+      const weekEnd = phase?.week_end || null;
 
       return {
         protocolKey: assessment.protocol_key_selected,
-        protocolName: protocol.name,
+        protocolName: protocol.name || protocol.surgery_name,
         phaseNumber: assessment.phase_number_selected || 1,
-        phaseName: phase.name,
-        phaseDescription: phase.description,
-        weekStart: phase.week_start,
-        weekEnd: phase.week_end,
+        phaseName: phaseName,
+        phaseDescription: phaseDescription,
+        weekStart: weekStart,
+        weekEnd: weekEnd,
         assessmentDate: assessment.created_at,
         assessmentId: assessment.id,
         painLocation: assessment.pain_location,
@@ -129,8 +131,13 @@ class ProtocolExerciseService {
     }
 
     try {
-      // First, try to find a routine mapped to this protocol/phase
-      const { data: phaseRoutine, error: routineError } = await supabase
+      // First, try to find a routine mapped to this protocol/phase via phase_routines
+      // Check both by protocol_key/phase_number and by protocol_phase_id
+      let phaseRoutine = null;
+      let routineError = null;
+
+      // Try querying by protocol_key and phase_number first
+      const { data: routineByKey, error: keyError } = await supabase
         .from('phase_routines')
         .select(`
           routine_id,
@@ -144,8 +151,49 @@ class ProtocolExerciseService {
         .eq('phase_number', phaseNumber)
         .maybeSingle();
 
+      if (!keyError && routineByKey) {
+        phaseRoutine = routineByKey;
+      } else {
+        // Fall back to querying by protocol_phase_id
+        // First get the protocol_phase_id
+        const { data: protocolData } = await supabase
+          .from('protocols')
+          .select('id')
+          .eq('protocol_key', protocolKey)
+          .maybeSingle();
+
+        if (protocolData?.id) {
+          const { data: phaseData } = await supabase
+            .from('protocol_phases')
+            .select('id')
+            .eq('protocol_id', protocolData.id)
+            .eq('phase_number', phaseNumber)
+            .maybeSingle();
+
+          if (phaseData?.id) {
+            const { data: routineByPhase, error: phaseError } = await supabase
+              .from('phase_routines')
+              .select(`
+                routine_id,
+                exercise_routines (
+                  id,
+                  name,
+                  description
+                )
+              `)
+              .eq('protocol_phase_id', phaseData.id)
+              .maybeSingle();
+
+            if (!phaseError && routineByPhase) {
+              phaseRoutine = routineByPhase;
+            }
+            routineError = phaseError;
+          }
+        }
+      }
+
       if (routineError) {
-        console.error('[ProtocolExerciseService] Error fetching phase routine:', routineError);
+        console.log('[ProtocolExerciseService] No phase routine mapping found, using fallback');
       }
 
       // If we found a routine, get its exercises
@@ -206,17 +254,27 @@ class ProtocolExerciseService {
         };
       }
 
-      // Fallback: Search for exercises by protocol-related keywords
-      // This happens if no specific routine is mapped
-      console.log('[ProtocolExerciseService] No mapped routine, searching by protocol keywords');
+      // Fallback: Search for exercises by body part matching the protocol region
+      console.log('[ProtocolExerciseService] No mapped routine, searching by protocol region/keywords');
 
-      const { data: exercises, error: searchError } = await supabase
+      // Extract body part from protocol key (e.g., "knee_acl_reconstruction" -> "Knee")
+      const regionMatch = protocolKey.match(/^(shoulder|knee|hip|elbow|foot_ankle|ankle)/i);
+      const bodyPart = regionMatch ? regionMatch[1].replace('_', ' ') : null;
+
+      let exerciseQuery = supabase
         .from('exercise_videos')
         .select('*')
         .eq('is_active', true)
-        .or(`conditions.cs.{${protocolKey}},keywords.cs.{${protocolKey}}`)
         .order('display_order', { ascending: true })
         .limit(10);
+
+      // Filter by body part if we extracted one
+      if (bodyPart) {
+        const bodyPartCapitalized = bodyPart.charAt(0).toUpperCase() + bodyPart.slice(1).toLowerCase();
+        exerciseQuery = exerciseQuery.contains('body_parts', [bodyPartCapitalized]);
+      }
+
+      const { data: exercises, error: searchError } = await exerciseQuery;
 
       if (searchError) {
         console.error('[ProtocolExerciseService] Error searching exercises:', searchError);
@@ -237,7 +295,7 @@ class ProtocolExerciseService {
         displayOrder: ex.display_order || 0,
       }));
 
-      return { exercises: mappedExercises, routineId: null, routineName: null };
+      return { exercises: mappedExercises, routineId: null, routineName: `${bodyPart ? bodyPart.charAt(0).toUpperCase() + bodyPart.slice(1) + ' ' : ''}Exercises` };
     } catch (err) {
       console.error('[ProtocolExerciseService] Error:', err);
       return { exercises: [], routineId: null, routineName: null };

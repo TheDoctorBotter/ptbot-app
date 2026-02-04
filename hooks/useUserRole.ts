@@ -71,11 +71,7 @@ export function useUserRole(): UseUserRoleResult {
           first_name,
           last_name,
           role,
-          clinic_id,
-          clinics (
-            id,
-            name
-          )
+          clinic_id
         `)
         .eq('id', user.id)
         .single();
@@ -108,13 +104,24 @@ export function useUserRole(): UseUserRoleResult {
         return;
       }
 
-      // Extract clinic info
-      const clinic = profile.clinics as { id: string; name: string } | null;
+      // Fetch clinic info separately to avoid join RLS issues
+      let clinicName: string | null = null;
+      if (profile.clinic_id) {
+        const { data: clinic, error: clinicError } = await supabase
+          .from('clinics')
+          .select('id, name')
+          .eq('id', profile.clinic_id)
+          .maybeSingle();
+
+        if (!clinicError && clinic) {
+          clinicName = clinic.name;
+        }
+      }
 
       setRoleData({
         role: (profile.role as UserRole) || 'patient',
         clinicId: profile.clinic_id || null,
-        clinicName: clinic?.name || null,
+        clinicName: clinicName,
         userId: profile.id,
         firstName: profile.first_name,
         lastName: profile.last_name,
