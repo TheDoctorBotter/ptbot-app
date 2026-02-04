@@ -27,8 +27,11 @@ import { protocolExerciseService, type ProtocolPhaseInfo, type ProtocolExercise 
 import { sharePlanService, type PlanExercise } from '@/services/sharePlanService';
 import { useClinicBranding } from '@/hooks/useClinicBranding';
 import PrecautionsCard from '@/components/shared/PrecautionsCard';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+
+// TODO: Install expo-print and expo-sharing for PDF export functionality
+// npx expo install expo-print expo-sharing
+// import * as Print from 'expo-print';
+// import * as Sharing from 'expo-sharing';
 
 interface Exercise {
   id: string;
@@ -371,65 +374,15 @@ export default function ExercisesScreen() {
       return;
     }
 
-    setIsExporting(true);
-    try {
-      // Build share payload for PDF
-      const planExercises: PlanExercise[] = protocolExercises.map((ex) => ({
-        id: ex.id,
-        title: ex.title,
-        description: ex.description || undefined,
-        youtubeUrl: ex.youtubeVideoId ? `https://www.youtube.com/watch?v=${ex.youtubeVideoId}` : undefined,
-        thumbnailUrl: ex.thumbnailUrl || undefined,
-        difficulty: ex.difficulty,
-        sets: ex.recommendedSets || undefined,
-        reps: ex.recommendedReps || undefined,
-        holdSeconds: ex.recommendedHoldSeconds || undefined,
-      }));
-
-      const payload = sharePlanService.buildSharePayload(
-        branding,
-        `${protocolPhaseInfo.protocolName} - Phase ${protocolPhaseInfo.phaseNumber}`,
-        'protocol',
-        protocolPhaseInfo.protocolKey,
-        protocolPhaseInfo.phaseNumber,
-        protocolPhaseInfo.phaseName,
-        protocolPhaseInfo.painLocation,
-        null,
-        planExercises,
-        [],
-        protocolPhaseInfo.assessmentDate
-      );
-
-      // Generate HTML for PDF
-      const html = sharePlanService.generatePrintHtml(payload);
-
-      // Generate PDF file
-      const { uri } = await Print.printToFileAsync({
-        html,
-        base64: false,
-      });
-
-      // Check if sharing is available
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Share Exercise Plan PDF',
-          UTI: 'com.adobe.pdf',
-        });
-      } else {
-        // Fallback for platforms where sharing isn't available
-        Alert.alert(
-          'PDF Generated',
-          'Your exercise plan PDF has been created. Sharing is not available on this device.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (err) {
-      console.error('Error exporting PDF:', err);
-      Alert.alert('Error', 'Failed to export PDF. Please try again.');
-    } finally {
-      setIsExporting(false);
-    }
+    // PDF export coming soon - for now, offer to share link
+    Alert.alert(
+      'Export PDF',
+      'PDF export is coming soon! Would you like to share your plan link instead?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Share Link', onPress: handleSharePlan },
+      ]
+    );
   };
 
   // Share Assessment-Based Recommendations
@@ -492,64 +445,15 @@ export default function ExercisesScreen() {
       return;
     }
 
-    setIsExporting(true);
-    try {
-      // Build share payload from assessment recommendations
-      const planExercises: PlanExercise[] = latestAssessment.recommendations.map((rec) => ({
-        id: rec.exercise.id,
-        title: rec.exercise.name,
-        description: rec.reasoning || undefined,
-        youtubeUrl: rec.exercise.videoUrl || undefined,
-        difficulty: rec.exercise.difficulty,
-        sets: rec.dosage?.sets,
-        reps: rec.dosage?.reps,
-        holdSeconds: rec.dosage?.holdTime ? parseInt(rec.dosage.holdTime) || undefined : undefined,
-      }));
-
-      const payload = sharePlanService.buildSharePayload(
-        branding,
-        `Exercise Plan for ${latestAssessment.assessment.painLocation || 'Pain Relief'}`,
-        'symptom',
-        null,
-        null,
-        null,
-        latestAssessment.assessment.painLocation || null,
-        null,
-        planExercises,
-        [],
-        latestAssessment.createdAt || latestAssessment.assessment.timestamp || null
-      );
-
-      // Generate HTML for PDF
-      const html = sharePlanService.generatePrintHtml(payload);
-
-      // Generate PDF file
-      const { uri } = await Print.printToFileAsync({
-        html,
-        base64: false,
-      });
-
-      // Check if sharing is available
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Share Exercise Plan PDF',
-          UTI: 'com.adobe.pdf',
-        });
-      } else {
-        // Fallback for platforms where sharing isn't available
-        Alert.alert(
-          'PDF Generated',
-          'Your exercise plan PDF has been created. Sharing is not available on this device.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (err) {
-      console.error('Error exporting assessment PDF:', err);
-      Alert.alert('Error', 'Failed to export PDF. Please try again.');
-    } finally {
-      setIsExporting(false);
-    }
+    // PDF export coming soon - for now, offer to share link
+    Alert.alert(
+      'Export PDF',
+      'PDF export is coming soon! Would you like to share your plan link instead?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Share Link', onPress: handleShareAssessmentPlan },
+      ]
+    );
   };
 
   // Fetch exercises from Supabase when body part changes
