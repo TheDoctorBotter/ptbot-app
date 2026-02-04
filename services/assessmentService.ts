@@ -251,12 +251,15 @@ export class AssessmentService {
         filtered = scored.filter(s => s.exercise.difficulty !== 'Advanced' || s.score > 70);
       }
 
-      // Step 5: Take top 5-8 recommendations (return the full routine if matched)
-      const topExercises = filtered.filter((s) => s.score >= 30).slice(0, 8);
+      // Step 5: Take 6-8 recommendations when possible (return the full routine if matched)
+      const desiredMin = 6;
+      const desiredMax = 8;
+      const topExercises = filtered.filter((s) => s.score >= 30).slice(0, desiredMax);
 
-      // Ensure we have at least 3 exercises if available
-      const finalExercises =
-        topExercises.length >= 3 ? topExercises : filtered.slice(0, Math.min(5, filtered.length));
+      // Ensure we have at least 6 exercises if available
+      const finalExercises = topExercises.length >= desiredMin
+        ? topExercises
+        : filtered.slice(0, Math.min(desiredMax, filtered.length));
 
       // Step 6: Build recommendations with dosage and safety info
       const recommendations: ExerciseRecommendation[] = finalExercises.map((scored) => {
@@ -994,6 +997,10 @@ export class AssessmentService {
       ...symptoms,
       assessment.painDuration.toLowerCase(),
     ].filter(Boolean);
+
+    if (painLocation.includes('knee')) {
+      searchTerms.push('anterior knee', 'patellofemoral', 'patella', 'kneecap');
+    }
 
     // Add common symptom keywords
     if (painType.includes('stiff') || painType.includes('tight')) {
