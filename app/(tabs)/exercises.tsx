@@ -364,6 +364,44 @@ export default function ExercisesScreen() {
     }
   };
 
+  const exportHtmlToPdf = async (html: string, dialogTitle: string) => {
+    if (Platform.OS === 'web') {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        Alert.alert('Popup Blocked', 'Please allow popups to export the PDF.');
+        return;
+      }
+
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.focus();
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      printWindow.print();
+      return;
+    }
+
+    const { uri } = await Print.printToFileAsync({
+      html,
+      base64: false,
+    });
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle,
+        UTI: 'com.adobe.pdf',
+      });
+    } else {
+      Alert.alert(
+        'PDF Generated',
+        'Your exercise plan PDF has been created. Sharing is not available on this device.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
   // Export PDF functionality
   const handleExportPdf = async () => {
     if (!protocolPhaseInfo || protocolExercises.length === 0) {
@@ -403,26 +441,7 @@ export default function ExercisesScreen() {
       // Generate HTML for PDF
       const html = sharePlanService.generatePrintHtml(payload);
 
-      // Generate PDF file
-      const { uri } = await Print.printToFileAsync({
-        html,
-        base64: false,
-      });
-
-      // Check if sharing is available
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Share Exercise Plan PDF',
-          UTI: 'com.adobe.pdf',
-        });
-      } else {
-        Alert.alert(
-          'PDF Generated',
-          'Your exercise plan PDF has been created. Sharing is not available on this device.',
-          [{ text: 'OK' }]
-        );
-      }
+      await exportHtmlToPdf(html, 'Share Exercise Plan PDF');
     } catch (err) {
       console.error('Error exporting PDF:', err);
       Alert.alert('Error', 'Failed to export PDF. Please try again.');
@@ -526,26 +545,7 @@ export default function ExercisesScreen() {
       // Generate HTML for PDF - uses all exercises from data array, not UI
       const html = sharePlanService.generatePrintHtml(payload);
 
-      // Generate PDF file
-      const { uri } = await Print.printToFileAsync({
-        html,
-        base64: false,
-      });
-
-      // Check if sharing is available
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Share Exercise Plan PDF',
-          UTI: 'com.adobe.pdf',
-        });
-      } else {
-        Alert.alert(
-          'PDF Generated',
-          'Your exercise plan PDF has been created. Sharing is not available on this device.',
-          [{ text: 'OK' }]
-        );
-      }
+      await exportHtmlToPdf(html, 'Share Exercise Plan PDF');
     } catch (err) {
       console.error('Error exporting assessment PDF:', err);
       Alert.alert('Error', 'Failed to export PDF. Please try again.');

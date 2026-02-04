@@ -251,12 +251,15 @@ export class AssessmentService {
         filtered = scored.filter(s => s.exercise.difficulty !== 'Advanced' || s.score > 70);
       }
 
-      // Step 5: Take top 5-8 recommendations (return the full routine if matched)
-      const topExercises = filtered.filter((s) => s.score >= 30).slice(0, 8);
+      // Step 5: Take 6-8 recommendations when possible (return the full routine if matched)
+      const desiredMin = 6;
+      const desiredMax = 8;
+      const topExercises = filtered.filter((s) => s.score >= 30).slice(0, desiredMax);
 
-      // Ensure we have at least 3 exercises if available
-      const finalExercises =
-        topExercises.length >= 3 ? topExercises : filtered.slice(0, Math.min(5, filtered.length));
+      // Ensure we have at least 6 exercises if available
+      const finalExercises = topExercises.length >= desiredMin
+        ? topExercises
+        : filtered.slice(0, Math.min(desiredMax, filtered.length));
 
       // Step 6: Build recommendations with dosage and safety info
       const recommendations: ExerciseRecommendation[] = finalExercises.map((scored) => {
@@ -571,14 +574,14 @@ export class AssessmentService {
       .select(`
         id,
         sequence_order,
+        display_order,
         phase,
         phase_notes,
         transition_notes,
         is_optional,
         exercise_videos (*)
       `)
-      .eq('routine_id', routine.id)
-      .order('sequence_order', { ascending: true });
+      .eq('routine_id', routine.id);
 
     if (error || !routineItems || routineItems.length === 0) {
       console.log('No routine items found');
@@ -588,11 +591,21 @@ export class AssessmentService {
     console.log(`📋 Building recommendations from ${routineItems.length} routine exercises`);
 
     // Build recommendations from routine items
-    const recommendations: ExerciseRecommendation[] = routineItems
+    const orderedRoutineItems = routineItems
       .filter(item => item.exercise_videos)
-      .map((item) => {
+      .sort((a, b) => {
+        const orderA = (a as any).display_order ?? (a as any).sequence_order ?? 999;
+        const orderB = (b as any).display_order ?? (b as any).sequence_order ?? 999;
+
+        if (orderA !== orderB) return orderA - orderB;
+        return a.id.localeCompare(b.id);
+      });
+
+    const recommendations: ExerciseRecommendation[] = orderedRoutineItems.map((item, index) => {
         const exercise = item.exercise_videos as unknown as DatabaseExercise;
         const routineItem = item as unknown as DatabaseRoutineItem;
+        const routineOrder =
+          (item as any).display_order ?? (item as any).sequence_order ?? index + 1;
 
         // Build dosage from exercise
         const dosage: ExerciseDosage = {
@@ -619,7 +632,7 @@ export class AssessmentService {
         if (routineItem.phase) {
           reasoning += ` - ${routineItem.phase} Phase`;
         }
-        reasoning += ` (Exercise ${routineItem.sequence_order} of ${routineItems.length})`;
+        reasoning += ` (Exercise ${routineOrder} of ${routineItems.length})`;
 
         // Build safety notes including phase notes
         const safetyNotes = this.generateRoutineSafetyNotes(assessment, exercise, routineItem);
@@ -636,7 +649,7 @@ export class AssessmentService {
             category: this.inferCategory(exercise),
           },
           dosage,
-          relevanceScore: 100 - routineItem.sequence_order, // Earlier exercises score higher
+          relevanceScore: 100 - routineOrder, // Earlier exercises score higher
           reasoning,
           safetyNotes,
           redFlagWarnings: this.generateRedFlagWarnings(exercise),
@@ -696,8 +709,9 @@ export class AssessmentService {
   ): string[] {
     const tips: string[] = [];
 
-    if (routineItem.sequence_order < totalExercises) {
-      tips.push(`Once comfortable, progress to Exercise ${routineItem.sequence_order + 1}`);
+    const routineOrder = (routineItem as any).display_order ?? routineItem.sequence_order ?? 0;
+    if (routineOrder > 0 && routineOrder < totalExercises) {
+      tips.push(`Once comfortable, progress to Exercise ${routineOrder + 1}`);
     }
 
     if (routineItem.phase === 'Symptom Relief') {
@@ -984,6 +998,10 @@ export class AssessmentService {
       assessment.painDuration.toLowerCase(),
     ].filter(Boolean);
 
+    if (painLocation.includes('knee')) {
+      searchTerms.push('anterior knee', 'patellofemoral', 'patella', 'kneecap');
+    }
+
     // Add common symptom keywords
     if (painType.includes('stiff') || painType.includes('tight')) {
       searchTerms.push('stiffness', 'mobility', 'flexibility');
@@ -1053,9 +1071,46 @@ export class AssessmentService {
 
     // Sort primarily by display_order (clinical progression order), then by score as tiebreaker
     // This ensures exercises appear in the clinically intended sequence
+    const isLowerBack = painLocation.includes('lower back');
+    const difficultyWeight = (difficulty?: string) => {
+      if (difficulty === 'Advanced') return 1000;
+      if (difficulty === 'Intermediate') return 500;
+      return 0;
+    };
+    const lowerBackPriorityAdjustment = (exercise: DatabaseExercise) => {
+      if (!isLowerBack) return 0;
+      const title = exercise.title.toLowerCase();
+      const keywords = (exercise.keywords || []).join(' ').toLowerCase();
+
+      const isPriority =
+        title.includes('bird dog') ||
+        title.includes('standing hip extension') ||
+        title.includes('superman') ||
+        keywords.includes('bird dog') ||
+        keywords.includes('standing hip extension') ||
+        keywords.includes('superman');
+
+      const isDeprioritized =
+        title.includes('clamshell') ||
+        title.includes('hip abduction') ||
+        keywords.includes('clamshell') ||
+        keywords.includes('hip abduction');
+
+      if (isPriority) return -100;
+      if (isDeprioritized) return 100;
+      return 0;
+    };
+
     return relevantExercises.sort((a, b) => {
-      const orderA = a.exercise.display_order ?? 999;
-      const orderB = b.exercise.display_order ?? 999;
+
+      const orderA =
+        (a.exercise.display_order ?? 999) +
+        difficultyWeight(a.exercise.difficulty) +
+        lowerBackPriorityAdjustment(a.exercise);
+      const orderB =
+        (b.exercise.display_order ?? 999) +
+        difficultyWeight(b.exercise.difficulty) +
+        lowerBackPriorityAdjustment(b.exercise);
 
       // Primary sort: display_order ascending (lower = earlier in clinical sequence)
       if (orderA !== orderB) return orderA - orderB;
