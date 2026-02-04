@@ -571,14 +571,14 @@ export class AssessmentService {
       .select(`
         id,
         sequence_order,
+        display_order,
         phase,
         phase_notes,
         transition_notes,
         is_optional,
         exercise_videos (*)
       `)
-      .eq('routine_id', routine.id)
-      .order('sequence_order', { ascending: true });
+      .eq('routine_id', routine.id);
 
     if (error || !routineItems || routineItems.length === 0) {
       console.log('No routine items found');
@@ -588,11 +588,21 @@ export class AssessmentService {
     console.log(`📋 Building recommendations from ${routineItems.length} routine exercises`);
 
     // Build recommendations from routine items
-    const recommendations: ExerciseRecommendation[] = routineItems
+    const orderedRoutineItems = routineItems
       .filter(item => item.exercise_videos)
-      .map((item) => {
+      .sort((a, b) => {
+        const orderA = (a as any).display_order ?? (a as any).sequence_order ?? 999;
+        const orderB = (b as any).display_order ?? (b as any).sequence_order ?? 999;
+
+        if (orderA !== orderB) return orderA - orderB;
+        return a.id.localeCompare(b.id);
+      });
+
+    const recommendations: ExerciseRecommendation[] = orderedRoutineItems.map((item, index) => {
         const exercise = item.exercise_videos as unknown as DatabaseExercise;
         const routineItem = item as unknown as DatabaseRoutineItem;
+        const routineOrder =
+          (item as any).display_order ?? (item as any).sequence_order ?? index + 1;
 
         // Build dosage from exercise
         const dosage: ExerciseDosage = {
@@ -619,7 +629,7 @@ export class AssessmentService {
         if (routineItem.phase) {
           reasoning += ` - ${routineItem.phase} Phase`;
         }
-        reasoning += ` (Exercise ${routineItem.sequence_order} of ${routineItems.length})`;
+        reasoning += ` (Exercise ${routineOrder} of ${routineItems.length})`;
 
         // Build safety notes including phase notes
         const safetyNotes = this.generateRoutineSafetyNotes(assessment, exercise, routineItem);
@@ -636,7 +646,7 @@ export class AssessmentService {
             category: this.inferCategory(exercise),
           },
           dosage,
-          relevanceScore: 100 - routineItem.sequence_order, // Earlier exercises score higher
+          relevanceScore: 100 - routineOrder, // Earlier exercises score higher
           reasoning,
           safetyNotes,
           redFlagWarnings: this.generateRedFlagWarnings(exercise),
@@ -696,8 +706,9 @@ export class AssessmentService {
   ): string[] {
     const tips: string[] = [];
 
-    if (routineItem.sequence_order < totalExercises) {
-      tips.push(`Once comfortable, progress to Exercise ${routineItem.sequence_order + 1}`);
+    const routineOrder = (routineItem as any).display_order ?? routineItem.sequence_order ?? 0;
+    if (routineOrder > 0 && routineOrder < totalExercises) {
+      tips.push(`Once comfortable, progress to Exercise ${routineOrder + 1}`);
     }
 
     if (routineItem.phase === 'Symptom Relief') {
@@ -1054,8 +1065,13 @@ export class AssessmentService {
     // Sort primarily by display_order (clinical progression order), then by score as tiebreaker
     // This ensures exercises appear in the clinically intended sequence
     return relevantExercises.sort((a, b) => {
-      const orderA = a.exercise.display_order ?? 999;
-      const orderB = b.exercise.display_order ?? 999;
+      const difficultyWeight = (difficulty?: string) => {
+        if (difficulty === 'Advanced') return 1000;
+        if (difficulty === 'Intermediate') return 500;
+        return 0;
+      };
+      const orderA = (a.exercise.display_order ?? 999) + difficultyWeight(a.exercise.difficulty);
+      const orderB = (b.exercise.display_order ?? 999) + difficultyWeight(b.exercise.difficulty);
 
       // Primary sort: display_order ascending (lower = earlier in clinical sequence)
       if (orderA !== orderB) return orderA - orderB;

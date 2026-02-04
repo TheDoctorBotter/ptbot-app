@@ -213,12 +213,12 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
       const fileName = `clinic-logos/${clinicId}/logo.${ext}`;
       const contentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
 
-      let uploadData: Uint8Array | Blob;
+      let uploadData: ArrayBuffer | Blob;
 
       // Use base64 if available (more reliable on mobile)
       if (asset.base64) {
         // Convert base64 to Uint8Array using cross-platform decoder
-        uploadData = base64ToUint8Array(asset.base64);
+        uploadData = base64ToUint8Array(asset.base64).buffer;
       } else if (Platform.OS === 'web') {
         // Web: use fetch to get blob
         const response = await fetch(asset.uri);
@@ -230,7 +230,7 @@ export default function ClinicSettings({ clinicId, onClose, onSave }: ClinicSett
           const blob = await response.blob();
           // Convert blob to array buffer for upload
           const arrayBuffer = await new Response(blob).arrayBuffer();
-          uploadData = new Uint8Array(arrayBuffer);
+          uploadData = arrayBuffer;
         } catch (fetchErr) {
           console.error('Fetch fallback failed:', fetchErr);
           Alert.alert('Upload Failed', 'Could not read the image file. Please try again.');
