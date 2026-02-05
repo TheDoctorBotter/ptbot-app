@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   ClipboardList,
   Heart,
@@ -159,9 +159,13 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
     }
   }, [userId]);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [loadDashboardData]);
+  // Refresh data when tab becomes focused (after completing assessment, etc.)
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[Dashboard] Tab focused - refreshing data');
+      loadDashboardData();
+    }, [loadDashboardData])
+  );
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
