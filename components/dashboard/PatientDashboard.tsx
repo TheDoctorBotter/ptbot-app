@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   ClipboardList,
   Heart,
@@ -114,18 +114,8 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         .limit(1)
         .single();
 
-      if (assessmentError) {
-        console.log('[Dashboard] Assessment fetch error:', assessmentError);
-      } else if (assessment) {
-        console.log('[Dashboard] Latest assessment loaded:', {
-          id: assessment.id,
-          hasRecommendations: !!assessment.recommendations,
-          recommendationsCount: Array.isArray(assessment.recommendations) ? assessment.recommendations.length : 0,
-          recommendationsType: typeof assessment.recommendations,
-        });
+      if (!assessmentError && assessment) {
         setLatestAssessment(assessment);
-      } else {
-        console.log('[Dashboard] No assessment found for user:', userId);
       }
 
       // Fetch all assessments for history
@@ -154,9 +144,12 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
     }
   }, [userId]);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [loadDashboardData]);
+  // Refresh data when tab becomes focused (after completing assessment, etc.)
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboardData();
+    }, [loadDashboardData])
+  );
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);

@@ -18,6 +18,8 @@ import type { AssessmentData, AssessmentResult, ExerciseRecommendation, PostOpDa
 import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+// Note: Outcome service functions are imported but questionnaire steps are disabled
+// To re-enable questionnaires, uncomment the steps in getStepConfig()
 import {
   getQuestionnaireByKey,
   getQuestionnaireItems,
@@ -112,8 +114,9 @@ export default function AssessmentScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ mode?: string; conditionTag?: string }>();
 
-  // Follow-up mode state
-  const isFollowUpMode = params.mode === 'followup';
+  // Follow-up mode state - TEMPORARILY DISABLED
+  // To re-enable, change false to: params.mode === 'followup'
+  const isFollowUpMode = false; // params.mode === 'followup';
   const followUpConditionTag = params.conditionTag || null;
 
   const [currentStep, setCurrentStep] = useState(1);
@@ -167,9 +170,31 @@ export default function AssessmentScreen() {
 
   const assessmentService = new AssessmentService();
 
-  // Check authentication on mount
+  // Check authentication on mount and listen for auth changes
   useEffect(() => {
     checkAuth();
+
+    // Subscribe to auth state changes so we detect sign-in from other pages
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          console.log('[Assessment] Auth state changed:', event);
+          if (session?.user) {
+            setUser(session.user);
+            setUserEmail(session.user.email || '');
+            setUserPhone(session.user.user_metadata?.phone || session.user.phone || '');
+          } else {
+            setUser(null);
+          }
+          setIsCheckingAuth(false);
+        }
+      );
+
+      // Cleanup subscription on unmount
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, []);
 
   const checkAuth = async () => {
@@ -239,14 +264,14 @@ export default function AssessmentScreen() {
 
   // Calculate total steps based on surgery status and mode
   const getStepConfig = () => {
-    // Follow-up mode: only questionnaire steps
-    if (isFollowUpMode) {
-      return [
-        'followUpIntro',
-        'followUpFunction',
-        'followUpPain',
-      ];
-    }
+    // Follow-up mode temporarily disabled - redirect to full assessment
+    // if (isFollowUpMode) {
+    //   return [
+    //     'followUpIntro',
+    //     'followUpFunction',
+    //     'followUpPain',
+    //   ];
+    // }
 
     // Full assessment mode
     // Base steps: 1-Pain Level, 2-Pain Location, 3-Surgery Status
@@ -284,10 +309,10 @@ export default function AssessmentScreen() {
     steps.push('redFlags');
     steps.push('consent');
 
-    // Add baseline outcome measure steps
-    steps.push('baselineFunctionIntro');
-    steps.push('baselineFunction');
-    steps.push('baselinePain');
+    // Note: Baseline outcome measures (NPRS, ODI, KOOS, etc.) temporarily disabled for testing
+    // steps.push('baselineFunctionIntro');
+    // steps.push('baselineFunction');
+    // steps.push('baselinePain');
 
     return steps;
   };
@@ -297,20 +322,20 @@ export default function AssessmentScreen() {
   const currentStepName = stepConfig[currentStep - 1];
 
   // Load function questionnaire when entering baseline or follow-up steps
-  useEffect(() => {
-    const shouldLoadQuestionnaire =
-      (currentStepName === 'baselineFunctionIntro' || currentStepName === 'followUpIntro') &&
-      !functionQuestionnaire;
-
-    if (shouldLoadQuestionnaire) {
-      // In follow-up mode, use the condition tag from params; otherwise use pain location
-      if (isFollowUpMode && followUpConditionTag) {
-        loadFunctionQuestionnaireForCondition(followUpConditionTag);
-      } else {
-        loadFunctionQuestionnaire();
-      }
-    }
-  }, [currentStepName, functionQuestionnaire, isFollowUpMode, followUpConditionTag]);
+  // TEMPORARILY DISABLED - questionnaires not in use
+  // useEffect(() => {
+  //   const shouldLoadQuestionnaire =
+  //     (currentStepName === 'baselineFunctionIntro' || currentStepName === 'followUpIntro') &&
+  //     !functionQuestionnaire;
+  //
+  //   if (shouldLoadQuestionnaire) {
+  //     if (isFollowUpMode && followUpConditionTag) {
+  //       loadFunctionQuestionnaireForCondition(followUpConditionTag);
+  //     } else {
+  //       loadFunctionQuestionnaire();
+  //     }
+  //   }
+  // }, [currentStepName, functionQuestionnaire, isFollowUpMode, followUpConditionTag]);
 
   // Load questionnaire for a specific condition (used in follow-up mode)
   const loadFunctionQuestionnaireForCondition = async (conditionTag: string) => {
@@ -377,11 +402,11 @@ export default function AssessmentScreen() {
       return;
     }
 
-    // Validate baseline assessments
-    if (baselinePainScore === null) {
-      Alert.alert('Incomplete', 'Please complete the pain assessment.');
-      return;
-    }
+    // Note: baselinePainScore validation removed since NPRS questionnaire is disabled
+    // if (baselinePainScore === null) {
+    //   Alert.alert('Incomplete', 'Please complete the pain assessment.');
+    //   return;
+    // }
 
     setIsProcessing(true);
 
@@ -433,58 +458,54 @@ export default function AssessmentScreen() {
       // Process the assessment with post-op data
       const result = await assessmentService.processAssessment(assessmentData as AssessmentData, postOpDataForProcessing);
 
-      // Save baseline outcome assessments
-      const conditionTag = mapPainLocationToCondition(assessmentData.painLocation);
-      const functionQuestionnaireKey = getQuestionnaireKeyForCondition(conditionTag);
+      // Note: Baseline outcome assessments (NPRS, ODI, KOOS, etc.) temporarily disabled for testing
+      // const conditionTag = mapPainLocationToCondition(assessmentData.painLocation);
+      // const functionQuestionnaireKey = getQuestionnaireKeyForCondition(conditionTag);
 
-      // Save function questionnaire (ODI/KOOS/QuickDASH)
-      if (functionResponses.size > 0) {
-        try {
-          const savedFunctionAssessment = await saveOutcomeAssessment(
-            functionQuestionnaireKey,
-            'baseline',
-            conditionTag,
-            functionResponses
-          );
+      // Save function questionnaire (ODI/KOOS/QuickDASH) - TEMPORARILY DISABLED
+      // if (functionResponses.size > 0) {
+      //   try {
+      //     const savedFunctionAssessment = await saveOutcomeAssessment(
+      //       functionQuestionnaireKey,
+      //       'baseline',
+      //       conditionTag,
+      //       functionResponses
+      //     );
+      //
+      //     if (savedFunctionAssessment) {
+      //       const functionScoreResult = calculateScore(
+      //         functionQuestionnaireKey,
+      //         Array.from(functionResponses.values())
+      //       );
+      //       setFunctionResult(functionScoreResult);
+      //     }
+      //   } catch (error) {
+      //     console.error('Error saving function assessment:', error);
+      //   }
+      // }
 
-          if (savedFunctionAssessment) {
-            // Calculate and store the result for display
-            const functionScoreResult = calculateScore(
-              functionQuestionnaireKey,
-              Array.from(functionResponses.values())
-            );
-            setFunctionResult(functionScoreResult);
-          }
-        } catch (error) {
-          console.error('Error saving function assessment:', error);
-          // Continue with the assessment even if saving fails
-        }
-      }
-
-      // Save pain assessment (NPRS)
-      if (baselinePainScore !== null) {
-        try {
-          // Get NPRS questionnaire and its item
-          const nprsQuestionnaire = await getQuestionnaireByKey('nprs');
-          if (nprsQuestionnaire) {
-            const nprsItems = await getQuestionnaireItems(nprsQuestionnaire.id);
-            if (nprsItems.length > 0) {
-              const painResponseMap = new Map<string, number>();
-              painResponseMap.set(nprsItems[0].id, baselinePainScore);
-
-              await saveOutcomeAssessment(
-                'nprs',
-                'baseline',
-                conditionTag,
-                painResponseMap
-              );
-            }
-          }
-        } catch (error) {
-          console.error('Error saving pain assessment:', error);
-          // Continue with the assessment even if saving fails
-        }
-      }
+      // Save pain assessment (NPRS) - TEMPORARILY DISABLED
+      // if (baselinePainScore !== null) {
+      //   try {
+      //     const nprsQuestionnaire = await getQuestionnaireByKey('nprs');
+      //     if (nprsQuestionnaire) {
+      //       const nprsItems = await getQuestionnaireItems(nprsQuestionnaire.id);
+      //       if (nprsItems.length > 0) {
+      //         const painResponseMap = new Map<string, number>();
+      //         painResponseMap.set(nprsItems[0].id, baselinePainScore);
+      //
+      //         await saveOutcomeAssessment(
+      //           'nprs',
+      //           'baseline',
+      //           conditionTag,
+      //           painResponseMap
+      //         );
+      //       }
+      //     }
+      //   } catch (error) {
+      //     console.error('Error saving pain assessment:', error);
+      //   }
+      // }
 
       // Save the result with consent and post-op data
       await assessmentService.saveAssessmentResult(result, {
