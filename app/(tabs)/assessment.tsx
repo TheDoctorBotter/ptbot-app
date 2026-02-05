@@ -402,11 +402,11 @@ export default function AssessmentScreen() {
       return;
     }
 
-    // Validate baseline assessments
-    if (baselinePainScore === null) {
-      Alert.alert('Incomplete', 'Please complete the pain assessment.');
-      return;
-    }
+    // Note: baselinePainScore validation removed since NPRS questionnaire is disabled
+    // if (baselinePainScore === null) {
+    //   Alert.alert('Incomplete', 'Please complete the pain assessment.');
+    //   return;
+    // }
 
     setIsProcessing(true);
 
