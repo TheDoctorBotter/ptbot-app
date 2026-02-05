@@ -76,8 +76,6 @@ interface PatientDashboardProps {
 }
 
 export default function PatientDashboard({ userId, firstName }: PatientDashboardProps) {
-  console.log('[Dashboard] PatientDashboard render - userId:', userId, 'firstName:', firstName);
-
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -101,10 +99,7 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
   } = useOutcomeSummary(userId, conditionTag);
 
   const loadDashboardData = useCallback(async () => {
-    console.log('[Dashboard] loadDashboardData called with userId:', userId);
-
     if (!supabase || !userId) {
-      console.log('[Dashboard] Skipping load - supabase:', !!supabase, 'userId:', userId);
       setIsLoading(false);
       return;
     }
@@ -119,18 +114,8 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         .limit(1)
         .single();
 
-      if (assessmentError) {
-        console.log('[Dashboard] Assessment fetch error:', assessmentError);
-      } else if (assessment) {
-        console.log('[Dashboard] Latest assessment loaded:', {
-          id: assessment.id,
-          hasRecommendations: !!assessment.recommendations,
-          recommendationsCount: Array.isArray(assessment.recommendations) ? assessment.recommendations.length : 0,
-          recommendationsType: typeof assessment.recommendations,
-        });
+      if (!assessmentError && assessment) {
         setLatestAssessment(assessment);
-      } else {
-        console.log('[Dashboard] No assessment found for user:', userId);
       }
 
       // Fetch all assessments for history
@@ -162,7 +147,6 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
   // Refresh data when tab becomes focused (after completing assessment, etc.)
   useFocusEffect(
     useCallback(() => {
-      console.log('[Dashboard] Tab focused - refreshing data');
       loadDashboardData();
     }, [loadDashboardData])
   );
@@ -374,13 +358,6 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         />
       }
     >
-      {/* DEBUG: Temporary debug info - remove after fixing */}
-      <View style={{ padding: 10, backgroundColor: '#ffe0e0', margin: 10, borderRadius: 8 }}>
-        <Text style={{ fontSize: 12, fontFamily: 'monospace' }}>
-          DEBUG: userId={userId || 'null'}, assessments={assessmentHistory.length}, hasLatest={!!latestAssessment}, recs={latestAssessment?.recommendations?.length || 0}
-        </Text>
-      </View>
-
       {/* Welcome Section */}
       <View style={styles.welcomeSection}>
         <Text style={styles.welcomeText}>
