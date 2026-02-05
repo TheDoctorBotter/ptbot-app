@@ -11,13 +11,10 @@ import {
 import { useRouter } from 'expo-router';
 import {
   ClipboardList,
-  Activity,
   Heart,
   ArrowRight,
   AlertTriangle,
   CheckCircle,
-  Clock,
-  Calendar,
   RefreshCw,
   Play,
   Dumbbell,
@@ -117,8 +114,18 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         .limit(1)
         .single();
 
-      if (!assessmentError && assessment) {
+      if (assessmentError) {
+        console.log('[Dashboard] Assessment fetch error:', assessmentError);
+      } else if (assessment) {
+        console.log('[Dashboard] Latest assessment loaded:', {
+          id: assessment.id,
+          hasRecommendations: !!assessment.recommendations,
+          recommendationsCount: Array.isArray(assessment.recommendations) ? assessment.recommendations.length : 0,
+          recommendationsType: typeof assessment.recommendations,
+        });
         setLatestAssessment(assessment);
+      } else {
+        console.log('[Dashboard] No assessment found for user:', userId);
       }
 
       // Fetch all assessments for history
@@ -442,38 +449,6 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         </View>
       )}
 
-      {/* Section 3: Engagement Feedback */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Activity size={20} color={colors.primary[500]} />
-          <Text style={styles.cardTitle}>Your Activity</Text>
-        </View>
-
-        <View style={styles.activityGrid}>
-          <View style={styles.activityItem}>
-            <Calendar size={24} color={colors.neutral[500]} />
-            <Text style={styles.activityValue}>
-              {lastActivityDate
-                ? getDaysSinceActivity() === 0
-                  ? 'Today'
-                  : getDaysSinceActivity() === 1
-                    ? 'Yesterday'
-                    : `${getDaysSinceActivity()} days ago`
-                : 'No activity yet'}
-            </Text>
-            <Text style={styles.activityLabel}>Last Activity</Text>
-          </View>
-
-          <View style={styles.activityDivider} />
-
-          <View style={styles.activityItem}>
-            <Clock size={24} color={colors.neutral[500]} />
-            <Text style={styles.activityValue}>{sessionsThisWeek}</Text>
-            <Text style={styles.activityLabel}>Sessions This Week</Text>
-          </View>
-        </View>
-      </View>
-
       {/* Section: Assessment History */}
       {assessmentHistory.length > 0 && (
         <View style={styles.card}>
@@ -553,7 +528,7 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
       )}
 
       {/* Section 3: Your Exercises (from assessment recommendations) */}
-      {latestAssessment?.recommendations && latestAssessment.recommendations.length > 0 && (
+      {latestAssessment?.recommendations && latestAssessment.recommendations.length > 0 ? (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Dumbbell size={20} color={colors.primary[500]} />
@@ -599,7 +574,24 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
             <ArrowRight size={16} color={colors.primary[500]} />
           </TouchableOpacity>
         </View>
-      )}
+      ) : latestAssessment ? (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Dumbbell size={20} color={colors.primary[500]} />
+            <Text style={styles.cardTitle}>Your Exercises</Text>
+          </View>
+          <Text style={styles.emptyExercisesText}>
+            Use the AI Exercise Finder to discover exercises for your condition.
+          </Text>
+          <TouchableOpacity
+            style={styles.viewExercisesButton}
+            onPress={() => router.push('/(tabs)/exercises')}
+          >
+            <Text style={styles.viewExercisesButtonText}>Find Exercises</Text>
+            <ArrowRight size={16} color={colors.primary[500]} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* Section 4: Reassurance Messaging */}
       <View style={[
@@ -854,6 +846,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 12,
   },
+  emptyExercisesText: {
+    fontSize: 14,
+    color: colors.neutral[600],
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
   emptyPlanButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -863,31 +862,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primary[500],
     marginRight: 4,
-  },
-  activityGrid: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  activityItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  activityValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.neutral[900],
-    marginTop: 8,
-  },
-  activityLabel: {
-    fontSize: 12,
-    color: colors.neutral[500],
-    marginTop: 4,
-  },
-  activityDivider: {
-    width: 1,
-    height: 60,
-    backgroundColor: colors.neutral[200],
-    marginHorizontal: 16,
   },
   reassuranceCard: {
     flexDirection: 'row',
