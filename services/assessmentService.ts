@@ -1337,11 +1337,6 @@ export class AssessmentService {
         riskLevel: result.riskLevel,
       });
 
-      // Debug alert to see auth state
-      if (typeof alert !== 'undefined') {
-        alert(`Saving assessment - User: ${user?.email || 'NO USER'}, ID: ${user?.id || 'NO ID'}`);
-      }
-
       const { data: insertedAssessment, error } = await supabase
         .from('assessments')
         .insert({
@@ -1375,33 +1370,19 @@ export class AssessmentService {
           protocol_key_selected: consentData?.protocolKeySelected || null,
           phase_number_selected: consentData?.phaseNumberSelected || null,
         })
-        .select('id')
-        .single();
+        // Removed .select('id').single() to avoid triggering SELECT policies
+        // which were causing "permission denied for table users" error
 
       if (error) {
         console.error('[AssessmentService] Error saving assessment to Supabase:', error);
-        // Surface the error for debugging
-        if (typeof alert !== 'undefined') {
-          alert(`Save failed: ${error.message || JSON.stringify(error)}`);
-        }
       } else {
         console.log('[AssessmentService] Assessment saved successfully:', {
-          assessmentId: insertedAssessment?.id,
           user: consentData?.userEmail || user?.email || 'anonymous',
           recommendationsSaved: result.recommendations.length,
         });
 
-        // Log activity event for assessment completion
-        if (user?.id && insertedAssessment?.id) {
-          await activityService.logAssessmentCompleted(
-            insertedAssessment.id,
-            result.assessment.painLocation,
-            result.assessment.painLevel,
-            result.riskLevel,
-            consentData?.protocolKeySelected || undefined,
-            consentData?.phaseNumberSelected || undefined
-          );
-        }
+        // Note: Activity logging disabled since we can't get the inserted ID
+        // without triggering SELECT policies that cause permission errors
       }
     } catch (error) {
       console.error('Error saving assessment to Supabase:', error);
