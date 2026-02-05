@@ -170,9 +170,31 @@ export default function AssessmentScreen() {
 
   const assessmentService = new AssessmentService();
 
-  // Check authentication on mount
+  // Check authentication on mount and listen for auth changes
   useEffect(() => {
     checkAuth();
+
+    // Subscribe to auth state changes so we detect sign-in from other pages
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          console.log('[Assessment] Auth state changed:', event);
+          if (session?.user) {
+            setUser(session.user);
+            setUserEmail(session.user.email || '');
+            setUserPhone(session.user.user_metadata?.phone || session.user.phone || '');
+          } else {
+            setUser(null);
+          }
+          setIsCheckingAuth(false);
+        }
+      );
+
+      // Cleanup subscription on unmount
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, []);
 
   const checkAuth = async () => {
