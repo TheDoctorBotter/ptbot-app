@@ -1330,6 +1330,13 @@ export class AssessmentService {
       // Get current user (may be null for anonymous assessments)
       const { data: { user } } = await supabase.auth.getUser();
 
+      console.log('[AssessmentService] Saving to Supabase:', {
+        hasUser: !!user,
+        userId: user?.id,
+        recommendationsCount: result.recommendations.length,
+        riskLevel: result.riskLevel,
+      });
+
       const { data: insertedAssessment, error } = await supabase
         .from('assessments')
         .insert({
@@ -1367,9 +1374,13 @@ export class AssessmentService {
         .single();
 
       if (error) {
-        console.error('Error saving assessment to Supabase:', error);
+        console.error('[AssessmentService] Error saving assessment to Supabase:', error);
       } else {
-        console.log('Assessment saved to Supabase for user:', consentData?.userEmail || user?.email || 'anonymous');
+        console.log('[AssessmentService] Assessment saved successfully:', {
+          assessmentId: insertedAssessment?.id,
+          user: consentData?.userEmail || user?.email || 'anonymous',
+          recommendationsSaved: result.recommendations.length,
+        });
 
         // Log activity event for assessment completion
         if (user?.id && insertedAssessment?.id) {

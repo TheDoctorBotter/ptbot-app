@@ -11,16 +11,16 @@ import {
 import { useRouter } from 'expo-router';
 import {
   ClipboardList,
-  Activity,
   Heart,
   ArrowRight,
   AlertTriangle,
   CheckCircle,
-  Clock,
-  Calendar,
   RefreshCw,
   Play,
   Dumbbell,
+  History,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -54,6 +54,15 @@ interface LatestAssessment {
   recommendations: ExerciseRecommendation[] | null;
 }
 
+interface AssessmentHistoryItem {
+  id: string;
+  pain_level: number;
+  pain_location: string;
+  pain_type: string | null;
+  risk_level: string;
+  created_at: string;
+}
+
 // Configuration for re-check prompts
 const REASSESSMENT_CONFIG = {
   regularIntervalDays: 7, // Re-check every 7 days
@@ -71,6 +80,8 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latestAssessment, setLatestAssessment] = useState<LatestAssessment | null>(null);
+  const [assessmentHistory, setAssessmentHistory] = useState<AssessmentHistoryItem[]>([]);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [sessionsThisWeek, setSessionsThisWeek] = useState(0);
   const [lastActivityDate, setLastActivityDate] = useState<Date | null>(null);
 
@@ -103,8 +114,29 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         .limit(1)
         .single();
 
-      if (!assessmentError && assessment) {
+      if (assessmentError) {
+        console.log('[Dashboard] Assessment fetch error:', assessmentError);
+      } else if (assessment) {
+        console.log('[Dashboard] Latest assessment loaded:', {
+          id: assessment.id,
+          hasRecommendations: !!assessment.recommendations,
+          recommendationsCount: Array.isArray(assessment.recommendations) ? assessment.recommendations.length : 0,
+          recommendationsType: typeof assessment.recommendations,
+        });
         setLatestAssessment(assessment);
+      } else {
+        console.log('[Dashboard] No assessment found for user:', userId);
+      }
+
+      // Fetch all assessments for history
+      const { data: allAssessments, error: historyError } = await supabase
+        .from('assessments')
+        .select('id, pain_level, pain_location, pain_type, risk_level, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (!historyError && allAssessments) {
+        setAssessmentHistory(allAssessments);
       }
 
       // Fetch activity metrics
@@ -417,40 +449,86 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         </View>
       )}
 
-      {/* Section 3: Engagement Feedback */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Activity size={20} color={colors.primary[500]} />
-          <Text style={styles.cardTitle}>Your Activity</Text>
-        </View>
-
-        <View style={styles.activityGrid}>
-          <View style={styles.activityItem}>
-            <Calendar size={24} color={colors.neutral[500]} />
-            <Text style={styles.activityValue}>
-              {lastActivityDate
-                ? getDaysSinceActivity() === 0
-                  ? 'Today'
-                  : getDaysSinceActivity() === 1
-                    ? 'Yesterday'
-                    : `${getDaysSinceActivity()} days ago`
-                : 'No activity yet'}
-            </Text>
-            <Text style={styles.activityLabel}>Last Activity</Text>
+      {/* Section: Assessment History */}
+      {assessmentHistory.length > 0 && (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <History size={20} color={colors.primary[500]} />
+            <Text style={styles.cardTitle}>Assessment History</Text>
+            <Text style={styles.historyCount}>({assessmentHistory.length})</Text>
           </View>
 
-          <View style={styles.activityDivider} />
+          <Text style={styles.historySubtext}>
+            Track your progress over time. Assessments cannot be edited after completion.
+          </Text>
 
-          <View style={styles.activityItem}>
-            <Clock size={24} color={colors.neutral[500]} />
-            <Text style={styles.activityValue}>{sessionsThisWeek}</Text>
-            <Text style={styles.activityLabel}>Sessions This Week</Text>
-          </View>
+          {(showAllHistory ? assessmentHistory : assessmentHistory.slice(0, 3)).map((item, index) => (
+            <View key={item.id} style={styles.historyItem}>
+              <View style={styles.historyItemLeft}>
+                <View style={[
+                  styles.historyPainIndicator,
+                  item.pain_level <= 3 && styles.painLow,
+                  item.pain_level > 3 && item.pain_level <= 6 && styles.painMedium,
+                  item.pain_level > 6 && styles.painHigh,
+                ]}>
+                  <Text style={styles.historyPainText}>{item.pain_level}</Text>
+                </View>
+                <View style={styles.historyItemInfo}>
+                  <Text style={styles.historyLocation}>{item.pain_location}</Text>
+                  <Text style={styles.historyDate}>
+                    {new Date(item.created_at).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </Text>
+                </View>
+              </View>
+              <View style={[
+                styles.historyRiskBadge,
+                item.risk_level === 'low' && styles.riskLow,
+                item.risk_level === 'moderate' && styles.riskModerate,
+                item.risk_level === 'high' && styles.riskHigh,
+                item.risk_level === 'critical' && styles.riskCritical,
+              ]}>
+                <Text style={[
+                  styles.historyRiskText,
+                  item.risk_level === 'low' && styles.riskTextLow,
+                  item.risk_level === 'moderate' && styles.riskTextModerate,
+                  item.risk_level === 'high' && styles.riskTextHigh,
+                  item.risk_level === 'critical' && styles.riskTextCritical,
+                ]}>
+                  {item.risk_level}
+                </Text>
+              </View>
+            </View>
+          ))}
+
+          {assessmentHistory.length > 3 && (
+            <TouchableOpacity
+              style={styles.showMoreButton}
+              onPress={() => setShowAllHistory(!showAllHistory)}
+            >
+              {showAllHistory ? (
+                <>
+                  <ChevronUp size={16} color={colors.primary[500]} />
+                  <Text style={styles.showMoreText}>Show Less</Text>
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={16} color={colors.primary[500]} />
+                  <Text style={styles.showMoreText}>
+                    Show {assessmentHistory.length - 3} More
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
-      </View>
+      )}
 
       {/* Section 3: Your Exercises (from assessment recommendations) */}
-      {latestAssessment?.recommendations && latestAssessment.recommendations.length > 0 && (
+      {latestAssessment?.recommendations && latestAssessment.recommendations.length > 0 ? (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Dumbbell size={20} color={colors.primary[500]} />
@@ -496,7 +574,24 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
             <ArrowRight size={16} color={colors.primary[500]} />
           </TouchableOpacity>
         </View>
-      )}
+      ) : latestAssessment ? (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Dumbbell size={20} color={colors.primary[500]} />
+            <Text style={styles.cardTitle}>Your Exercises</Text>
+          </View>
+          <Text style={styles.emptyExercisesText}>
+            Use the AI Exercise Finder to discover exercises for your condition.
+          </Text>
+          <TouchableOpacity
+            style={styles.viewExercisesButton}
+            onPress={() => router.push('/(tabs)/exercises')}
+          >
+            <Text style={styles.viewExercisesButtonText}>Find Exercises</Text>
+            <ArrowRight size={16} color={colors.primary[500]} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* Section 4: Reassurance Messaging */}
       <View style={[
@@ -751,6 +846,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 12,
   },
+  emptyExercisesText: {
+    fontSize: 14,
+    color: colors.neutral[600],
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
   emptyPlanButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -760,31 +862,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primary[500],
     marginRight: 4,
-  },
-  activityGrid: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  activityItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  activityValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.neutral[900],
-    marginTop: 8,
-  },
-  activityLabel: {
-    fontSize: 12,
-    color: colors.neutral[500],
-    marginTop: 4,
-  },
-  activityDivider: {
-    width: 1,
-    height: 60,
-    backgroundColor: colors.neutral[200],
-    marginHorizontal: 16,
   },
   reassuranceCard: {
     flexDirection: 'row',
@@ -1026,5 +1103,112 @@ const styles = StyleSheet.create({
   outcomeContainer: {
     marginHorizontal: 16,
     marginTop: 16,
+  },
+  // Assessment History styles
+  historyCount: {
+    fontSize: 14,
+    color: colors.neutral[500],
+    marginLeft: 'auto',
+  },
+  historySubtext: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral[100],
+  },
+  historyItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  historyPainIndicator: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  painLow: {
+    backgroundColor: colors.success[100],
+  },
+  painMedium: {
+    backgroundColor: colors.warning[100],
+  },
+  painHigh: {
+    backgroundColor: colors.error[100],
+  },
+  historyPainText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.neutral[800],
+  },
+  historyItemInfo: {
+    flex: 1,
+  },
+  historyLocation: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.neutral[800],
+  },
+  historyDate: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    marginTop: 2,
+  },
+  historyRiskBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  riskLow: {
+    backgroundColor: colors.success[100],
+  },
+  riskModerate: {
+    backgroundColor: colors.warning[100],
+  },
+  riskHigh: {
+    backgroundColor: colors.error[100],
+  },
+  riskCritical: {
+    backgroundColor: colors.error[200],
+  },
+  historyRiskText: {
+    fontSize: 12,
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  riskTextLow: {
+    color: colors.success[700],
+  },
+  riskTextModerate: {
+    color: colors.warning[700],
+  },
+  riskTextHigh: {
+    color: colors.error[700],
+  },
+  riskTextCritical: {
+    color: colors.error[800],
+  },
+  showMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 8,
+    gap: 6,
+  },
+  showMoreText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary[500],
   },
 });
