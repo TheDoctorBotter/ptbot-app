@@ -374,6 +374,13 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         />
       }
     >
+      {/* DEBUG: Temporary debug info - remove after fixing */}
+      <View style={{ padding: 10, backgroundColor: '#ffe0e0', margin: 10, borderRadius: 8 }}>
+        <Text style={{ fontSize: 12, fontFamily: 'monospace' }}>
+          DEBUG: userId={userId || 'null'}, assessments={assessmentHistory.length}, hasLatest={!!latestAssessment}, recs={latestAssessment?.recommendations?.length || 0}
+        </Text>
+      </View>
+
       {/* Welcome Section */}
       <View style={styles.welcomeSection}>
         <Text style={styles.welcomeText}>
