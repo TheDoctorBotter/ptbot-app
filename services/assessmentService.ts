@@ -1337,6 +1337,11 @@ export class AssessmentService {
         riskLevel: result.riskLevel,
       });
 
+      // Debug alert to see auth state
+      if (typeof alert !== 'undefined') {
+        alert(`Saving assessment - User: ${user?.email || 'NO USER'}, ID: ${user?.id || 'NO ID'}`);
+      }
+
       const { data: insertedAssessment, error } = await supabase
         .from('assessments')
         .insert({
@@ -1375,6 +1380,10 @@ export class AssessmentService {
 
       if (error) {
         console.error('[AssessmentService] Error saving assessment to Supabase:', error);
+        // Surface the error for debugging
+        if (typeof alert !== 'undefined') {
+          alert(`Save failed: ${error.message || JSON.stringify(error)}`);
+        }
       } else {
         console.log('[AssessmentService] Assessment saved successfully:', {
           assessmentId: insertedAssessment?.id,
