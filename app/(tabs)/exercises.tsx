@@ -791,10 +791,10 @@ export default function ExercisesScreen() {
         routineSlug = 'lower-back-pain-relief';
         bodyPartFilter = 'lower back';
       } else if (isKneePain) {
-        routineSlug = 'knee-pain-relief';
+        routineSlug = 'anterior-knee-pain-relief';
         bodyPartFilter = 'knee';
       } else if (isShoulderPain) {
-        routineSlug = 'shoulder-pain-relief';
+        routineSlug = 'rotator-cuff-pain-relief';
         bodyPartFilter = 'shoulder';
       }
 
