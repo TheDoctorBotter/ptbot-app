@@ -149,7 +149,9 @@ CREATE POLICY "Users can insert own outcome responses"
     )
   );
 
--- Clinicians can view their patients' outcomes
+-- NOTE: Clinician policies commented out until clinic_patients/clinic_staff tables exist
+-- When those tables are ready, run this migration to add clinician access:
+/*
 CREATE POLICY "Clinicians can view patient outcomes"
   ON outcome_assessments FOR SELECT
   TO authenticated
@@ -173,3 +175,4 @@ CREATE POLICY "Clinicians can view patient responses"
       WHERE cs.user_id = auth.uid()
     )
   );
+*/
