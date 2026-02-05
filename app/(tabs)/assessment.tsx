@@ -11,13 +11,23 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Activity, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Stethoscope, Brain, Heart, Shield, Dumbbell, Target, Info, Play, LogIn, Phone, Square, CheckSquare } from 'lucide-react-native';
 import { AssessmentService } from '@/services/assessmentService';
 import type { AssessmentData, AssessmentResult, ExerciseRecommendation, PostOpData } from '@/services/assessmentService';
 import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import {
+  getQuestionnaireByKey,
+  getQuestionnaireItems,
+  saveOutcomeAssessment,
+  calculateScore,
+  mapPainLocationToCondition,
+  getQuestionnaireKeyForCondition,
+  type Questionnaire,
+  type QuestionnaireItem,
+} from '@/services/outcomeService';
 
 const redFlagSymptoms = [
   'Bowel or bladder dysfunction',
@@ -100,6 +110,12 @@ const weightBearingOptions = [
 
 export default function AssessmentScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ mode?: string; conditionTag?: string }>();
+
+  // Follow-up mode state
+  const isFollowUpMode = params.mode === 'followup';
+  const followUpConditionTag = params.conditionTag || null;
+
   const [currentStep, setCurrentStep] = useState(1);
   const [assessmentData, setAssessmentData] = useState<Partial<AssessmentData>>({
     painLevel: 0,
@@ -136,6 +152,19 @@ export default function AssessmentScreen() {
   const [weightBearingStatus, setWeightBearingStatus] = useState('');
   const [surgeonPrecautions, setSurgeonPrecautions] = useState<'yes' | 'no' | 'not_sure' | ''>('');
 
+  // Baseline outcome measures state
+  const [functionQuestionnaire, setFunctionQuestionnaire] = useState<Questionnaire | null>(null);
+  const [functionItems, setFunctionItems] = useState<QuestionnaireItem[]>([]);
+  const [functionResponses, setFunctionResponses] = useState<Map<string, number>>(new Map());
+  const [currentFunctionItemIndex, setCurrentFunctionItemIndex] = useState(0);
+  const [functionResult, setFunctionResult] = useState<{
+    totalScore: number;
+    normalizedScore: number;
+    interpretation: string;
+  } | null>(null);
+  const [baselinePainScore, setBaselinePainScore] = useState<number | null>(null);
+  const [isLoadingQuestionnaire, setIsLoadingQuestionnaire] = useState(false);
+
   const assessmentService = new AssessmentService();
 
   // Check authentication on mount
@@ -164,6 +193,31 @@ export default function AssessmentScreen() {
     }
   };
 
+  // Load function questionnaire based on pain location
+  const loadFunctionQuestionnaire = async () => {
+    if (!assessmentData.painLocation) return;
+
+    setIsLoadingQuestionnaire(true);
+    try {
+      const conditionTag = mapPainLocationToCondition(assessmentData.painLocation);
+      const questionnaireKey = getQuestionnaireKeyForCondition(conditionTag);
+
+      const questionnaire = await getQuestionnaireByKey(questionnaireKey);
+      if (questionnaire) {
+        setFunctionQuestionnaire(questionnaire);
+        const items = await getQuestionnaireItems(questionnaire.id);
+        setFunctionItems(items);
+        setFunctionResponses(new Map());
+        setCurrentFunctionItemIndex(0);
+        setFunctionResult(null);
+      }
+    } catch (error) {
+      console.error('Error loading questionnaire:', error);
+    } finally {
+      setIsLoadingQuestionnaire(false);
+    }
+  };
+
   const toggleExerciseExpanded = (exerciseId: string) => {
     setExpandedExercises(prev => {
       const next = new Set(prev);
@@ -183,8 +237,18 @@ export default function AssessmentScreen() {
     });
   };
 
-  // Calculate total steps based on surgery status
+  // Calculate total steps based on surgery status and mode
   const getStepConfig = () => {
+    // Follow-up mode: only questionnaire steps
+    if (isFollowUpMode) {
+      return [
+        'followUpIntro',
+        'followUpFunction',
+        'followUpPain',
+      ];
+    }
+
+    // Full assessment mode
     // Base steps: 1-Pain Level, 2-Pain Location, 3-Surgery Status
     // Then continue with: 4-Duration, 5-Pain Type, 6-Mechanism, 7-Additional, 8-Red Flags, 9-Consent
     // Post-op adds: Region, Surgery Type, (Modifier), Weeks, (Weight Bearing), Precautions
@@ -220,11 +284,54 @@ export default function AssessmentScreen() {
     steps.push('redFlags');
     steps.push('consent');
 
+    // Add baseline outcome measure steps
+    steps.push('baselineFunctionIntro');
+    steps.push('baselineFunction');
+    steps.push('baselinePain');
+
     return steps;
   };
 
   const stepConfig = getStepConfig();
   const totalSteps = stepConfig.length;
+  const currentStepName = stepConfig[currentStep - 1];
+
+  // Load function questionnaire when entering baseline or follow-up steps
+  useEffect(() => {
+    const shouldLoadQuestionnaire =
+      (currentStepName === 'baselineFunctionIntro' || currentStepName === 'followUpIntro') &&
+      !functionQuestionnaire;
+
+    if (shouldLoadQuestionnaire) {
+      // In follow-up mode, use the condition tag from params; otherwise use pain location
+      if (isFollowUpMode && followUpConditionTag) {
+        loadFunctionQuestionnaireForCondition(followUpConditionTag);
+      } else {
+        loadFunctionQuestionnaire();
+      }
+    }
+  }, [currentStepName, functionQuestionnaire, isFollowUpMode, followUpConditionTag]);
+
+  // Load questionnaire for a specific condition (used in follow-up mode)
+  const loadFunctionQuestionnaireForCondition = async (conditionTag: string) => {
+    setIsLoadingQuestionnaire(true);
+    try {
+      const questionnaireKey = getQuestionnaireKeyForCondition(conditionTag);
+      const questionnaire = await getQuestionnaireByKey(questionnaireKey);
+      if (questionnaire) {
+        setFunctionQuestionnaire(questionnaire);
+        const items = await getQuestionnaireItems(questionnaire.id);
+        setFunctionItems(items);
+        setFunctionResponses(new Map());
+        setCurrentFunctionItemIndex(0);
+        setFunctionResult(null);
+      }
+    } catch (error) {
+      console.error('Error loading questionnaire:', error);
+    } finally {
+      setIsLoadingQuestionnaire(false);
+    }
+  };
 
   const nextStep = () => {
     if (currentStep < totalSteps) {
@@ -267,6 +374,12 @@ export default function AssessmentScreen() {
 
     if (!userPhone.trim() || userPhone.trim().length < 10) {
       Alert.alert('Phone Required', 'Please enter a valid phone number.');
+      return;
+    }
+
+    // Validate baseline assessments
+    if (baselinePainScore === null) {
+      Alert.alert('Incomplete', 'Please complete the pain assessment.');
       return;
     }
 
@@ -320,6 +433,59 @@ export default function AssessmentScreen() {
       // Process the assessment with post-op data
       const result = await assessmentService.processAssessment(assessmentData as AssessmentData, postOpDataForProcessing);
 
+      // Save baseline outcome assessments
+      const conditionTag = mapPainLocationToCondition(assessmentData.painLocation);
+      const functionQuestionnaireKey = getQuestionnaireKeyForCondition(conditionTag);
+
+      // Save function questionnaire (ODI/KOOS/QuickDASH)
+      if (functionResponses.size > 0) {
+        try {
+          const savedFunctionAssessment = await saveOutcomeAssessment(
+            functionQuestionnaireKey,
+            'baseline',
+            conditionTag,
+            functionResponses
+          );
+
+          if (savedFunctionAssessment) {
+            // Calculate and store the result for display
+            const functionScoreResult = calculateScore(
+              functionQuestionnaireKey,
+              Array.from(functionResponses.values())
+            );
+            setFunctionResult(functionScoreResult);
+          }
+        } catch (error) {
+          console.error('Error saving function assessment:', error);
+          // Continue with the assessment even if saving fails
+        }
+      }
+
+      // Save pain assessment (NPRS)
+      if (baselinePainScore !== null) {
+        try {
+          // Get NPRS questionnaire and its item
+          const nprsQuestionnaire = await getQuestionnaireByKey('nprs');
+          if (nprsQuestionnaire) {
+            const nprsItems = await getQuestionnaireItems(nprsQuestionnaire.id);
+            if (nprsItems.length > 0) {
+              const painResponseMap = new Map<string, number>();
+              painResponseMap.set(nprsItems[0].id, baselinePainScore);
+
+              await saveOutcomeAssessment(
+                'nprs',
+                'baseline',
+                conditionTag,
+                painResponseMap
+              );
+            }
+          }
+        } catch (error) {
+          console.error('Error saving pain assessment:', error);
+          // Continue with the assessment even if saving fails
+        }
+      }
+
       // Save the result with consent and post-op data
       await assessmentService.saveAssessmentResult(result, {
         userEmail,
@@ -354,6 +520,91 @@ export default function AssessmentScreen() {
     }
   };
 
+  // Process follow-up assessment (simplified flow)
+  const processFollowUp = async () => {
+    if (baselinePainScore === null) {
+      Alert.alert('Incomplete', 'Please complete the pain assessment.');
+      return;
+    }
+
+    if (!followUpConditionTag) {
+      Alert.alert('Error', 'Missing condition information. Please try again.');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const conditionTag = followUpConditionTag;
+      const functionQuestionnaireKey = getQuestionnaireKeyForCondition(conditionTag);
+
+      // Save function questionnaire (ODI/KOOS/QuickDASH) as follow-up
+      if (functionResponses.size > 0) {
+        try {
+          const savedAssessment = await saveOutcomeAssessment(
+            functionQuestionnaireKey,
+            'followup',
+            conditionTag,
+            functionResponses
+          );
+
+          if (savedAssessment) {
+            const result = calculateScore(
+              functionQuestionnaireKey,
+              Array.from(functionResponses.values())
+            );
+            setFunctionResult(result);
+          }
+        } catch (error) {
+          console.error('Error saving follow-up function assessment:', error);
+        }
+      }
+
+      // Save pain assessment (NPRS) as follow-up
+      try {
+        const nprsQuestionnaire = await getQuestionnaireByKey('nprs');
+        if (nprsQuestionnaire) {
+          const nprsItems = await getQuestionnaireItems(nprsQuestionnaire.id);
+          if (nprsItems.length > 0) {
+            const painResponseMap = new Map<string, number>();
+            painResponseMap.set(nprsItems[0].id, baselinePainScore);
+
+            await saveOutcomeAssessment(
+              'nprs',
+              'followup',
+              conditionTag,
+              painResponseMap
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Error saving follow-up pain assessment:', error);
+      }
+
+      // Show success and navigate back to dashboard
+      Alert.alert(
+        'Progress Saved',
+        'Your follow-up assessment has been recorded. Check your dashboard to see how you\'ve improved!',
+        [
+          {
+            text: 'View Dashboard',
+            onPress: () => router.replace('/(tabs)/dashboard'),
+          },
+        ]
+      );
+
+    } catch (error) {
+      console.error('Follow-up processing error:', error);
+      Alert.alert(
+        'Error',
+        'Unable to save your follow-up assessment. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const resetAssessment = () => {
     setCurrentStep(1);
     setAssessmentData({
@@ -381,6 +632,13 @@ export default function AssessmentScreen() {
     setWeeksSinceSurgery('');
     setWeightBearingStatus('');
     setSurgeonPrecautions('');
+    // Reset baseline questionnaire state
+    setFunctionQuestionnaire(null);
+    setFunctionItems([]);
+    setFunctionResponses(new Map());
+    setCurrentFunctionItemIndex(0);
+    setFunctionResult(null);
+    setBaselinePainScore(null);
   };
 
   // Generate protocol key from post-op selections
@@ -1078,6 +1336,432 @@ export default function AssessmentScreen() {
           </View>
         );
 
+      case 'baselineFunctionIntro':
+        const conditionTagDisplay = mapPainLocationToCondition(assessmentData.painLocation || '');
+        const questionnaireLabel = functionQuestionnaire?.display_name || 'Function Assessment';
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Baseline Assessment</Text>
+            <Text style={styles.stepDescription}>
+              Before we provide your exercise recommendations, we'd like to measure your current function level. This helps us track your progress over time.
+            </Text>
+
+            <View style={styles.baselineInfoCard}>
+              <Activity size={32} color={colors.primary[500]} />
+              <Text style={styles.baselineInfoTitle}>{questionnaireLabel}</Text>
+              <Text style={styles.baselineInfoText}>
+                {functionItems.length > 0
+                  ? `This assessment has ${functionItems.length} questions and takes about 2-3 minutes.`
+                  : 'Loading assessment...'}
+              </Text>
+            </View>
+
+            {isLoadingQuestionnaire && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={colors.primary[500]} />
+                <Text style={styles.loadingText}>Loading questionnaire...</Text>
+              </View>
+            )}
+
+            <View style={styles.baselineNote}>
+              <Info size={16} color={colors.primary[600]} />
+              <Text style={styles.baselineNoteText}>
+                Your responses help us measure improvement and tailor your exercise program.
+              </Text>
+            </View>
+          </View>
+        );
+
+      case 'baselineFunction':
+        if (isLoadingQuestionnaire || !functionQuestionnaire || functionItems.length === 0) {
+          return (
+            <View style={styles.stepContainer}>
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary[500]} />
+                <Text style={styles.loadingText}>Loading questionnaire...</Text>
+              </View>
+            </View>
+          );
+        }
+
+        const currentFunctionItem = functionItems[currentFunctionItemIndex];
+        const currentFunctionValue = currentFunctionItem ? functionResponses.get(currentFunctionItem.id) : undefined;
+        const responseType = currentFunctionItem?.response_type || 'likert_0_5';
+
+        // Build response options based on type
+        let functionOptions: { value: number; label: string }[] = [];
+        if (responseType === 'likert_0_5') {
+          functionOptions = [
+            { value: 0, label: '0 - No difficulty / No pain' },
+            { value: 1, label: '1 - Mild' },
+            { value: 2, label: '2 - Moderate' },
+            { value: 3, label: '3 - Fairly severe' },
+            { value: 4, label: '4 - Very severe' },
+            { value: 5, label: '5 - Unable / Maximum' },
+          ];
+        } else if (responseType === 'likert_0_4') {
+          functionOptions = [
+            { value: 0, label: '0 - None' },
+            { value: 1, label: '1 - Mild' },
+            { value: 2, label: '2 - Moderate' },
+            { value: 3, label: '3 - Severe' },
+            { value: 4, label: '4 - Extreme' },
+          ];
+        } else if (responseType === 'likert_1_5') {
+          functionOptions = [
+            { value: 1, label: '1 - No difficulty' },
+            { value: 2, label: '2 - Mild difficulty' },
+            { value: 3, label: '3 - Moderate difficulty' },
+            { value: 4, label: '4 - Severe difficulty' },
+            { value: 5, label: '5 - Unable' },
+          ];
+        }
+
+        return (
+          <View style={styles.stepContainer}>
+            <View style={styles.questionnaireHeader}>
+              <Text style={styles.questionnaireTitle}>{functionQuestionnaire.display_name}</Text>
+              <Text style={styles.questionnaireProgress}>
+                Question {currentFunctionItemIndex + 1} of {functionItems.length}
+              </Text>
+            </View>
+
+            <View style={styles.questionCard}>
+              <Text style={styles.questionText}>
+                {currentFunctionItem?.prompt_text || `Question ${currentFunctionItem?.item_key}`}
+              </Text>
+              {currentFunctionItem?.prompt_text?.includes('PLACEHOLDER') && (
+                <View style={styles.placeholderNote}>
+                  <AlertTriangle size={14} color="#F59E0B" />
+                  <Text style={styles.placeholderNoteText}>
+                    Licensed questionnaire text to be added
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.functionOptionsContainer}>
+              {functionOptions.map(option => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.functionOption,
+                    currentFunctionValue === option.value && styles.functionOptionSelected,
+                  ]}
+                  onPress={() => {
+                    if (currentFunctionItem) {
+                      setFunctionResponses(prev => {
+                        const newMap = new Map(prev);
+                        newMap.set(currentFunctionItem.id, option.value);
+                        return newMap;
+                      });
+                    }
+                  }}
+                >
+                  <View style={styles.functionOptionRadio}>
+                    {currentFunctionValue === option.value && (
+                      <View style={styles.functionOptionRadioInner} />
+                    )}
+                  </View>
+                  <Text
+                    style={[
+                      styles.functionOptionLabel,
+                      currentFunctionValue === option.value && styles.functionOptionLabelSelected,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Mini navigation for questionnaire items */}
+            <View style={styles.questionnaireNav}>
+              {currentFunctionItemIndex > 0 && (
+                <TouchableOpacity
+                  style={styles.questionnaireNavButton}
+                  onPress={() => setCurrentFunctionItemIndex(prev => prev - 1)}
+                >
+                  <Text style={styles.questionnaireNavText}>Previous</Text>
+                </TouchableOpacity>
+              )}
+              <View style={{ flex: 1 }} />
+              {currentFunctionItemIndex < functionItems.length - 1 && currentFunctionValue !== undefined && (
+                <TouchableOpacity
+                  style={[styles.questionnaireNavButton, styles.questionnaireNavButtonPrimary]}
+                  onPress={() => setCurrentFunctionItemIndex(prev => prev + 1)}
+                >
+                  <Text style={styles.questionnaireNavTextPrimary}>Next Question</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        );
+
+      case 'baselinePain':
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Pain Level Assessment</Text>
+            <Text style={styles.stepDescription}>
+              Rate your current pain level on a scale of 0 to 10:
+            </Text>
+
+            <View style={styles.nprsFullContainer}>
+              <View style={styles.nprsLabelsRow}>
+                <Text style={styles.nprsLabelText}>No Pain</Text>
+                <Text style={styles.nprsLabelText}>Worst Possible</Text>
+              </View>
+              <View style={styles.nprsButtonsRow}>
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(value => (
+                  <TouchableOpacity
+                    key={value}
+                    style={[
+                      styles.nprsScaleButton,
+                      baselinePainScore === value && styles.nprsScaleButtonSelected,
+                      value <= 3 && styles.nprsScaleButtonGreen,
+                      value > 3 && value <= 6 && styles.nprsScaleButtonYellow,
+                      value > 6 && styles.nprsScaleButtonRed,
+                    ]}
+                    onPress={() => setBaselinePainScore(value)}
+                  >
+                    <Text
+                      style={[
+                        styles.nprsScaleButtonText,
+                        baselinePainScore === value && styles.nprsScaleButtonTextSelected,
+                      ]}
+                    >
+                      {value}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {baselinePainScore !== null && (
+              <View style={styles.painInterpretation}>
+                <Text style={styles.painInterpretationText}>
+                  {baselinePainScore === 0 ? 'No pain' :
+                   baselinePainScore <= 3 ? 'Mild pain' :
+                   baselinePainScore <= 6 ? 'Moderate pain' :
+                   baselinePainScore <= 9 ? 'Severe pain' : 'Worst possible pain'}
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+
+      // Follow-up mode steps
+      case 'followUpIntro':
+        const followUpQuestionnaireLabel = functionQuestionnaire?.display_name || 'Progress Check';
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Progress Check-in</Text>
+            <Text style={styles.stepDescription}>
+              Let's see how you're doing since your last assessment. This helps us track your improvement.
+            </Text>
+
+            <View style={styles.baselineInfoCard}>
+              <Activity size={32} color={colors.primary[500]} />
+              <Text style={styles.baselineInfoTitle}>{followUpQuestionnaireLabel}</Text>
+              <Text style={styles.baselineInfoText}>
+                {functionItems.length > 0
+                  ? `Answer ${functionItems.length} questions to measure your current function.`
+                  : 'Loading assessment...'}
+              </Text>
+            </View>
+
+            {isLoadingQuestionnaire && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={colors.primary[500]} />
+                <Text style={styles.loadingText}>Loading questionnaire...</Text>
+              </View>
+            )}
+
+            <View style={styles.baselineNote}>
+              <Info size={16} color={colors.primary[600]} />
+              <Text style={styles.baselineNoteText}>
+                We'll compare your results with your baseline to show your progress.
+              </Text>
+            </View>
+          </View>
+        );
+
+      case 'followUpFunction':
+        if (isLoadingQuestionnaire || !functionQuestionnaire || functionItems.length === 0) {
+          return (
+            <View style={styles.stepContainer}>
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary[500]} />
+                <Text style={styles.loadingText}>Loading questionnaire...</Text>
+              </View>
+            </View>
+          );
+        }
+
+        const followUpCurrentItem = functionItems[currentFunctionItemIndex];
+        const followUpCurrentValue = followUpCurrentItem ? functionResponses.get(followUpCurrentItem.id) : undefined;
+        const followUpResponseType = followUpCurrentItem?.response_type || 'likert_0_5';
+
+        let followUpOptions: { value: number; label: string }[] = [];
+        if (followUpResponseType === 'likert_0_5') {
+          followUpOptions = [
+            { value: 0, label: '0 - No difficulty / No pain' },
+            { value: 1, label: '1 - Mild' },
+            { value: 2, label: '2 - Moderate' },
+            { value: 3, label: '3 - Fairly severe' },
+            { value: 4, label: '4 - Very severe' },
+            { value: 5, label: '5 - Unable / Maximum' },
+          ];
+        } else if (followUpResponseType === 'likert_0_4') {
+          followUpOptions = [
+            { value: 0, label: '0 - None' },
+            { value: 1, label: '1 - Mild' },
+            { value: 2, label: '2 - Moderate' },
+            { value: 3, label: '3 - Severe' },
+            { value: 4, label: '4 - Extreme' },
+          ];
+        } else if (followUpResponseType === 'likert_1_5') {
+          followUpOptions = [
+            { value: 1, label: '1 - No difficulty' },
+            { value: 2, label: '2 - Mild difficulty' },
+            { value: 3, label: '3 - Moderate difficulty' },
+            { value: 4, label: '4 - Severe difficulty' },
+            { value: 5, label: '5 - Unable' },
+          ];
+        }
+
+        return (
+          <View style={styles.stepContainer}>
+            <View style={styles.questionnaireHeader}>
+              <Text style={styles.questionnaireTitle}>{functionQuestionnaire.display_name}</Text>
+              <Text style={styles.questionnaireProgress}>
+                Question {currentFunctionItemIndex + 1} of {functionItems.length}
+              </Text>
+            </View>
+
+            <View style={styles.questionCard}>
+              <Text style={styles.questionText}>
+                {followUpCurrentItem?.prompt_text || `Question ${followUpCurrentItem?.item_key}`}
+              </Text>
+              {followUpCurrentItem?.prompt_text?.includes('PLACEHOLDER') && (
+                <View style={styles.placeholderNote}>
+                  <AlertTriangle size={14} color="#F59E0B" />
+                  <Text style={styles.placeholderNoteText}>
+                    Licensed questionnaire text to be added
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.functionOptionsContainer}>
+              {followUpOptions.map(option => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.functionOption,
+                    followUpCurrentValue === option.value && styles.functionOptionSelected,
+                  ]}
+                  onPress={() => {
+                    if (followUpCurrentItem) {
+                      setFunctionResponses(prev => {
+                        const newMap = new Map(prev);
+                        newMap.set(followUpCurrentItem.id, option.value);
+                        return newMap;
+                      });
+                    }
+                  }}
+                >
+                  <View style={styles.functionOptionRadio}>
+                    {followUpCurrentValue === option.value && (
+                      <View style={styles.functionOptionRadioInner} />
+                    )}
+                  </View>
+                  <Text
+                    style={[
+                      styles.functionOptionLabel,
+                      followUpCurrentValue === option.value && styles.functionOptionLabelSelected,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.questionnaireNav}>
+              {currentFunctionItemIndex > 0 && (
+                <TouchableOpacity
+                  style={styles.questionnaireNavButton}
+                  onPress={() => setCurrentFunctionItemIndex(prev => prev - 1)}
+                >
+                  <Text style={styles.questionnaireNavText}>Previous</Text>
+                </TouchableOpacity>
+              )}
+              <View style={{ flex: 1 }} />
+              {currentFunctionItemIndex < functionItems.length - 1 && followUpCurrentValue !== undefined && (
+                <TouchableOpacity
+                  style={[styles.questionnaireNavButton, styles.questionnaireNavButtonPrimary]}
+                  onPress={() => setCurrentFunctionItemIndex(prev => prev + 1)}
+                >
+                  <Text style={styles.questionnaireNavTextPrimary}>Next Question</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        );
+
+      case 'followUpPain':
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.stepTitle}>Current Pain Level</Text>
+            <Text style={styles.stepDescription}>
+              How is your pain right now, on a scale of 0 to 10?
+            </Text>
+
+            <View style={styles.nprsFullContainer}>
+              <View style={styles.nprsLabelsRow}>
+                <Text style={styles.nprsLabelText}>No Pain</Text>
+                <Text style={styles.nprsLabelText}>Worst Possible</Text>
+              </View>
+              <View style={styles.nprsButtonsRow}>
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(value => (
+                  <TouchableOpacity
+                    key={value}
+                    style={[
+                      styles.nprsScaleButton,
+                      baselinePainScore === value && styles.nprsScaleButtonSelected,
+                      value <= 3 && styles.nprsScaleButtonGreen,
+                      value > 3 && value <= 6 && styles.nprsScaleButtonYellow,
+                      value > 6 && styles.nprsScaleButtonRed,
+                    ]}
+                    onPress={() => setBaselinePainScore(value)}
+                  >
+                    <Text
+                      style={[
+                        styles.nprsScaleButtonText,
+                        baselinePainScore === value && styles.nprsScaleButtonTextSelected,
+                      ]}
+                    >
+                      {value}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {baselinePainScore !== null && (
+              <View style={styles.painInterpretation}>
+                <Text style={styles.painInterpretationText}>
+                  {baselinePainScore === 0 ? 'No pain' :
+                   baselinePainScore <= 3 ? 'Mild pain' :
+                   baselinePainScore <= 6 ? 'Moderate pain' :
+                   baselinePainScore <= 9 ? 'Severe pain' : 'Worst possible pain'}
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+
       default:
         return null;
     }
@@ -1291,10 +1975,10 @@ export default function AssessmentScreen() {
   };
 
   const canProceed = () => {
-    const currentStepName = stepConfig[currentStep - 1];
+    const stepName = stepConfig[currentStep - 1];
     const selectedSurgery = surgeryTypesByRegion[postOpRegion]?.find(s => s.key === surgeryType);
 
-    switch (currentStepName) {
+    switch (stepName) {
       case 'painLevel':
         return assessmentData.painLevel !== undefined && assessmentData.painLevel > 0;
       case 'painLocation':
@@ -1325,6 +2009,30 @@ export default function AssessmentScreen() {
         return true; // Red flags are optional but important
       case 'consent':
         return userPhone.trim().length >= 10 && consentContact && consentDataUse && legalWaiverAccepted;
+      case 'baselineFunctionIntro':
+        return !isLoadingQuestionnaire && functionItems.length > 0;
+      case 'baselineFunction':
+        // Can proceed when all function items have responses and we're on the last item
+        const allFunctionAnswered = functionItems.every(item => functionResponses.has(item.id));
+        const onLastFunctionItem = currentFunctionItemIndex === functionItems.length - 1;
+        const currentItemAnswered = functionItems[currentFunctionItemIndex]
+          ? functionResponses.has(functionItems[currentFunctionItemIndex].id)
+          : false;
+        return allFunctionAnswered && onLastFunctionItem && currentItemAnswered;
+      case 'baselinePain':
+        return baselinePainScore !== null;
+      // Follow-up mode steps
+      case 'followUpIntro':
+        return !isLoadingQuestionnaire && functionItems.length > 0;
+      case 'followUpFunction':
+        const allFollowUpAnswered = functionItems.every(item => functionResponses.has(item.id));
+        const onLastFollowUpItem = currentFunctionItemIndex === functionItems.length - 1;
+        const currentFollowUpItemAnswered = functionItems[currentFunctionItemIndex]
+          ? functionResponses.has(functionItems[currentFunctionItemIndex].id)
+          : false;
+        return allFollowUpAnswered && onLastFollowUpItem && currentFollowUpItemAnswered;
+      case 'followUpPain':
+        return baselinePainScore !== null;
       default:
         return false;
     }
@@ -1409,9 +2117,13 @@ export default function AssessmentScreen() {
             <Brain size={28} color="#FFFFFF" />
             <Text style={styles.logoText}>PTBOT</Text>
           </View>
-          <Text style={styles.headerTitle}>Symptom Assessment</Text>
+          <Text style={styles.headerTitle}>
+            {isFollowUpMode ? 'Progress Check-in' : 'Symptom Assessment'}
+          </Text>
         </View>
-        <Text style={styles.headerSubtitle}>Help us understand your condition</Text>
+        <Text style={styles.headerSubtitle}>
+          {isFollowUpMode ? 'Track your improvement over time' : 'Help us understand your condition'}
+        </Text>
       </View>
 
       <View style={styles.content}>
@@ -1449,12 +2161,16 @@ export default function AssessmentScreen() {
                 styles.submitButton,
                 (!canProceed() || isProcessing) && styles.submitButtonDisabled,
               ]}
-              onPress={processAssessment}
+              onPress={isFollowUpMode ? processFollowUp : processAssessment}
               disabled={!canProceed() || isProcessing}
             >
               <Heart size={16} color="#FFFFFF" />
               <Text style={styles.submitButtonText}>
-                {isProcessing ? 'Processing...' : 'Complete Assessment'}
+                {isProcessing
+                  ? 'Saving...'
+                  : isFollowUpMode
+                    ? 'Save Progress'
+                    : 'Complete Assessment'}
               </Text>
             </TouchableOpacity>
           )}
@@ -2238,5 +2954,213 @@ const styles = StyleSheet.create({
   },
   legalBold: {
     fontWeight: '600',
+  },
+  // Baseline questionnaire styles
+  baselineInfoCard: {
+    backgroundColor: colors.primary[50],
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.primary[200],
+  },
+  baselineInfoTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.primary[700],
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  baselineInfoText: {
+    fontSize: 14,
+    color: colors.primary[600],
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  baselineNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.gray[50],
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  baselineNoteText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.gray[600],
+    lineHeight: 18,
+  },
+  questionnaireHeader: {
+    marginBottom: 16,
+  },
+  questionnaireTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.gray[900],
+    marginBottom: 4,
+  },
+  questionnaireProgress: {
+    fontSize: 13,
+    color: colors.primary[600],
+  },
+  questionCard: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  questionText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: colors.gray[900],
+    lineHeight: 24,
+  },
+  placeholderNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    padding: 8,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    gap: 6,
+  },
+  placeholderNoteText: {
+    fontSize: 11,
+    color: '#92400E',
+  },
+  functionOptionsContainer: {
+    gap: 10,
+  },
+  functionOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    backgroundColor: colors.white,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.gray[200],
+  },
+  functionOptionSelected: {
+    borderColor: colors.primary[500],
+    backgroundColor: colors.primary[50],
+  },
+  functionOptionRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.gray[400],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  functionOptionRadioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primary[500],
+  },
+  functionOptionLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.gray[700],
+  },
+  functionOptionLabelSelected: {
+    color: colors.primary[700],
+    fontWeight: '500',
+  },
+  questionnaireNav: {
+    flexDirection: 'row',
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.gray[200],
+  },
+  questionnaireNavButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: colors.gray[100],
+  },
+  questionnaireNavButtonPrimary: {
+    backgroundColor: colors.primary[500],
+  },
+  questionnaireNavText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.gray[700],
+  },
+  questionnaireNavTextPrimary: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.white,
+  },
+  // NPRS full scale styles
+  nprsFullContainer: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
+  },
+  nprsLabelsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  nprsLabelText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.gray[600],
+  },
+  nprsButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  nprsScaleButton: {
+    width: 28,
+    height: 44,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.gray[100],
+  },
+  nprsScaleButtonGreen: {
+    backgroundColor: colors.green[100],
+  },
+  nprsScaleButtonYellow: {
+    backgroundColor: colors.amber[100],
+  },
+  nprsScaleButtonRed: {
+    backgroundColor: colors.red[100],
+  },
+  nprsScaleButtonSelected: {
+    borderWidth: 2,
+    borderColor: colors.primary[500],
+  },
+  nprsScaleButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.gray[700],
+  },
+  nprsScaleButtonTextSelected: {
+    color: colors.primary[700],
+  },
+  painInterpretation: {
+    backgroundColor: colors.gray[50],
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  painInterpretationText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.gray[700],
   },
 });

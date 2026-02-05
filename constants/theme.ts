@@ -71,6 +71,48 @@ export const colors = {
     700: '#1D4ED8',
   },
 
+  // Extended color palette for compatibility
+  // Gray (alias for neutral)
+  gray: {
+    50: '#FAFAFA',
+    100: '#F4F4F5',
+    200: '#E4E4E7',
+    300: '#D4D4D8',
+    400: '#A1A1AA',
+    500: '#71717A',
+    600: '#52525B',
+    700: '#3F3F46',
+    800: '#27272A',
+    900: '#18181B',
+  },
+
+  // Green (alias for success)
+  green: {
+    50: '#F0FDF4',
+    100: '#DCFCE7',
+    500: '#22C55E',
+    600: '#16A34A',
+    700: '#15803D',
+  },
+
+  // Red (alias for error)
+  red: {
+    50: '#FEF2F2',
+    100: '#FEE2E2',
+    500: '#EF4444',
+    600: '#DC2626',
+    700: '#B91C1C',
+  },
+
+  // Amber (alias for warning)
+  amber: {
+    50: '#FFFBEB',
+    100: '#FEF3C7',
+    500: '#F59E0B',
+    600: '#D97706',
+    700: '#B45309',
+  },
+
   // Base colors
   white: '#FFFFFF',
   black: '#000000',

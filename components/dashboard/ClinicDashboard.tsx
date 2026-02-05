@@ -24,6 +24,8 @@ import {
 } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { usePatientsMissingFollowups } from '@/hooks/useOutcomeSummary';
+import { ClipboardCheck, TrendingDown } from 'lucide-react-native';
 
 interface PatientSummary {
   patient_id: string;
@@ -74,6 +76,12 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
   const [alertFilter, setAlertFilter] = useState<AlertFilter>('all');
   const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(null);
   const [showPatientDetail, setShowPatientDetail] = useState(false);
+
+  // Outcome tracking - patients needing follow-up assessments
+  const {
+    patients: patientsNeedingFollowup,
+    isLoading: isLoadingFollowups,
+  } = usePatientsMissingFollowups(clinicId);
 
   const loadDashboardData = useCallback(async () => {
     if (!supabase || !clinicId) {
@@ -391,11 +399,46 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
         </View>
 
         <View style={styles.kpiTile}>
-          <TrendingUp size={24} color={colors.info[500]} />
-          <Text style={styles.kpiValue}>{avgSessionsPerWeek}</Text>
-          <Text style={styles.kpiLabel}>Avg Sessions/Wk</Text>
+          <ClipboardCheck size={24} color={colors.warning[500]} />
+          <Text style={styles.kpiValue}>{patientsNeedingFollowup.length}</Text>
+          <Text style={styles.kpiLabel}>Need Follow-up</Text>
         </View>
       </View>
+
+      {/* Outcome Follow-up Panel */}
+      {patientsNeedingFollowup.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Outcome Follow-ups Due</Text>
+            <Text style={styles.sectionSubtitle}>
+              Patients who haven't completed follow-up assessments in 14+ days
+            </Text>
+          </View>
+
+          <View style={styles.followupList}>
+            {patientsNeedingFollowup.slice(0, 5).map((patient) => (
+              <View key={`${patient.userId}-${patient.conditionTag}`} style={styles.followupItem}>
+                <View style={styles.followupIcon}>
+                  <ClipboardCheck size={16} color={colors.warning[600]} />
+                </View>
+                <View style={styles.followupContent}>
+                  <Text style={styles.followupPatientName}>{patient.patientName}</Text>
+                  <Text style={styles.followupCondition}>
+                    {patient.conditionTag.charAt(0).toUpperCase() + patient.conditionTag.slice(1)} • {patient.daysSinceAssessment} days overdue
+                  </Text>
+                </View>
+                <TrendingDown size={16} color={colors.neutral[400]} />
+              </View>
+            ))}
+          </View>
+
+          {patientsNeedingFollowup.length > 5 && (
+            <Text style={styles.moreFollowupsText}>
+              +{patientsNeedingFollowup.length - 5} more patients need follow-up
+            </Text>
+          )}
+        </View>
+      )}
 
       {/* Alerts Panel */}
       <View style={styles.section}>
@@ -947,5 +990,48 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 32,
+  },
+  // Follow-up styles
+  sectionSubtitle: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    marginTop: 4,
+  },
+  followupList: {},
+  followupItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral[100],
+  },
+  followupIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.warning[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followupContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  followupPatientName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.neutral[800],
+  },
+  followupCondition: {
+    fontSize: 12,
+    color: colors.neutral[600],
+    marginTop: 2,
+  },
+  moreFollowupsText: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    textAlign: 'center',
+    marginTop: 12,
+    fontStyle: 'italic',
   },
 });
