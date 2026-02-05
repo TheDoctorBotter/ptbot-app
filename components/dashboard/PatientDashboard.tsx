@@ -76,6 +76,8 @@ interface PatientDashboardProps {
 }
 
 export default function PatientDashboard({ userId, firstName }: PatientDashboardProps) {
+  console.log('[Dashboard] PatientDashboard render - userId:', userId, 'firstName:', firstName);
+
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -99,7 +101,10 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
   } = useOutcomeSummary(userId, conditionTag);
 
   const loadDashboardData = useCallback(async () => {
+    console.log('[Dashboard] loadDashboardData called with userId:', userId);
+
     if (!supabase || !userId) {
+      console.log('[Dashboard] Skipping load - supabase:', !!supabase, 'userId:', userId);
       setIsLoading(false);
       return;
     }
