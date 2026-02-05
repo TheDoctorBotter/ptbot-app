@@ -25,6 +25,9 @@ import {
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { activityService } from '@/services/activityService';
+import { useOutcomeSummary } from '@/hooks/useOutcomeSummary';
+import { mapPainLocationToCondition } from '@/services/outcomeService';
+import OutcomeSummaryCard from '@/components/outcomes/OutcomeSummaryCard';
 
 interface ExerciseRecommendation {
   exercise: {
@@ -71,6 +74,19 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
   const [sessionsThisWeek, setSessionsThisWeek] = useState(0);
   const [lastActivityDate, setLastActivityDate] = useState<Date | null>(null);
 
+  // Get condition tag from latest assessment for outcome summary
+  const conditionTag = latestAssessment?.pain_location
+    ? mapPainLocationToCondition(latestAssessment.pain_location)
+    : null;
+
+  // Fetch outcome summary for the user's condition
+  const {
+    summary: outcomeSummary,
+    isLoading: isLoadingOutcome,
+    needsFollowUp: outcomeNeedsFollowUp,
+    refetch: refetchOutcome,
+  } = useOutcomeSummary(userId, conditionTag);
+
   const loadDashboardData = useCallback(async () => {
     if (!supabase || !userId) {
       setIsLoading(false);
@@ -113,7 +129,8 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
     loadDashboardData();
-  }, [loadDashboardData]);
+    refetchOutcome();
+  }, [loadDashboardData, refetchOutcome]);
 
   // Calculate days since last activity
   const getDaysSinceActivity = (): number | null => {
@@ -386,7 +403,21 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         )}
       </View>
 
-      {/* Section 2: Engagement Feedback */}
+      {/* Section 2: Outcome Measures Progress */}
+      {outcomeSummary && !isLoadingOutcome && (
+        <View style={styles.outcomeContainer}>
+          <OutcomeSummaryCard
+            summary={outcomeSummary}
+            onRecheck={() => router.push({
+              pathname: '/(tabs)/assessment',
+              params: { mode: 'followup', conditionTag: conditionTag }
+            } as any)}
+            showRecheckCTA={outcomeNeedsFollowUp}
+          />
+        </View>
+      )}
+
+      {/* Section 3: Engagement Feedback */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Activity size={20} color={colors.primary[500]} />
@@ -991,5 +1022,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.primary[500],
+  },
+  outcomeContainer: {
+    marginHorizontal: 16,
+    marginTop: 16,
   },
 });
