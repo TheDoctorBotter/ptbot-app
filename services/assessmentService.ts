@@ -1094,7 +1094,45 @@ export class AssessmentService {
 
     // Sort primarily by display_order (clinical progression order), then by score as tiebreaker
     // This ensures exercises appear in the clinically intended sequence
+    const isLowerBack = painLocation.includes('lower back');
+    const difficultyWeight = (difficulty?: string) => {
+      if (difficulty === 'Advanced') return 1000;
+      if (difficulty === 'Intermediate') return 500;
+      return 0;
+    };
+    const lowerBackPriorityAdjustment = (exercise: DatabaseExercise) => {
+      if (!isLowerBack) return 0;
+      const title = exercise.title.toLowerCase();
+      const keywords = (exercise.keywords || []).join(' ').toLowerCase();
+
+      const isPriority =
+        title.includes('bird dog') ||
+        title.includes('standing hip extension') ||
+        title.includes('superman') ||
+        keywords.includes('bird dog') ||
+        keywords.includes('standing hip extension') ||
+        keywords.includes('superman');
+
+      const isDeprioritized =
+        title.includes('clamshell') ||
+        title.includes('hip abduction') ||
+        keywords.includes('clamshell') ||
+        keywords.includes('hip abduction');
+
+      if (isPriority) return -100;
+      if (isDeprioritized) return 100;
+      return 0;
+    };
+
     return relevantExercises.sort((a, b) => {
+      const orderA =
+        (a.exercise.display_order ?? 999) +
+        difficultyWeight(a.exercise.difficulty) +
+        lowerBackPriorityAdjustment(a.exercise);
+      const orderB =
+        (b.exercise.display_order ?? 999) +
+        difficultyWeight(b.exercise.difficulty) +
+        lowerBackPriorityAdjustment(b.exercise);
       const difficultyWeight = (difficulty?: string) => {
         if (difficulty === 'Advanced') return 1000;
         if (difficulty === 'Intermediate') return 500;
@@ -1102,6 +1140,7 @@ export class AssessmentService {
       };
       const orderA = (a.exercise.display_order ?? 999) + difficultyWeight(a.exercise.difficulty);
       const orderB = (b.exercise.display_order ?? 999) + difficultyWeight(b.exercise.difficulty);
+main
 
       // Primary sort: display_order ascending (lower = earlier in clinical sequence)
       if (orderA !== orderB) return orderA - orderB;
