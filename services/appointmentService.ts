@@ -135,11 +135,8 @@ export class AppointmentService {
     const headers: Record<string, string> = {
       'apikey': supabaseAnonKey,
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken || supabaseAnonKey}`,
     };
-
-    if (accessToken) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-    }
 
     const response = await fetch(url, {
       method,
