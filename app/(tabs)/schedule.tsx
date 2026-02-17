@@ -12,11 +12,16 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Modal,
+  Linking,
 } from 'react-native';
-import { Calendar, Clock, Check, X, ChevronRight, Phone, Mail, User } from 'lucide-react-native';
+import { Calendar, Clock, Check, X, ChevronRight, Phone, Mail, User, Shield, MapPin } from 'lucide-react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '@/constants/theme';
 import { appointmentService, DaySlots, Appointment } from '@/services/appointmentService';
 import { supabase } from '@/lib/supabase';
+import { telehealthConsentService, checkPreConsultRequirements } from '@/services/telehealthService';
+import TelehealthConsentScreen from '@/components/telehealth/TelehealthConsentScreen';
+import LocationVerificationModal from '@/components/telehealth/LocationVerificationModal';
 
 type ViewMode = 'book' | 'appointments';
 
@@ -44,24 +49,60 @@ export default function ScheduleScreen() {
 
   // User state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
-  // Check auth status
+  // Telehealth consent state
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [hasValidConsent, setHasValidConsent] = useState(false);
+  const [checkingConsent, setCheckingConsent] = useState(true);
+
+  // Location verification state
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [selectedAppointmentForJoin, setSelectedAppointmentForJoin] = useState<Appointment | null>(null);
+
+  // Check auth status and consent
   useEffect(() => {
     const checkAuth = async () => {
+      if (!supabase) {
+        setCheckingConsent(false);
+        return;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       setIsLoggedIn(!!session);
 
       if (session?.user) {
-        // Pre-fill email if logged in
+        setUserId(session.user.id);
         setPatientEmail(session.user.email || '');
+
+        // Check telehealth consent status
+        try {
+          const consentStatus = await telehealthConsentService.getConsentStatus(session.user.id);
+          setHasValidConsent(consentStatus.hasValidConsent);
+        } catch {
+          setHasValidConsent(false);
+        }
       }
+      setCheckingConsent(false);
     };
     checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setIsLoggedIn(!!session);
       if (session?.user) {
+        setUserId(session.user.id);
         setPatientEmail(session.user.email || '');
+
+        // Re-check consent on auth change
+        try {
+          const consentStatus = await telehealthConsentService.getConsentStatus(session.user.id);
+          setHasValidConsent(consentStatus.hasValidConsent);
+        } catch {
+          setHasValidConsent(false);
+        }
+      } else {
+        setUserId(null);
+        setHasValidConsent(false);
       }
     });
 
@@ -118,7 +159,7 @@ export default function ScheduleScreen() {
     setRefreshing(false);
   }, [viewMode, loadAvailability, loadAppointments]);
 
-  // Book appointment
+  // Check consent before booking
   const handleBookAppointment = async () => {
     if (!selectedSlot) {
       setError('Please select a time slot');
@@ -135,12 +176,23 @@ export default function ScheduleScreen() {
       return;
     }
 
+    // Require consent for logged-in users before booking
+    if (isLoggedIn && !hasValidConsent) {
+      setShowConsentModal(true);
+      return;
+    }
+
+    await proceedWithBooking();
+  };
+
+  // Actual booking after consent check
+  const proceedWithBooking = async () => {
     try {
       setIsBooking(true);
       setError(null);
 
       const response = await appointmentService.bookAppointment({
-        startISO: selectedSlot,
+        startISO: selectedSlot!,
         patientName: patientName.trim(),
         patientEmail: patientEmail.trim() || undefined,
         patientPhone: patientPhone.trim() || undefined,
@@ -167,6 +219,67 @@ export default function ScheduleScreen() {
       setIsBooking(false);
     }
   };
+
+  // Handle consent accepted
+  const handleConsentAccepted = useCallback(() => {
+    setHasValidConsent(true);
+    setShowConsentModal(false);
+
+    // If user was trying to book, proceed with booking
+    if (selectedSlot && patientName.trim()) {
+      proceedWithBooking();
+    }
+  }, [selectedSlot, patientName]);
+
+  // Handle join consult with location verification
+  const handleJoinConsult = useCallback(async (appointment: Appointment) => {
+    if (!userId) {
+      Alert.alert('Error', 'Please sign in to join the consultation.');
+      return;
+    }
+
+    // Check pre-consult requirements
+    try {
+      const requirements = await checkPreConsultRequirements(userId, appointment.id);
+
+      if (requirements.needsConsent) {
+        setShowConsentModal(true);
+        return;
+      }
+
+      if (requirements.needsLocationVerification) {
+        setSelectedAppointmentForJoin(appointment);
+        setShowLocationModal(true);
+        return;
+      }
+
+      if (requirements.locationError) {
+        Alert.alert('Location Required', requirements.locationError);
+        return;
+      }
+
+      // All requirements met, open Zoom
+      if (appointment.zoom_meeting_url) {
+        Linking.openURL(appointment.zoom_meeting_url);
+      }
+    } catch (err) {
+      // On error, still allow joining but show location modal
+      setSelectedAppointmentForJoin(appointment);
+      setShowLocationModal(true);
+    }
+  }, [userId]);
+
+  // Handle location verified
+  const handleLocationVerified = useCallback(() => {
+    setShowLocationModal(false);
+
+    // Open Zoom after verification
+    if (selectedAppointmentForJoin?.zoom_meeting_url) {
+      Linking.openURL(selectedAppointmentForJoin.zoom_meeting_url);
+    }
+
+    setSelectedAppointmentForJoin(null);
+  }, [selectedAppointmentForJoin]);
 
   // Cancel appointment
   const handleCancelAppointment = (appointment: Appointment) => {
@@ -379,6 +492,38 @@ export default function ScheduleScreen() {
         </View>
       )}
 
+      {/* Consent Status Banner (for logged-in users) */}
+      {isLoggedIn && !checkingConsent && (
+        <TouchableOpacity
+          style={[
+            styles.consentBanner,
+            hasValidConsent ? styles.consentBannerValid : styles.consentBannerRequired,
+          ]}
+          onPress={() => !hasValidConsent && setShowConsentModal(true)}
+          disabled={hasValidConsent}
+        >
+          <Shield
+            size={18}
+            color={hasValidConsent ? colors.success[600] : colors.warning[600]}
+          />
+          <Text
+            style={[
+              styles.consentBannerText,
+              hasValidConsent ? styles.consentBannerTextValid : styles.consentBannerTextRequired,
+            ]}
+          >
+            {hasValidConsent
+              ? 'Telehealth consent accepted'
+              : 'Telehealth consent required - Tap to review'}
+          </Text>
+          {hasValidConsent ? (
+            <Check size={16} color={colors.success[600]} />
+          ) : (
+            <ChevronRight size={16} color={colors.warning[600]} />
+          )}
+        </TouchableOpacity>
+      )}
+
       {/* Info Card */}
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>About PTBot Zoom Calls</Text>
@@ -393,6 +538,10 @@ export default function ScheduleScreen() {
         <View style={styles.infoItem}>
           <Text style={styles.infoBullet}>•</Text>
           <Text style={styles.infoText}>You'll receive Zoom meeting details after confirmation</Text>
+        </View>
+        <View style={styles.infoItem}>
+          <Text style={styles.infoBullet}>•</Text>
+          <Text style={styles.infoText}>You must be in Texas to join telehealth sessions</Text>
         </View>
       </View>
     </>
@@ -442,13 +591,9 @@ export default function ScheduleScreen() {
                 {appointment.zoom_meeting_url && (
                   <TouchableOpacity
                     style={styles.zoomLink}
-                    onPress={() => {
-                      // Open Zoom URL
-                      import('react-native').then(({ Linking }) => {
-                        Linking.openURL(appointment.zoom_meeting_url!);
-                      });
-                    }}
+                    onPress={() => handleJoinConsult(appointment)}
                   >
+                    <MapPin size={16} color={colors.primary[500]} />
                     <Text style={styles.zoomLinkText}>Join Zoom Meeting</Text>
                     <ChevronRight size={16} color={colors.primary[500]} />
                   </TouchableOpacity>
@@ -572,6 +717,35 @@ export default function ScheduleScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Telehealth Consent Modal */}
+      <Modal
+        visible={showConsentModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowConsentModal(false)}
+      >
+        <TelehealthConsentScreen
+          onConsentAccepted={handleConsentAccepted}
+          onCancel={() => setShowConsentModal(false)}
+          isModal
+          userId={userId || undefined}
+        />
+      </Modal>
+
+      {/* Location Verification Modal */}
+      {selectedAppointmentForJoin && (
+        <LocationVerificationModal
+          visible={showLocationModal}
+          appointmentId={selectedAppointmentForJoin.id}
+          userId={userId || undefined}
+          onVerified={handleLocationVerified}
+          onClose={() => {
+            setShowLocationModal(false);
+            setSelectedAppointmentForJoin(null);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -929,5 +1103,34 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
+  },
+  consentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing[3],
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing[4],
+    gap: spacing[2],
+  },
+  consentBannerValid: {
+    backgroundColor: colors.success[50],
+    borderWidth: 1,
+    borderColor: colors.success[200],
+  },
+  consentBannerRequired: {
+    backgroundColor: colors.warning[50],
+    borderWidth: 1,
+    borderColor: colors.warning[200],
+  },
+  consentBannerText: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+  },
+  consentBannerTextValid: {
+    color: colors.success[700],
+  },
+  consentBannerTextRequired: {
+    color: colors.warning[700],
   },
 });

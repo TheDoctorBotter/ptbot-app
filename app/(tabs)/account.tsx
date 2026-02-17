@@ -13,10 +13,15 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus, Building2 } from 'lucide-react-native';
+import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus, Building2, FileText, Shield, ClipboardList } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import ProfileTabs from '@/components/ProfileTabs';
 import ClinicSettings from '@/components/account/ClinicSettings';
+import AdminConsultList from '@/components/telehealth/AdminConsultList';
+import AdminConsultNoteScreen from '@/components/telehealth/AdminConsultNoteScreen';
+import TelehealthConsentScreen from '@/components/telehealth/TelehealthConsentScreen';
+import { AdminConsultOverview } from '@/types/telehealth';
+import { telehealthConsentService } from '@/services/telehealthService';
 import { colors } from '@/constants/theme';
 import { AssessmentService } from '@/services/assessmentService';
 import { useUserRole } from '@/hooks/useUserRole';
@@ -56,6 +61,13 @@ export default function AccountScreen() {
 
   // Clinic settings modal state
   const [showClinicSettings, setShowClinicSettings] = useState(false);
+
+  // Admin consult management state
+  const [showConsultManagement, setShowConsultManagement] = useState(false);
+  const [selectedConsult, setSelectedConsult] = useState<AdminConsultOverview | null>(null);
+
+  // Telehealth consent viewing state
+  const [showConsentViewer, setShowConsentViewer] = useState(false);
 
   // Form state
   const [isSignUp, setIsSignUp] = useState(true);
@@ -717,7 +729,48 @@ export default function AccountScreen() {
                 <Text style={styles.actionButtonArrow}>→</Text>
               </TouchableOpacity>
             )}
+
+            {/* View Telehealth Consent - for all logged-in users */}
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => setShowConsentViewer(true)}
+            >
+              <Shield size={20} color={colors.primary[500]} />
+              <Text style={styles.actionButtonText}>View Telehealth Consent</Text>
+              <Text style={styles.actionButtonArrow}>→</Text>
+            </TouchableOpacity>
           </View>
+
+          {/* Admin Tools - only for clinicians/admins */}
+          {isClinicStaff && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Admin Tools</Text>
+
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => setShowConsultManagement(true)}
+              >
+                <ClipboardList size={20} color={colors.primary[500]} />
+                <View style={styles.actionButtonContent}>
+                  <Text style={styles.clinicSettingsTitle}>Consult Management</Text>
+                  <Text style={styles.actionButtonSubtext}>Document telehealth sessions</Text>
+                </View>
+                <Text style={styles.actionButtonArrow}>→</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => setShowConsultManagement(true)}
+              >
+                <FileText size={20} color={colors.primary[500]} />
+                <View style={styles.actionButtonContent}>
+                  <Text style={styles.clinicSettingsTitle}>SOAP Notes</Text>
+                  <Text style={styles.actionButtonSubtext}>Review and edit clinical notes</Text>
+                </View>
+                <Text style={styles.actionButtonArrow}>→</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Sign Out */}
           <TouchableOpacity
@@ -750,6 +803,54 @@ export default function AccountScreen() {
             />
           </Modal>
         )}
+
+        {/* Consult Management Modal */}
+        {isClinicStaff && (
+          <Modal
+            visible={showConsultManagement && !selectedConsult}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={() => setShowConsultManagement(false)}
+          >
+            <AdminConsultList
+              onSelectConsult={(consult) => setSelectedConsult(consult)}
+              onClose={() => setShowConsultManagement(false)}
+            />
+          </Modal>
+        )}
+
+        {/* Consult Note Screen Modal */}
+        {isClinicStaff && selectedConsult && (
+          <Modal
+            visible={!!selectedConsult}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={() => setSelectedConsult(null)}
+          >
+            <AdminConsultNoteScreen
+              consult={selectedConsult}
+              onSaved={() => {
+                setSelectedConsult(null);
+              }}
+              onClose={() => setSelectedConsult(null)}
+            />
+          </Modal>
+        )}
+
+        {/* Telehealth Consent Viewer Modal */}
+        <Modal
+          visible={showConsentViewer}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setShowConsentViewer(false)}
+        >
+          <TelehealthConsentScreen
+            onConsentAccepted={() => setShowConsentViewer(false)}
+            onCancel={() => setShowConsentViewer(false)}
+            isModal
+            userId={user?.id}
+          />
+        </Modal>
       </SafeAreaView>
     );
   }
