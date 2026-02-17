@@ -7,6 +7,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
+import { appointmentService, Appointment } from './appointmentService';
 
 // Types for user context
 export interface UserAssessment {
@@ -87,6 +88,9 @@ export interface ChatbotContext {
   needsReassessment: boolean;
   reassessmentReason: string | null;
   daysSinceLastAssessment: number | null;
+  // Scheduling
+  upcomingAppointments: Appointment[];
+  hasUpcomingAppointment: boolean;
 }
 
 // Quick command types
@@ -94,7 +98,7 @@ export interface QuickCommand {
   command: string;
   aliases: string[];
   description: string;
-  action: 'show_exercises' | 'log_pain' | 'show_progress' | 'today_routine' | 'next_exercise' | 'help' | 'how_am_i_doing' | 'check_in';
+  action: 'show_exercises' | 'log_pain' | 'show_progress' | 'today_routine' | 'next_exercise' | 'help' | 'how_am_i_doing' | 'check_in' | 'schedule_call' | 'my_appointments';
 }
 
 export const QUICK_COMMANDS: QuickCommand[] = [
@@ -140,6 +144,18 @@ export const QUICK_COMMANDS: QuickCommand[] = [
     description: 'Show available commands',
     action: 'help',
   },
+  {
+    command: 'schedule a call',
+    aliases: ['book appointment', 'schedule call', 'book a call', 'schedule appointment', 'talk to dr', 'talk to doctor', 'video call', 'zoom call'],
+    description: 'Schedule a PTBot Zoom consultation',
+    action: 'schedule_call',
+  },
+  {
+    command: 'my appointments',
+    aliases: ['appointments', 'upcoming appointments', 'scheduled calls', 'my calls', 'when is my appointment'],
+    description: 'View your scheduled appointments',
+    action: 'my_appointments',
+  },
 ];
 
 // Red flag keywords for triage
@@ -179,6 +195,8 @@ class ChatbotContextService {
       needsReassessment: false,
       reassessmentReason: null,
       daysSinceLastAssessment: null,
+      upcomingAppointments: [],
+      hasUpcomingAppointment: false,
     };
 
     if (!supabase) {
@@ -196,10 +214,12 @@ class ChatbotContextService {
         assessmentsResult,
         activityResult,
         painLogsResult,
+        appointmentsResult,
       ] = await Promise.all([
         this.fetchAssessments(user.id),
         this.fetchActivitySummary(user.id),
         this.fetchPainLogs(user.id),
+        this.fetchUpcomingAppointments(),
       ]);
 
       const assessmentHistory = assessmentsResult;
@@ -243,10 +263,30 @@ class ChatbotContextService {
         needsReassessment,
         reassessmentReason: reason,
         daysSinceLastAssessment,
+        upcomingAppointments: appointmentsResult,
+        hasUpcomingAppointment: appointmentsResult.length > 0,
       };
     } catch (error) {
       console.error('[ChatbotContextService] Error fetching context:', error);
       return emptyContext;
+    }
+  }
+
+  /**
+   * Fetch upcoming appointments
+   */
+  private async fetchUpcomingAppointments(): Promise<Appointment[]> {
+    try {
+      const response = await appointmentService.getMyAppointments({
+        upcoming: true,
+        limit: 5,
+      });
+      return response.appointments.filter(
+        a => a.status === 'pending' || a.status === 'confirmed'
+      );
+    } catch (error) {
+      console.log('[ChatbotContextService] Appointments not available:', error);
+      return [];
     }
   }
 
@@ -675,6 +715,20 @@ ${recentLogs}`);
     // Reassessment status
     if (context.needsReassessment && context.reassessmentReason) {
       parts.push(`REASSESSMENT NEEDED: ${context.reassessmentReason}`);
+    }
+
+    // Upcoming appointments
+    if (context.upcomingAppointments.length > 0) {
+      const apptList = context.upcomingAppointments.map(appt => {
+        const time = appointmentService.formatAppointmentTime(appt.start_time, appt.end_time);
+        const status = appointmentService.getStatusInfo(appt.status).label;
+        return `- ${time} (${status})`;
+      }).join('\n');
+
+      parts.push(`UPCOMING APPOINTMENTS:
+${apptList}`);
+    } else {
+      parts.push('APPOINTMENTS: No upcoming appointments scheduled. User can schedule a PTBot Zoom call through the Schedule tab or by saying "schedule a call".');
     }
 
     return parts.join('\n\n');
