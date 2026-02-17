@@ -1,0 +1,32 @@
+{
+  "name": "PTBot App",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/supabase/devcontainer-features/supabase-cli:1": {}
+  },
+  "forwardPorts": [8081, 19000, 19006],
+  "portsAttributes": {
+    "8081": { "label": "Expo Dev Server", "onAutoForward": "notify" },
+    "19000": { "label": "Expo (Metro)", "onAutoForward": "notify" },
+    "19006": { "label": "Expo Web", "onAutoForward": "openBrowser" }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "msjsdiag.vscode-react-native",
+        "bradlc.vscode-tailwindcss"
+      ],
+      "settings": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "remoteEnv": {
+    "EXPO_DEVTOOLS_LISTEN_ADDRESS": "0.0.0.0"
+  }
+}
