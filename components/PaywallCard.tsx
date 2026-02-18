@@ -60,6 +60,7 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
 
       const { data, error } = await supabase.functions.invoke('stripe-checkout', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
         body: {
           product_type: productType,
           success_url:  successUrl,
