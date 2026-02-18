@@ -1,0 +1,37 @@
+# Supabase Edge Functions Configuration
+# https://supabase.com/docs/guides/functions/config
+
+[project]
+id = ""
+
+# =============================================================================
+# EDGE FUNCTION SETTINGS
+# =============================================================================
+# verify_jwt = true (default): Gateway validates JWT before forwarding request.
+#   Invalid/expired tokens return 401 before the function runs.
+# verify_jwt = false: Gateway forwards request without JWT validation.
+#   The function handles auth internally (required for anonymous access).
+
+# calendar-availability: Public endpoint - anyone can view available slots
+[functions.calendar-availability]
+verify_jwt = false
+
+# calendar-book: Public endpoint - supports booking with or without an account
+[functions.calendar-book]
+verify_jwt = false
+
+# calendar-appointments: Requires auth - users must be logged in to view/manage
+[functions.calendar-appointments]
+verify_jwt = true
+
+# openai-proxy: Requires auth - only authenticated users can use the AI chat
+[functions.openai-proxy]
+verify_jwt = true
+
+# stripe-checkout: Requires auth - user must be logged in to start checkout
+[functions.stripe-checkout]
+verify_jwt = true
+
+# stripe-webhook: Public endpoint - Stripe sends webhooks without JWT
+[functions.stripe-webhook]
+verify_jwt = false

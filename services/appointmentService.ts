@@ -106,8 +106,21 @@ export class AppointmentService {
     }
 
     try {
+      // getSession() returns the cached session which may be expired.
+      // If expired, refreshSession() will use the refresh token to get a new JWT.
       const { data: { session } } = await supabase.auth.getSession();
-      return session?.access_token || null;
+
+      if (!session) return null;
+
+      // Check if the token is expired or about to expire (within 60s)
+      const expiresAt = session.expires_at; // Unix timestamp in seconds
+      if (expiresAt && expiresAt < Math.floor(Date.now() / 1000) + 60) {
+        console.log('[AppointmentService] Session expired, refreshing...');
+        const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+        return refreshed?.access_token || null;
+      }
+
+      return session.access_token;
     } catch (err) {
       console.error('[AppointmentService] Error getting access token:', err);
       return null;
@@ -124,25 +137,38 @@ export class AppointmentService {
       throw new Error('Supabase URL not configured');
     }
 
-    const accessToken = await this.getAccessToken();
-
     let url = `${supabaseUrl}/functions/v1/${functionName}`;
     if (queryParams) {
       const params = new URLSearchParams(queryParams);
       url += `?${params.toString()}`;
     }
 
-    const headers: Record<string, string> = {
-      'apikey': supabaseAnonKey,
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken || supabaseAnonKey}`,
+    // First attempt with current token
+    let accessToken = await this.getAccessToken();
+
+    const makeRequest = async (token: string | null) => {
+      const headers: Record<string, string> = {
+        'apikey': supabaseAnonKey,
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token || supabaseAnonKey}`,
+      };
+
+      return fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
     };
 
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let response = await makeRequest(accessToken);
+
+    // If 401 and we had a user token, force refresh and retry once
+    if (response.status === 401 && accessToken && supabase) {
+      console.log(`[AppointmentService] 401 on ${functionName}, refreshing session and retrying...`);
+      const { data: { session } } = await supabase.auth.refreshSession();
+      accessToken = session?.access_token || null;
+      response = await makeRequest(accessToken);
+    }
 
     const data = await response.json();
 
