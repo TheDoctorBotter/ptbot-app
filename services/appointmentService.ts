@@ -5,20 +5,7 @@
  * Integrates with Google Calendar for availability checking and booking.
  */
 
-import { supabase } from '../lib/supabase';
-
-// Get Supabase URL from environment
-const supabaseUrl =
-  process.env.EXPO_PUBLIC_SUPABASE_URL ||
-  (typeof globalThis !== 'undefined' &&
-    (globalThis as any).import?.meta?.env?.VITE_SUPABASE_URL) ||
-  '';
-
-const supabaseAnonKey =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  (typeof globalThis !== 'undefined' &&
-    (globalThis as any).import?.meta?.env?.VITE_SUPABASE_ANON_KEY) ||
-  '';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../lib/supabase';
 
 // Types
 export interface TimeSlot {
@@ -133,24 +120,37 @@ export class AppointmentService {
     body?: Record<string, unknown>,
     queryParams?: Record<string, string>
   ): Promise<unknown> {
+    const query = queryParams ? `?${new URLSearchParams(queryParams).toString()}` : '';
+    const functionPath = `${functionName}${query}`;
+
+    // Prefer invoke() because it builds the functions endpoint from the active client config,
+    // preventing URL mismatch issues that commonly show up as 404 errors.
+    if (supabase) {
+      const { data, error } = await supabase.functions.invoke(functionPath, {
+        method,
+        body,
+      });
+
+      if (error) {
+        throw new Error(error.message || `Failed to call ${functionPath}`);
+      }
+
+      return data;
+    }
+
     if (!supabaseUrl) {
-      throw new Error('Supabase URL not configured');
+      throw new Error('Supabase URL not configured (EXPO_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL)');
     }
 
-    let url = `${supabaseUrl}/functions/v1/${functionName}`;
-    if (queryParams) {
-      const params = new URLSearchParams(queryParams);
-      url += `?${params.toString()}`;
-    }
-
-    // First attempt with current token
+    // Fallback for environments where the shared Supabase client is unavailable.
+    const url = `${supabaseUrl}/functions/v1/${functionName}${query}`;
     let accessToken = await this.getAccessToken();
 
     const makeRequest = async (token: string | null) => {
       const headers: Record<string, string> = {
-        'apikey': supabaseAnonKey,
+        apikey: supabaseAnonKey,
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token || supabaseAnonKey}`,
+        Authorization: `Bearer ${token || supabaseAnonKey}`,
       };
 
       return fetch(url, {
@@ -161,19 +161,25 @@ export class AppointmentService {
     };
 
     let response = await makeRequest(accessToken);
-
-    // If 401 and we had a user token, force refresh and retry once
     if (response.status === 401 && accessToken && supabase) {
-      console.log(`[AppointmentService] 401 on ${functionName}, refreshing session and retrying...`);
       const { data: { session } } = await supabase.auth.refreshSession();
       accessToken = session?.access_token || null;
       response = await makeRequest(accessToken);
     }
 
-    const data = await response.json();
+    const raw = await response.text();
+    let data: any = {};
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = { error: raw };
+      }
+    }
 
     if (!response.ok) {
-      throw new Error(data.error || data.reason || `Request failed with status ${response.status}`);
+      const reason = data?.error || data?.reason || raw || `Request failed with status ${response.status}`;
+      throw new Error(reason);
     }
 
     return data;
