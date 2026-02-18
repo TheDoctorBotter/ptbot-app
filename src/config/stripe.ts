@@ -31,7 +31,7 @@ export const PTBOT_PRODUCTS: Record<ProductType, PtbotProduct> = {
     type: 'plan_onetime',
     name: 'Full Exercise Plan',
     tagline: 'Unlock your complete personalised plan',
-    price: '$19',
+    price: '$2.99',
     mode: 'payment',
     features: [
       'All exercises for your condition',
@@ -47,7 +47,7 @@ export const PTBOT_PRODUCTS: Record<ProductType, PtbotProduct> = {
     type: 'subscription',
     name: 'PTBot Membership',
     tagline: 'Unlimited access to everything',
-    price: '$29/mo',
+    price: '$30/mo',
     mode: 'subscription',
     features: [
       'Unlimited AI chat & assessments',
