@@ -190,30 +190,64 @@ export class GoogleCalendarService {
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 
-  // Debug: list calendars accessible to the service account
-  async debugListCalendars(): Promise<void> {
+  // Ensure the service account has the calendar in its calendarList.
+  // When a user shares a calendar with a service account, the service account
+  // must "subscribe" to it via calendarList.insert before it can access events.
+  private calendarAccessEnsured = false;
+
+  async ensureCalendarAccess(): Promise<void> {
+    if (this.calendarAccessEnsured) return;
+
     const token = await this.getAccessToken();
+
+    // Check if calendar is already in the list
     try {
-      const response = await fetch(`${GOOGLE_CALENDAR_API}/users/me/calendarList`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      console.log(`[GoogleCalendar] calendarList status: ${response.status}`);
-      if (data.items) {
-        console.log(`[GoogleCalendar] Accessible calendars (${data.items.length}):`);
-        for (const cal of data.items) {
-          console.log(`  - ${cal.id} (${cal.summary || 'no summary'}, accessRole: ${cal.accessRole})`);
+      const checkResponse = await fetch(
+        `${GOOGLE_CALENDAR_API}/users/me/calendarList/${encodeURIComponent(this.calendarId)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (checkResponse.ok) {
+        console.log(`[GoogleCalendar] Calendar already in calendarList`);
+        this.calendarAccessEnsured = true;
+        return;
+      }
+
+      console.log(`[GoogleCalendar] Calendar not in calendarList (${checkResponse.status}), subscribing...`);
+    } catch (err) {
+      console.log(`[GoogleCalendar] Error checking calendarList, attempting subscribe...`);
+    }
+
+    // Subscribe the service account to the shared calendar
+    try {
+      const insertResponse = await fetch(
+        `${GOOGLE_CALENDAR_API}/users/me/calendarList`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ id: this.calendarId }),
         }
+      );
+
+      const insertData = await insertResponse.json();
+
+      if (insertResponse.ok) {
+        console.log(`[GoogleCalendar] Successfully subscribed to calendar: ${insertData.summary || this.calendarId}`);
+        this.calendarAccessEnsured = true;
       } else {
-        console.log(`[GoogleCalendar] calendarList response: ${JSON.stringify(data).substring(0, 500)}`);
+        console.error(`[GoogleCalendar] Failed to subscribe to calendar (${insertResponse.status}): ${JSON.stringify(insertData)}`);
       }
     } catch (err) {
-      console.error(`[GoogleCalendar] calendarList error:`, err);
+      console.error(`[GoogleCalendar] Error subscribing to calendar:`, err);
     }
   }
 
   // List events between two dates
   async listEventsBetween(timeMinISO: string, timeMaxISO: string): Promise<CalendarEvent[]> {
+    await this.ensureCalendarAccess();
     const token = await this.getAccessToken();
 
     const params = new URLSearchParams({
@@ -246,6 +280,7 @@ export class GoogleCalendarService {
 
   // Create a new event
   async createEvent(params: CreateEventParams): Promise<CalendarEvent> {
+    await this.ensureCalendarAccess();
     const token = await this.getAccessToken();
 
     const endISO = params.endISO || toISO(addMinMs(new Date(params.startISO).getTime(), APPOINTMENT_DURATION_MIN));
