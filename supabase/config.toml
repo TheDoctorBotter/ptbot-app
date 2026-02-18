@@ -1,9 +1,6 @@
 # Supabase Edge Functions Configuration
 # https://supabase.com/docs/guides/functions/config
 
-[project]
-id = ""
-
 # =============================================================================
 # EDGE FUNCTION SETTINGS
 # =============================================================================
