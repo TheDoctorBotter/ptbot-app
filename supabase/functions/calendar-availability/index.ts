@@ -123,6 +123,11 @@ Deno.serve(async (req) => {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[calendar-availability] Error: ${message}`);
-    return corsResponse({ error: 'Failed to fetch availability', details: message }, 500);
+    // Surface 404 as a calendar-not-shared hint
+    const isNotFound = message.includes('404') || message.includes('Not Found');
+    const hint = isNotFound
+      ? 'Calendar not accessible. Ensure the calendar is shared with the service account email in Google Calendar settings.'
+      : undefined;
+    return corsResponse({ error: 'Failed to fetch availability', details: message, hint }, 500);
   }
 });

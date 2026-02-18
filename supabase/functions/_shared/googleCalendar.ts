@@ -77,16 +77,19 @@ export class GoogleCalendarService {
   private credentials: ServiceAccountCredentials;
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
+  private ownerEmail: string;
 
   constructor() {
     this.calendarId = Deno.env.get('GCAL_CALENDAR_ID') || '';
+    this.ownerEmail = Deno.env.get('GCAL_OWNER_EMAIL') || '';
     const credentialsJson = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON') || '';
 
-    console.log(`[GoogleCalendar] Calendar ID: "${this.calendarId}"`);
+    console.log(`[GoogleCalendar] Configured calendar ID: "${this.calendarId}"`);
+    console.log(`[GoogleCalendar] Owner email: "${this.ownerEmail}"`);
     console.log(`[GoogleCalendar] Credentials JSON length: ${credentialsJson.length}`);
 
-    if (!this.calendarId || !credentialsJson) {
-      throw new Error('Missing GCAL_CALENDAR_ID or GOOGLE_SERVICE_ACCOUNT_JSON');
+    if (!credentialsJson) {
+      throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_JSON');
     }
 
     this.credentials = JSON.parse(credentialsJson);
@@ -190,9 +193,13 @@ export class GoogleCalendarService {
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 
-  // Ensure the service account has the calendar in its calendarList.
-  // When a user shares a calendar with a service account, the service account
-  // must "subscribe" to it via calendarList.insert before it can access events.
+  // Ensure the service account has a working calendar.
+  // Strategy:
+  // 1. Check if we have a saved calendar ID in Supabase (from a previous auto-create)
+  // 2. Try to access the configured/saved calendar
+  // 3. If no access, create a new calendar owned by the service account
+  // 4. Share the new calendar with the owner email
+  // 5. Persist the new calendar ID in Supabase
   private calendarAccessEnsured = false;
 
   async ensureCalendarAccess(): Promise<void> {
@@ -200,48 +207,187 @@ export class GoogleCalendarService {
 
     const token = await this.getAccessToken();
 
-    // Check if calendar is already in the list
-    try {
-      const checkResponse = await fetch(
-        `${GOOGLE_CALENDAR_API}/users/me/calendarList/${encodeURIComponent(this.calendarId)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+    // Step 1: Check if we have a saved calendar ID in Supabase
+    const savedCalendarId = await this.getSavedCalendarId();
+    if (savedCalendarId && savedCalendarId !== this.calendarId) {
+      console.log(`[GoogleCalendar] Found saved calendar ID in Supabase: ${savedCalendarId}`);
+      this.calendarId = savedCalendarId;
+    }
 
-      if (checkResponse.ok) {
-        console.log(`[GoogleCalendar] Calendar already in calendarList`);
+    // Step 2: Try to access the configured calendar
+    if (this.calendarId) {
+      const canAccess = await this.testCalendarAccess(token, this.calendarId);
+      if (canAccess) {
+        console.log(`[GoogleCalendar] Calendar accessible: ${this.calendarId}`);
         this.calendarAccessEnsured = true;
         return;
       }
-
-      console.log(`[GoogleCalendar] Calendar not in calendarList (${checkResponse.status}), subscribing...`);
-    } catch (err) {
-      console.log(`[GoogleCalendar] Error checking calendarList, attempting subscribe...`);
+      console.log(`[GoogleCalendar] Cannot access calendar: ${this.calendarId}`);
     }
 
-    // Subscribe the service account to the shared calendar
+    // Step 3: Create a new calendar owned by the service account
+    console.log(`[GoogleCalendar] Creating new service-account-owned calendar...`);
+    const newCalendarId = await this.createOwnedCalendar(token);
+    if (!newCalendarId) {
+      throw new Error('Failed to create calendar. Check service account permissions.');
+    }
+
+    this.calendarId = newCalendarId;
+    this.calendarAccessEnsured = true;
+
+    // Step 4: Share with owner email
+    if (this.ownerEmail) {
+      await this.shareCalendarWithOwner(token, newCalendarId, this.ownerEmail);
+    }
+
+    // Step 5: Persist to Supabase
+    await this.saveCalendarId(newCalendarId);
+  }
+
+  private async testCalendarAccess(token: string, calendarId: string): Promise<boolean> {
     try {
-      const insertResponse = await fetch(
-        `${GOOGLE_CALENDAR_API}/users/me/calendarList`,
+      // Try a lightweight events query
+      const params = new URLSearchParams({
+        maxResults: '1',
+        timeMin: new Date().toISOString(),
+        timeMax: new Date(Date.now() + 86400000).toISOString(),
+        singleEvents: 'true',
+      });
+      const response = await fetch(
+        `${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  private async createOwnedCalendar(token: string): Promise<string | null> {
+    try {
+      const response = await fetch(`${GOOGLE_CALENDAR_API}/calendars`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          summary: 'Buckeye PT Appointments',
+          description: 'Appointment calendar managed by PTBot',
+          timeZone: TZ,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log(`[GoogleCalendar] Created calendar: ${data.id} ("${data.summary}")`);
+        return data.id;
+      } else {
+        console.error(`[GoogleCalendar] Failed to create calendar (${response.status}): ${JSON.stringify(data)}`);
+        return null;
+      }
+    } catch (err) {
+      console.error(`[GoogleCalendar] Error creating calendar:`, err);
+      return null;
+    }
+  }
+
+  private async shareCalendarWithOwner(token: string, calendarId: string, ownerEmail: string): Promise<void> {
+    try {
+      const response = await fetch(
+        `${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/acl`,
         {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ id: this.calendarId }),
+          body: JSON.stringify({
+            role: 'owner',
+            scope: { type: 'user', value: ownerEmail },
+          }),
         }
       );
 
-      const insertData = await insertResponse.json();
+      const data = await response.json();
 
-      if (insertResponse.ok) {
-        console.log(`[GoogleCalendar] Successfully subscribed to calendar: ${insertData.summary || this.calendarId}`);
-        this.calendarAccessEnsured = true;
+      if (response.ok) {
+        console.log(`[GoogleCalendar] Shared calendar with ${ownerEmail} as owner`);
       } else {
-        console.error(`[GoogleCalendar] Failed to subscribe to calendar (${insertResponse.status}): ${JSON.stringify(insertData)}`);
+        console.error(`[GoogleCalendar] Failed to share calendar (${response.status}): ${JSON.stringify(data)}`);
       }
     } catch (err) {
-      console.error(`[GoogleCalendar] Error subscribing to calendar:`, err);
+      console.error(`[GoogleCalendar] Error sharing calendar:`, err);
+    }
+  }
+
+  private getSupabaseClient() {
+    const url = Deno.env.get('SUPABASE_URL') || '';
+    const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    if (!url || !key) return null;
+    return { url, key };
+  }
+
+  private async getSavedCalendarId(): Promise<string | null> {
+    const sb = this.getSupabaseClient();
+    if (!sb) return null;
+
+    try {
+      const response = await fetch(
+        `${sb.url}/rest/v1/app_config?key=eq.gcal_calendar_id&select=value`,
+        {
+          headers: {
+            apikey: sb.key,
+            Authorization: `Bearer ${sb.key}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        console.log(`[GoogleCalendar] app_config table not ready (${response.status})`);
+        return null;
+      }
+
+      const rows = await response.json();
+      return rows?.[0]?.value || null;
+    } catch (err) {
+      console.log(`[GoogleCalendar] Could not read app_config:`, err);
+      return null;
+    }
+  }
+
+  private async saveCalendarId(calendarId: string): Promise<void> {
+    const sb = this.getSupabaseClient();
+    if (!sb) return;
+
+    try {
+      const response = await fetch(
+        `${sb.url}/rest/v1/app_config`,
+        {
+          method: 'POST',
+          headers: {
+            apikey: sb.key,
+            Authorization: `Bearer ${sb.key}`,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates',
+          },
+          body: JSON.stringify({
+            key: 'gcal_calendar_id',
+            value: calendarId,
+            updated_at: new Date().toISOString(),
+          }),
+        }
+      );
+
+      if (response.ok || response.status === 201) {
+        console.log(`[GoogleCalendar] Saved calendar ID to app_config: ${calendarId}`);
+      } else {
+        const text = await response.text();
+        console.error(`[GoogleCalendar] Failed to save calendar ID (${response.status}): ${text}`);
+      }
+    } catch (err) {
+      console.error(`[GoogleCalendar] Error saving calendar ID:`, err);
     }
   }
 
@@ -327,6 +473,7 @@ export class GoogleCalendarService {
 
   // Update an existing event
   async updateEvent(eventId: string, updates: Partial<CreateEventParams>): Promise<CalendarEvent> {
+    await this.ensureCalendarAccess();
     const token = await this.getAccessToken();
 
     const patch: Record<string, unknown> = {};
@@ -363,6 +510,7 @@ export class GoogleCalendarService {
 
   // Delete an event
   async deleteEvent(eventId: string): Promise<boolean> {
+    await this.ensureCalendarAccess();
     const token = await this.getAccessToken();
 
     const response = await fetch(
@@ -389,6 +537,7 @@ export class GoogleCalendarService {
 
   // Get a single event by ID
   async getEvent(eventId: string): Promise<CalendarEvent | null> {
+    await this.ensureCalendarAccess();
     const token = await this.getAccessToken();
 
     const response = await fetch(
