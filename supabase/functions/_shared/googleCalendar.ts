@@ -137,14 +137,18 @@ export class GoogleCalendarService {
       }),
     });
 
+    const responseText = await response.text();
+    console.log(`[GoogleCalendar] Token exchange status: ${response.status}`);
+
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to get access token: ${error}`);
+      console.error(`[GoogleCalendar] Token exchange failed: ${responseText}`);
+      throw new Error(`Failed to get access token: ${responseText}`);
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
     this.accessToken = data.access_token;
     this.tokenExpiry = now + data.expires_in;
+    console.log(`[GoogleCalendar] Got access token, expires in ${data.expires_in}s, scope: ${data.scope || 'not specified'}`);
 
     return this.accessToken!;
   }
@@ -184,6 +188,28 @@ export class GoogleCalendarService {
     // Convert to base64url
     const base64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  // Debug: list calendars accessible to the service account
+  async debugListCalendars(): Promise<void> {
+    const token = await this.getAccessToken();
+    try {
+      const response = await fetch(`${GOOGLE_CALENDAR_API}/users/me/calendarList`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      console.log(`[GoogleCalendar] calendarList status: ${response.status}`);
+      if (data.items) {
+        console.log(`[GoogleCalendar] Accessible calendars (${data.items.length}):`);
+        for (const cal of data.items) {
+          console.log(`  - ${cal.id} (${cal.summary || 'no summary'}, accessRole: ${cal.accessRole})`);
+        }
+      } else {
+        console.log(`[GoogleCalendar] calendarList response: ${JSON.stringify(data).substring(0, 500)}`);
+      }
+    } catch (err) {
+      console.error(`[GoogleCalendar] calendarList error:`, err);
+    }
   }
 
   // List events between two dates
