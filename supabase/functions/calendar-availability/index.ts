@@ -80,9 +80,6 @@ Deno.serve(async (req) => {
     // Get calendar instance
     const calendar = getGoogleCalendar();
 
-    // Debug: check what calendars the service account can see
-    await calendar.debugListCalendars();
-
     // Calculate time window for Google Calendar query
     const now = startFromISO ? new Date(startFromISO) : new Date();
     const windowStart = new Date(now);
