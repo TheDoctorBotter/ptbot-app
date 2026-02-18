@@ -82,11 +82,15 @@ export class GoogleCalendarService {
     this.calendarId = Deno.env.get('GCAL_CALENDAR_ID') || '';
     const credentialsJson = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON') || '';
 
+    console.log(`[GoogleCalendar] Calendar ID: "${this.calendarId}"`);
+    console.log(`[GoogleCalendar] Credentials JSON length: ${credentialsJson.length}`);
+
     if (!this.calendarId || !credentialsJson) {
       throw new Error('Missing GCAL_CALENDAR_ID or GOOGLE_SERVICE_ACCOUNT_JSON');
     }
 
     this.credentials = JSON.parse(credentialsJson);
+    console.log(`[GoogleCalendar] Service account email: ${this.credentials.client_email}`);
   }
 
   // Create a JWT and exchange it for an access token
@@ -194,9 +198,10 @@ export class GoogleCalendarService {
       maxResults: '250',
     });
 
-    const response = await fetch(
-      `${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(this.calendarId)}/events?${params}`,
-      {
+    const url = `${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(this.calendarId)}/events?${params}`;
+    console.log(`[GoogleCalendar] Fetching events from: ${url.substring(0, 150)}...`);
+
+    const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -205,6 +210,7 @@ export class GoogleCalendarService {
 
     if (!response.ok) {
       const error = await response.text();
+      console.error(`[GoogleCalendar] API error: ${error}`);
       throw new Error(`Failed to list events: ${error}`);
     }
 
