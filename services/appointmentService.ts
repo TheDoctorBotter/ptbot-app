@@ -220,26 +220,40 @@ export class AppointmentService {
 
   /**
    * Get user's appointments
+   * Queries the database directly so RLS handles scoping:
+   * patients see only their own rows, PT/admin see all rows.
    */
   async getMyAppointments(options?: {
     status?: string;
     upcoming?: boolean;
     limit?: number;
   }): Promise<{ ok: boolean; appointments: Appointment[]; count: number }> {
-    const queryParams: Record<string, string> = {};
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
+    }
+
+    let query = supabase
+      .from('appointments')
+      .select('*')
+      .order('start_time', { ascending: true })
+      .limit(options?.limit ?? 50);
 
     if (options?.status) {
-      queryParams.status = options.status;
-    }
-    if (options?.upcoming) {
-      queryParams.upcoming = 'true';
-    }
-    if (options?.limit) {
-      queryParams.limit = String(options.limit);
+      query = query.eq('status', options.status);
     }
 
-    const response = await this.callFunction('calendar-appointments', 'GET', undefined, queryParams);
-    return response as { ok: boolean; appointments: Appointment[]; count: number };
+    if (options?.upcoming) {
+      query = query.gte('start_time', new Date().toISOString());
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message || 'Failed to fetch appointments');
+    }
+
+    const appointments = (data ?? []) as Appointment[];
+    return { ok: true, appointments, count: appointments.length };
   }
 
   /**
