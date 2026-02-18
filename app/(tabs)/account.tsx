@@ -848,6 +848,7 @@ export default function AccountScreen() {
             onConsentAccepted={() => setShowConsentViewer(false)}
             onCancel={() => setShowConsentViewer(false)}
             isModal
+            viewOnly
             userId={user?.id}
           />
         </Modal>
