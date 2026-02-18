@@ -59,6 +59,12 @@ interface TelehealthConsentScreenProps {
    * If not provided, will use current authenticated user
    */
   userId?: string;
+
+  /**
+   * When true, shows the consent text in read-only mode (for viewing from settings).
+   * Skips the auto-redirect when consent is already accepted.
+   */
+  viewOnly?: boolean;
 }
 
 export default function TelehealthConsentScreen({
@@ -66,6 +72,7 @@ export default function TelehealthConsentScreen({
   onCancel,
   isModal = false,
   userId: propUserId,
+  viewOnly = false,
 }: TelehealthConsentScreenProps) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -116,8 +123,8 @@ export default function TelehealthConsentScreen({
         const status = await telehealthConsentService.getConsentStatus(userId);
         setConsentStatus(status);
 
-        // If already has valid consent, notify parent
-        if (status.hasValidConsent) {
+        // If already has valid consent, notify parent (unless viewing read-only)
+        if (status.hasValidConsent && !viewOnly) {
           onConsentAccepted();
         }
       } catch (err) {
@@ -206,17 +213,99 @@ export default function TelehealthConsentScreen({
     );
   }
 
-  // Already consented - this should redirect via useEffect
+  // Already consented - show read-only view if viewOnly, otherwise redirect via useEffect
   if (consentStatus?.hasValidConsent) {
+    if (!viewOnly) {
+      return (
+        <SafeAreaView style={[styles.container, isModal && styles.modalContainer]}>
+          <View style={styles.successContainer}>
+            <Check size={48} color={colors.success[500]} />
+            <Text style={styles.successTitle}>Consent Recorded</Text>
+            <Text style={styles.successText}>
+              You have already accepted the telehealth consent agreement.
+            </Text>
+          </View>
+        </SafeAreaView>
+      );
+    }
+
+    // View-only mode: show the consent text with a close button
     return (
       <SafeAreaView style={[styles.container, isModal && styles.modalContainer]}>
-        <View style={styles.successContainer}>
-          <Check size={48} color={colors.success[500]} />
-          <Text style={styles.successTitle}>Consent Recorded</Text>
-          <Text style={styles.successText}>
-            You have already accepted the telehealth consent agreement.
+        <View style={styles.header}>
+          <View style={styles.headerIcon}>
+            <FileCheck size={28} color={colors.white} />
+          </View>
+          <Text style={styles.headerTitle}>Telehealth Consent</Text>
+          <Text style={styles.headerSubtitle}>
+            Your accepted consent agreement
           </Text>
+          {onCancel && (
+            <TouchableOpacity style={styles.closeButton} onPress={onCancel}>
+              <X size={24} color={colors.white} />
+            </TouchableOpacity>
+          )}
         </View>
+
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+        >
+          <View style={styles.viewOnlyBanner}>
+            <Check size={18} color={colors.success[600]} />
+            <Text style={styles.viewOnlyBannerText}>
+              You accepted this consent on{' '}
+              {consentStatus.acceptedAt
+                ? new Date(consentStatus.acceptedAt).toLocaleDateString()
+                : 'a previous date'}
+            </Text>
+          </View>
+
+          <View style={styles.versionBadge}>
+            <Text style={styles.versionText}>Version: {version}</Text>
+          </View>
+
+          <View style={styles.keyPointsCard}>
+            <Text style={styles.keyPointsTitle}>Key Points</Text>
+            <View style={styles.keyPoint}>
+              <Shield size={18} color={colors.info[600]} />
+              <Text style={styles.keyPointText}>
+                Your telehealth sessions are secure and HIPAA-compliant
+              </Text>
+            </View>
+            <View style={styles.keyPoint}>
+              <MapPin size={18} color={colors.info[600]} />
+              <Text style={styles.keyPointText}>
+                You must be physically located in Texas during each session
+              </Text>
+            </View>
+            <View style={styles.keyPoint}>
+              <Clock size={18} color={colors.info[600]} />
+              <Text style={styles.keyPointText}>
+                Telehealth is not for emergencies - call 911 if needed
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.consentCard}>
+            <Text style={styles.consentTitle}>Informed Consent Agreement</Text>
+            <View style={styles.consentTextContainer}>
+              <Text style={styles.consentText}>{text}</Text>
+            </View>
+          </View>
+
+          {onCancel && (
+            <TouchableOpacity
+              style={styles.viewOnlyCloseButton}
+              onPress={onCancel}
+            >
+              <Text style={styles.viewOnlyCloseButtonText}>Close</Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -621,7 +710,7 @@ const styles = StyleSheet.create({
     lineHeight: typography.fontSize.sm * typography.lineHeight.normal,
   },
   buttonContainer: {
-    gap: spacing[3],
+    marginTop: spacing[2],
   },
   acceptButton: {
     backgroundColor: colors.primary[500],
@@ -642,10 +731,17 @@ const styles = StyleSheet.create({
   },
   declineButton: {
     alignItems: 'center',
+    justifyContent: 'center',
     padding: spacing[3],
+    marginTop: spacing[3],
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.neutral[300],
+    backgroundColor: colors.white,
   },
   declineButtonText: {
     fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.medium,
     color: colors.neutral[600],
   },
   cancelButton: {
@@ -658,6 +754,36 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.base,
     color: colors.neutral[700],
     fontWeight: typography.fontWeight.medium,
+  },
+  viewOnlyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.success[50],
+    padding: spacing[4],
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing[4],
+    gap: spacing[3],
+    borderWidth: 1,
+    borderColor: colors.success[200],
+  },
+  viewOnlyBannerText: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    color: colors.success[700],
+    fontWeight: typography.fontWeight.medium,
+  },
+  viewOnlyCloseButton: {
+    backgroundColor: colors.primary[500],
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing[4],
+    borderRadius: borderRadius.lg,
+    marginTop: spacing[2],
+  },
+  viewOnlyCloseButtonText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.white,
   },
   bottomSpacer: {
     height: spacing[8],
