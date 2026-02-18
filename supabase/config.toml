@@ -32,3 +32,11 @@ verify_jwt = true
 # stripe-webhook: Public endpoint - Stripe sends webhooks without JWT
 [functions.stripe-webhook]
 verify_jwt = false
+
+# get-plan-exercises: Requires auth - enforces exercise access limits server-side
+[functions.get-plan-exercises]
+verify_jwt = true
+
+# consume-telehealth-credit: Requires auth - atomically deducts a consult credit
+[functions.consume-telehealth-credit]
+verify_jwt = true
