@@ -18,6 +18,9 @@ import type { AssessmentData, AssessmentResult, ExerciseRecommendation, PostOpDa
 import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { useEntitlements } from '@/hooks/useEntitlements';
+import PaywallCard from '@/components/PaywallCard';
+import { FREE_EXERCISE_PREVIEW_COUNT } from '@/src/config/stripe';
 // Note: Outcome service functions are imported but questionnaire steps are disabled
 // To re-enable questionnaires, uncomment the steps in getStepConfig()
 import {
@@ -118,6 +121,9 @@ export default function AssessmentScreen() {
   // To re-enable, change false to: params.mode === 'followup'
   const isFollowUpMode = false; // params.mode === 'followup';
   const followUpConditionTag = params.conditionTag || null;
+
+  // Entitlements (freemium gating)
+  const { canAccessFullPlan, refresh: refreshEntitlements } = useEntitlements();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [assessmentData, setAssessmentData] = useState<Partial<AssessmentData>>({
@@ -1952,26 +1958,46 @@ export default function AssessmentScreen() {
         </View>
 
         {/* Exercise Recommendations - Displayed Inline */}
-        {assessmentResult.recommendations.length > 0 && (
-          <View style={styles.exercisesSection}>
-            <Text style={styles.exercisesSectionTitle}>
-              Your Personalized Exercises
-            </Text>
-            <Text style={styles.exercisesSectionSubtitle}>
-              {assessmentResult.recommendations.length} exercises matched for your {assessmentData.painLocation?.toLowerCase()} pain
-            </Text>
+        {assessmentResult.recommendations.length > 0 && (() => {
+          const condition = assessmentData.painLocation ?? undefined;
+          const entitled  = canAccessFullPlan(condition);
+          const visible   = entitled
+            ? assessmentResult.recommendations
+            : assessmentResult.recommendations.slice(0, FREE_EXERCISE_PREVIEW_COUNT);
+          const total     = assessmentResult.recommendations.length;
 
-            {assessmentResult.recommendations.map((rec, index) => renderExerciseCard(rec, index))}
-
-            <View style={styles.disclaimerBox}>
-              <Text style={styles.disclaimerText}>
-                These exercises are educational recommendations, not medical advice.
-                Consult with a healthcare provider before starting any exercise program,
-                especially if you have significant pain or medical conditions.
+          return (
+            <View style={styles.exercisesSection}>
+              <Text style={styles.exercisesSectionTitle}>
+                Your Personalized Exercises
               </Text>
+              <Text style={styles.exercisesSectionSubtitle}>
+                {entitled
+                  ? `${total} exercises matched for your ${condition?.toLowerCase() ?? ''} pain`
+                  : `Showing ${visible.length} of ${total} exercises for your ${condition?.toLowerCase() ?? ''} pain`
+                }
+              </Text>
+
+              {visible.map((rec, index) => renderExerciseCard(rec, index))}
+
+              {/* Paywall — shown only to free users with more exercises available */}
+              {!entitled && total > FREE_EXERCISE_PREVIEW_COUNT && (
+                <PaywallCard
+                  condition={condition}
+                  onEntitlementsRefresh={refreshEntitlements}
+                />
+              )}
+
+              <View style={styles.disclaimerBox}>
+                <Text style={styles.disclaimerText}>
+                  These exercises are educational recommendations, not medical advice.
+                  Consult with a healthcare provider before starting any exercise program,
+                  especially if you have significant pain or medical conditions.
+                </Text>
+              </View>
             </View>
-          </View>
-        )}
+          );
+        })()}
 
         {/* No Recommendations (Critical Risk) */}
         {assessmentResult.recommendations.length === 0 && assessmentResult.riskLevel === 'critical' && (

@@ -19,6 +19,8 @@ import { Calendar, Clock, Check, X, ChevronRight, Phone, Mail, User, Shield, Map
 import { colors, spacing, borderRadius, typography, shadows } from '@/constants/theme';
 import { appointmentService, DaySlots, Appointment } from '@/services/appointmentService';
 import { supabase } from '@/lib/supabase';
+import { useEntitlements } from '@/hooks/useEntitlements';
+import PaywallCard from '@/components/PaywallCard';
 import { telehealthConsentService, checkPreConsultRequirements } from '@/services/telehealthService';
 import TelehealthConsentScreen from '@/components/telehealth/TelehealthConsentScreen';
 import LocationVerificationModal from '@/components/telehealth/LocationVerificationModal';
@@ -50,6 +52,10 @@ export default function ScheduleScreen() {
   // User state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+
+  // Telehealth credit / entitlement state
+  const { canBookTelehealth, telehealthCreditsAvailable, refresh: refreshEntitlements } = useEntitlements();
+  const [showTelehealthPaywall, setShowTelehealthPaywall] = useState(false);
 
   // Telehealth consent state
   const [showConsentModal, setShowConsentModal] = useState(false);
@@ -176,6 +182,12 @@ export default function ScheduleScreen() {
       return;
     }
 
+    // Telehealth credit check: logged-in users must have a credit to book
+    if (isLoggedIn && !canBookTelehealth) {
+      setShowTelehealthPaywall(true);
+      return;
+    }
+
     // Require consent for logged-in users before booking
     if (isLoggedIn && !hasValidConsent) {
       setShowConsentModal(true);
@@ -202,6 +214,19 @@ export default function ScheduleScreen() {
       setSuccessMessage(response.message);
       setSelectedSlot(null);
       setNotes('');
+
+      // Consume telehealth credit after a successful booking (best-effort)
+      if (isLoggedIn && canBookTelehealth && supabase && response.appointment?.id) {
+        try {
+          await supabase.functions.invoke('consume-telehealth-credit', {
+            method: 'POST',
+            body: { appointment_id: response.appointment.id },
+          });
+          refreshEntitlements();
+        } catch (creditErr) {
+          console.warn('[schedule] Credit consumption failed:', creditErr);
+        }
+      }
 
       // Reload availability
       await loadAvailability();
@@ -489,6 +514,48 @@ export default function ScheduleScreen() {
               </>
             )}
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Telehealth Credit Banner (for logged-in users) */}
+      {isLoggedIn && (
+        <View>
+          <TouchableOpacity
+            style={[
+              styles.consentBanner,
+              canBookTelehealth ? styles.consentBannerValid : styles.consentBannerRequired,
+            ]}
+            onPress={() => !canBookTelehealth && setShowTelehealthPaywall(!showTelehealthPaywall)}
+            disabled={canBookTelehealth}
+          >
+            <Calendar
+              size={18}
+              color={canBookTelehealth ? colors.success[600] : colors.warning[600]}
+            />
+            <Text
+              style={[
+                styles.consentBannerText,
+                canBookTelehealth ? styles.consentBannerTextValid : styles.consentBannerTextRequired,
+              ]}
+            >
+              {canBookTelehealth
+                ? `${telehealthCreditsAvailable} telehealth credit${telehealthCreditsAvailable !== 1 ? 's' : ''} available`
+                : 'No consult credits — tap to purchase'}
+            </Text>
+            {canBookTelehealth ? (
+              <Check size={16} color={colors.success[600]} />
+            ) : (
+              <ChevronRight size={16} color={colors.warning[600]} />
+            )}
+          </TouchableOpacity>
+          {showTelehealthPaywall && !canBookTelehealth && (
+            <PaywallCard
+              onEntitlementsRefresh={() => {
+                refreshEntitlements();
+                setShowTelehealthPaywall(false);
+              }}
+            />
+          )}
         </View>
       )}
 
