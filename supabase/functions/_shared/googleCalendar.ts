@@ -200,25 +200,32 @@ export class GoogleCalendarService {
 
     const token = await this.getAccessToken();
 
-    // Check if calendar is already in the list
+    // First, list ALL calendars the service account can see
     try {
-      const checkResponse = await fetch(
-        `${GOOGLE_CALENDAR_API}/users/me/calendarList/${encodeURIComponent(this.calendarId)}`,
+      const listResponse = await fetch(
+        `${GOOGLE_CALENDAR_API}/users/me/calendarList`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      const listData = await listResponse.json();
+      const items = listData.items || [];
+      console.log(`[GoogleCalendar] Service account has ${items.length} calendar(s) in list`);
+      for (const cal of items) {
+        console.log(`[GoogleCalendar]   - ${cal.id} (role: ${cal.accessRole})`);
+      }
 
-      if (checkResponse.ok) {
-        console.log(`[GoogleCalendar] Calendar already in calendarList`);
+      // Check if our target calendar is already there
+      const found = items.find((c: Record<string, string>) => c.id === this.calendarId);
+      if (found) {
+        console.log(`[GoogleCalendar] Target calendar already in list (role: ${found.accessRole})`);
         this.calendarAccessEnsured = true;
         return;
       }
-
-      console.log(`[GoogleCalendar] Calendar not in calendarList (${checkResponse.status}), subscribing...`);
     } catch (err) {
-      console.log(`[GoogleCalendar] Error checking calendarList, attempting subscribe...`);
+      console.error(`[GoogleCalendar] Error listing calendars:`, err);
     }
 
-    // Subscribe the service account to the shared calendar
+    // Try to subscribe the service account to the shared calendar
+    console.log(`[GoogleCalendar] Attempting to subscribe to calendar: ${this.calendarId}`);
     try {
       const insertResponse = await fetch(
         `${GOOGLE_CALENDAR_API}/users/me/calendarList`,
@@ -235,10 +242,16 @@ export class GoogleCalendarService {
       const insertData = await insertResponse.json();
 
       if (insertResponse.ok) {
-        console.log(`[GoogleCalendar] Successfully subscribed to calendar: ${insertData.summary || this.calendarId}`);
+        console.log(`[GoogleCalendar] Successfully subscribed to calendar: ${insertData.summary || this.calendarId} (role: ${insertData.accessRole})`);
         this.calendarAccessEnsured = true;
       } else {
-        console.error(`[GoogleCalendar] Failed to subscribe to calendar (${insertResponse.status}): ${JSON.stringify(insertData)}`);
+        const errMsg = JSON.stringify(insertData);
+        console.error(`[GoogleCalendar] Subscribe failed (${insertResponse.status}): ${errMsg}`);
+        if (insertResponse.status === 404) {
+          console.error(`[GoogleCalendar] 404 = Calendar not found or not shared. The calendar owner must share it with: ${this.credentials.client_email}`);
+        } else if (insertResponse.status === 403) {
+          console.error(`[GoogleCalendar] 403 = Access denied. Check that the service account has the calendar scope.`);
+        }
       }
     } catch (err) {
       console.error(`[GoogleCalendar] Error subscribing to calendar:`, err);
