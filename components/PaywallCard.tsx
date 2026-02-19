@@ -34,6 +34,7 @@ interface PaywallCardProps {
 
 export default function PaywallCard({ condition, onEntitlementsRefresh }: PaywallCardProps) {
   const [loadingType, setLoadingType] = useState<ProductType | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handlePurchase = async (productType: ProductType) => {
     if (!supabase) {
@@ -68,6 +69,7 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
     }
 
     setLoadingType(productType);
+    setErrorMsg(null);
     try {
       if (!supabaseUrl) {
         throw new Error(
@@ -137,7 +139,8 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
       console.error('[PaywallCard] checkout error:', msg);
-      Alert.alert('Checkout error', msg);
+      setErrorMsg(msg);
+      if (Platform.OS !== 'web') Alert.alert('Checkout error', msg);
     } finally {
       setLoadingType(null);
     }
@@ -206,6 +209,12 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
           </View>
         );
       })}
+
+      {errorMsg && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{errorMsg}</Text>
+        </View>
+      )}
 
       <Text style={styles.disclaimer}>
         Payments are processed securely by Stripe. Cancel anytime for subscriptions.
@@ -310,6 +319,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
+  },
+  errorBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+    marginTop: spacing[2],
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: typography.fontSize.xs,
+    lineHeight: typography.fontSize.xs * 1.5,
   },
   disclaimer: {
     fontSize: typography.fontSize.xs,
