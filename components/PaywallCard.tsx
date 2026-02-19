@@ -41,32 +41,16 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
       return;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      Alert.alert('Sign in required', 'Please sign in to purchase.');
-      return;
-    }
-
-    setLoadingType(productType);
-    try {
-      // Determine success / cancel URLs
-      const appUrl = (process.env.EXPO_PUBLIC_APP_URL ?? '').replace(/\/$/, '');
-      const successUrl = appUrl
-        ? `${appUrl}/checkout/success`
-        : 'https://ptbot.app/checkout/success';
-      const cancelUrl = appUrl
-        ? `${appUrl}/checkout/cancel`
-        : 'https://ptbot.app/checkout/cancel';
-
-      // Direct fetch – bypasses supabase.functions.invoke whose internal auth-header
-      // attachment is unreliable in React Native (async listener race on session restore).
+    // Helper: try checkout with a given token; returns the fetch Response.
+    const attemptCheckout = async (token: string, successUrl: string, cancelUrl: string) => {
       const fnUrl = `${supabaseUrl}/functions/v1/stripe-checkout`;
-      const response = await fetch(fnUrl, {
+      console.log('[PaywallCard] POST', fnUrl, 'product:', productType);
+      return fetch(fnUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': supabaseAnonKey,
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           product_type: productType,
@@ -75,26 +59,79 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
           ...(condition && productType === 'plan_onetime' ? { condition } : {}),
         }),
       });
+    };
 
-      const data = await response.json().catch(() => ({}));
+    let { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      Alert.alert('Sign in required', 'Please sign in to purchase.');
+      return;
+    }
 
-      if (!response.ok || !data?.url) {
-        const detail = data?.error ?? `HTTP ${response.status}`;
-        console.error('[PaywallCard] checkout failed:', detail);
-        throw new Error(detail);
+    setLoadingType(productType);
+    try {
+      if (!supabaseUrl) {
+        throw new Error(
+          'EXPO_PUBLIC_SUPABASE_URL is not set. ' +
+          'Add it to your .env file and to Vercel → Settings → Environment Variables, then redeploy.'
+        );
       }
 
-      // Debug line – checkout_url only, no PHI
-      console.log('[PaywallCard] opening checkout_url:', data.url);
+      const appUrl = (process.env.EXPO_PUBLIC_APP_URL ?? '').replace(/\/$/, '');
+      const successUrl = appUrl ? `${appUrl}/checkout/success` : 'https://ptbot.app/checkout/success';
+      const cancelUrl  = appUrl ? `${appUrl}/checkout/cancel`  : 'https://ptbot.app/checkout/cancel';
 
-      // Open Stripe hosted checkout in browser
+      let response: Response;
+      try {
+        response = await attemptCheckout(session.access_token, successUrl, cancelUrl);
+      } catch (networkErr) {
+        throw new Error(
+          `Cannot reach Supabase (${networkErr instanceof Error ? networkErr.message : 'network error'}). ` +
+          `URL: ${supabaseUrl}`
+        );
+      }
+
+      // 401 → the stored JWT may be stale (e.g. after switching Supabase projects).
+      // Attempt one silent token refresh then retry before surfacing the error.
+      if (response.status === 401) {
+        console.log('[PaywallCard] 401 – attempting session refresh...');
+        const { data: { session: refreshed }, error: refreshErr } =
+          await supabase.auth.refreshSession();
+        if (refreshErr || !refreshed) {
+          throw new Error(
+            'Your session has expired or belongs to a different project.\n' +
+            'Please sign out and sign back in, then try again.'
+          );
+        }
+        session = refreshed;
+        try {
+          response = await attemptCheckout(session.access_token, successUrl, cancelUrl);
+        } catch (networkErr) {
+          throw new Error(`Cannot reach Supabase after token refresh. URL: ${supabaseUrl}`);
+        }
+      }
+
+      const rawText = await response.text();
+      console.log('[PaywallCard] response', response.status, rawText.slice(0, 300));
+
+      let data: any = {};
+      try { data = JSON.parse(rawText); } catch { /* non-JSON body */ }
+
+      if (!response.ok || !data?.url) {
+        const detail =
+          (data?.error ??
+          data?.message ??
+          (rawText.length < 200 ? rawText : '')) ||
+          `HTTP ${response.status}`;
+        throw new Error(`[${response.status}] ${detail}`);
+      }
+
+      console.log('[PaywallCard] checkout_url:', data.url);
       if (Platform.OS === 'web') {
         window.location.assign(data.url);
       } else {
         await Linking.openURL(data.url);
       }
 
-      // After the user comes back, refresh entitlements
       onEntitlementsRefresh?.();
 
     } catch (err) {
