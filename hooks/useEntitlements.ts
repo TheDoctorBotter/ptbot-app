@@ -82,6 +82,10 @@ export function useEntitlements(): EntitlementState {
   const [creditsAvailable, setCreditsAvailable] = useState(0);
 
   const appState = useRef(AppState.currentState);
+  // Timestamp of the last successful fetch; prevents redundant network calls
+  // when the user rapidly switches apps or tabs (30-second minimum interval).
+  const lastFetchedAt = useRef<number>(0);
+  const CACHE_TTL_MS = 30_000;
 
   const fetchEntitlements = useCallback(async () => {
     if (!supabase) {
@@ -131,6 +135,7 @@ export function useEntitlements(): EntitlementState {
       setError(err instanceof Error ? err.message : 'Failed to load entitlements');
     } finally {
       setLoading(false);
+      lastFetchedAt.current = Date.now();
     }
   }, []);
 
@@ -139,11 +144,14 @@ export function useEntitlements(): EntitlementState {
     fetchEntitlements();
   }, [fetchEntitlements]);
 
-  // Re-fetch when app returns to foreground (user may have completed checkout)
+  // Re-fetch when app returns to foreground (user may have completed checkout).
+  // Guarded by CACHE_TTL_MS to prevent unnecessary requests on rapid app switches.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (appState.current.match(/inactive|background/) && nextState === 'active') {
-        fetchEntitlements();
+        if (Date.now() - lastFetchedAt.current > CACHE_TTL_MS) {
+          fetchEntitlements();
+        }
       }
       appState.current = nextState;
     });

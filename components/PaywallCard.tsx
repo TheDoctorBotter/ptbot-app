@@ -70,17 +70,29 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
       });
 
       if (error || !data?.url) {
-        throw new Error(error?.message ?? 'No checkout URL returned');
+        // data may still carry the function's JSON body (e.g. { error: "No such price" })
+        // even when the HTTP status was non-2xx, giving a more actionable message.
+        const detail = (data as any)?.error ?? error?.message ?? 'No checkout URL returned';
+        console.error('[PaywallCard] checkout failed:', detail);
+        throw new Error(detail);
       }
 
+      // Debug line – checkout_url only, no PHI
+      console.log('[PaywallCard] opening checkout_url:', data.url);
+
       // Open Stripe hosted checkout in browser
-      await Linking.openURL(data.url);
+      if (Platform.OS === 'web') {
+        window.location.assign(data.url);
+      } else {
+        await Linking.openURL(data.url);
+      }
 
       // After the user comes back, refresh entitlements
       onEntitlementsRefresh?.();
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
+      console.error('[PaywallCard] checkout error:', msg);
       Alert.alert('Checkout error', msg);
     } finally {
       setLoadingType(null);
