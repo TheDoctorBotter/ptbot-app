@@ -136,7 +136,8 @@ export type ConsultNoteType =
   | 'telehealth_consult'
   | 'follow_up'
   | 'initial_evaluation'
-  | 'progress_note';
+  | 'progress_note'
+  | 'ptbot_import';
 
 /**
  * SOAP note structure for clinical documentation
@@ -163,9 +164,9 @@ export interface ClinicalFlags {
  */
 export interface ConsultNote {
   id: string;
-  appointment_id: string;
+  appointment_id: string | null;   // null for PTBot-generated notes
   patient_user_id: string;
-  clinician_user_id: string;
+  clinician_user_id: string | null; // null for PTBot-generated notes
   note_type: ConsultNoteType;
 
   // SOAP content
@@ -201,7 +202,7 @@ export interface ConsultNote {
  * Payload for creating/updating a consult note
  */
 export interface UpsertConsultNotePayload {
-  appointment_id: string;
+  appointment_id?: string | null; // optional for PTBot-generated notes
   patient_user_id: string;
 
   // SOAP content
