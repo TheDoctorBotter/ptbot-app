@@ -547,8 +547,8 @@ export default function ScheduleScreen() {
         </View>
       )}
 
-      {/* Telehealth Credit Banner (for logged-in users) */}
-      {isLoggedIn && (
+      {/* Telehealth Credit Banner (for logged-in patients only, not admin) */}
+      {isLoggedIn && !isClinicStaff && (
         <View>
           <TouchableOpacity
             style={[
@@ -589,8 +589,8 @@ export default function ScheduleScreen() {
         </View>
       )}
 
-      {/* Consent Status Banner (for logged-in users) */}
-      {isLoggedIn && !checkingConsent && (
+      {/* Consent Status Banner (for logged-in patients only, not admin) */}
+      {isLoggedIn && !checkingConsent && !isClinicStaff && (
         <TouchableOpacity
           style={[
             styles.consentBanner,
@@ -832,9 +832,13 @@ export default function ScheduleScreen() {
             <View style={styles.iconContainer}>
               <Calendar size={32} color={colors.white} />
             </View>
-            <Text style={styles.title}>Schedule a Call</Text>
+            <Text style={styles.title}>
+              {isClinicStaff ? 'Manage Consultations' : 'Schedule a Call'}
+            </Text>
             <Text style={styles.subtitle}>
-              Book a PTBot Zoom consultation
+              {isClinicStaff
+                ? 'View and manage patient zoom consults'
+                : 'Book a PTBot Zoom consultation'}
             </Text>
           </View>
 

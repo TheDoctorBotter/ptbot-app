@@ -752,20 +752,8 @@ export default function AccountScreen() {
               >
                 <ClipboardList size={20} color={colors.primary[500]} />
                 <View style={styles.actionButtonContent}>
-                  <Text style={styles.clinicSettingsTitle}>Consult Management</Text>
-                  <Text style={styles.actionButtonSubtext}>Document telehealth sessions</Text>
-                </View>
-                <Text style={styles.actionButtonArrow}>→</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => setShowConsultManagement(true)}
-              >
-                <FileText size={20} color={colors.primary[500]} />
-                <View style={styles.actionButtonContent}>
-                  <Text style={styles.clinicSettingsTitle}>SOAP Notes</Text>
-                  <Text style={styles.actionButtonSubtext}>Review and edit clinical notes</Text>
+                  <Text style={styles.clinicSettingsTitle}>Telehealth Sessions & SOAP Notes</Text>
+                  <Text style={styles.actionButtonSubtext}>View, document & export consult notes</Text>
                 </View>
                 <Text style={styles.actionButtonArrow}>→</Text>
               </TouchableOpacity>

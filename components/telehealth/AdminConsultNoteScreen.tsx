@@ -40,7 +40,8 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { consultNotesService, appointmentService } from '@/services/telehealthService';
+import { consultNotesService } from '@/services/telehealthService';
+import { appointmentService } from '@/services/appointmentService';
 import { AdminConsultOverview, ConsultNote, UpsertConsultNotePayload } from '@/types/telehealth';
 
 interface AdminConsultNoteScreenProps {
@@ -152,13 +153,12 @@ export default function AdminConsultNoteScreen({
 
       await consultNotesService.upsertNote(payload, user.id);
 
-      // Mark appointment as completed if it was scheduled/confirmed
+      // Mark appointment as completed when note is saved
       if (consult.appointment_status === 'scheduled' || consult.appointment_status === 'confirmed') {
         try {
-          // TODO: Update appointment status through Edge Function
-          // await appointmentService.completeAppointment(consult.appointment_id);
+          await appointmentService.completeAppointment(consult.appointment_id, 'Note documented');
         } catch {
-          // Non-critical error
+          // Non-critical — note was saved, status update is best-effort
         }
       }
 
