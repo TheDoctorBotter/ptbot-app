@@ -75,6 +75,16 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
       return;
     }
 
+    // On mobile, getSession() returns the cached JWT which may already be expired
+    // (background auto-refresh doesn't always run when the app is backgrounded).
+    // Proactively refresh whenever the token is expired or within 60 s of expiry.
+    const secsUntilExpiry = (session.expires_at ?? 0) - Date.now() / 1000;
+    if (secsUntilExpiry < 60) {
+      console.log('[PaywallCard] token near/past expiry, refreshing...');
+      const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+      if (refreshed) session = refreshed;
+    }
+
     setLoadingType(productType);
     setErrorMsg(null);
     try {
@@ -114,6 +124,7 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
           );
         }
         session = refreshed;
+        console.log('[PaywallCard] refresh ok, retrying checkout...');
         try {
           response = await attemptCheckout(session.access_token, successUrl, cancelUrl);
         } catch (networkErr) {
