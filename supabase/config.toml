@@ -2,46 +2,48 @@
 # https://supabase.com/docs/guides/functions/config
 
 # =============================================================================
-# EDGE FUNCTION SETTINGS
+# EDGE FUNCTION SETTINGS – ALL functions use verify_jwt = false
 # =============================================================================
-# verify_jwt = true (default): Gateway validates JWT before forwarding request.
-#   Invalid/expired tokens return 401 before the function runs.
-# verify_jwt = false: Gateway forwards request without JWT validation.
-#   The function handles auth internally (required for anonymous access).
+# Why every function is verify_jwt = false:
+#
+# Every auth-required function validates the JWT itself via
+# supabase.auth.getUser(token).  When verify_jwt = true the Supabase gateway
+# performs its own JWT check AND can modify the Authorization header (replacing
+# the user JWT with a service-role token) before forwarding the request to the
+# function.  The function's own getUser() call then receives the wrong token
+# and returns 401 — even though the user is signed in with a valid JWT.
+#
+# Setting verify_jwt = false lets the original user JWT pass through untouched
+# so every function's internal auth check always works correctly.
 
-# calendar-availability: Public endpoint - anyone can view available slots
+# calendar-availability: Public - anyone can view available slots
 [functions.calendar-availability]
 verify_jwt = false
 
-# calendar-book: Public endpoint - supports booking with or without an account
+# calendar-book: Public - supports booking with or without an account
 [functions.calendar-book]
 verify_jwt = false
 
-# calendar-appointments: Requires auth - users must be logged in to view/manage
+# calendar-appointments: Validates JWT internally via supabase.auth.getUser()
 [functions.calendar-appointments]
-verify_jwt = true
+verify_jwt = false
 
-# openai-proxy: Requires auth - only authenticated users can use the AI chat
+# openai-proxy: Validates JWT internally via supabase.auth.getUser()
 [functions.openai-proxy]
-verify_jwt = true
+verify_jwt = false
 
-# stripe-checkout: verify_jwt = false so the Supabase gateway does NOT add a
-# second JWT check before the function runs.  The function already validates
-# the JWT internally via supabase.auth.getUser(), so gateway-level verification
-# is redundant.  Having verify_jwt = true can also produce a 401 at the gateway
-# when the JWT belongs to a project configuration the gateway doesn't recognise,
-# making the error hard to debug.
+# stripe-checkout: Validates JWT internally via supabase.auth.getUser()
 [functions.stripe-checkout]
 verify_jwt = false
 
-# stripe-webhook: Public endpoint - Stripe sends webhooks without JWT
+# stripe-webhook: Public - Stripe sends webhooks without a user JWT
 [functions.stripe-webhook]
 verify_jwt = false
 
-# get-plan-exercises: Requires auth - enforces exercise access limits server-side
+# get-plan-exercises: Validates JWT internally via supabase.auth.getUser()
 [functions.get-plan-exercises]
-verify_jwt = true
+verify_jwt = false
 
-# consume-telehealth-credit: Requires auth - atomically deducts a consult credit
+# consume-telehealth-credit: Validates JWT internally via supabase.auth.getUser()
 [functions.consume-telehealth-credit]
-verify_jwt = true
+verify_jwt = false
