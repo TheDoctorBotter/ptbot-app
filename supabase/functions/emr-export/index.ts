@@ -100,21 +100,30 @@ Deno.serve(async (req) => {
       ? '/api/ptbot/consult-notes'
       : '/api/ptbot/patients';
 
-    // Forward to Buckeye EMR
-    const emrResponse = await fetch(`${emrBaseUrl}${emrEndpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${emrApiKey}`,
-        'X-PTBot-Source': 'ptbot-telehealth',
-        'X-PTBot-User': user.id,
-      },
-      body: JSON.stringify({
-        ...payload,
-        source: 'ptbot_telehealth',
-        synced_at: new Date().toISOString(),
-      }),
-    });
+    // Forward to Buckeye EMR (15-second timeout to prevent hanging)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    let emrResponse: Response;
+    try {
+      emrResponse = await fetch(`${emrBaseUrl}${emrEndpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${emrApiKey}`,
+          'X-PTBot-Source': 'ptbot-telehealth',
+          'X-PTBot-User': user.id,
+        },
+        body: JSON.stringify({
+          ...payload,
+          source: 'ptbot_telehealth',
+          synced_at: new Date().toISOString(),
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const emrData = await emrResponse.json().catch(() => ({}));
 
@@ -123,6 +132,7 @@ Deno.serve(async (req) => {
         status: emrResponse.status,
         endpoint: emrEndpoint,
         error: emrData.error || emrData.message,
+        allowedMethods: emrResponse.headers.get('Allow'),
       });
 
       return new Response(
