@@ -153,17 +153,10 @@ export function usePatientsMissingFollowups(clinicId: string | null) {
       try {
         // Get clinic patients with their latest assessments
         const { data, error } = await supabase
-          .from('clinic_patients')
-          .select(`
-            patient_id,
-            profiles!clinic_patients_patient_id_fkey (
-              id,
-              first_name,
-              last_name
-            )
-          `)
+          .from('profiles')
+          .select('id, first_name, last_name')
           .eq('clinic_id', clinicId)
-          .eq('is_active', true);
+          .eq('role', 'patient');
 
         if (error) throw error;
 
@@ -176,7 +169,7 @@ export function usePatientsMissingFollowups(clinicId: string | null) {
           const { data: assessments } = await supabase
             .from('outcome_assessments')
             .select('condition_tag, created_at')
-            .eq('user_id', patient.patient_id)
+            .eq('user_id', patient.id)
             .order('created_at', { ascending: false })
             .limit(5);
 
@@ -193,12 +186,9 @@ export function usePatientsMissingFollowups(clinicId: string | null) {
                   (Date.now() - assessmentDate.getTime()) / (1000 * 60 * 60 * 24)
                 );
 
-                const profile = patient.profiles as any;
                 missingFollowups.push({
-                  userId: patient.patient_id,
-                  patientName: profile
-                    ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
-                    : 'Unknown',
+                  userId: patient.id,
+                  patientName: `${patient.first_name || ''} ${patient.last_name || ''}`.trim() || 'Unknown',
                   conditionTag: assessment.condition_tag,
                   lastAssessmentDate: assessment.created_at,
                   daysSinceAssessment: daysSince,
