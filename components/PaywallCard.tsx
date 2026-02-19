@@ -49,6 +49,15 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
 
     setLoadingType(productType);
     try {
+      // ── Guard: confirm env vars are present ──────────────────────────────
+      if (!supabaseUrl) {
+        throw new Error(
+          'EXPO_PUBLIC_SUPABASE_URL is not set. ' +
+          'Add it to your .env file and to Vercel → Settings → Environment Variables, ' +
+          'then redeploy.'
+        );
+      }
+
       // Determine success / cancel URLs
       const appUrl = (process.env.EXPO_PUBLIC_APP_URL ?? '').replace(/\/$/, '');
       const successUrl = appUrl
@@ -58,43 +67,58 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
         ? `${appUrl}/checkout/cancel`
         : 'https://ptbot.app/checkout/cancel';
 
-      // Direct fetch – bypasses supabase.functions.invoke whose internal auth-header
-      // attachment is unreliable in React Native (async listener race on session restore).
+      // ── Direct fetch to Supabase Edge Function ───────────────────────────
       const fnUrl = `${supabaseUrl}/functions/v1/stripe-checkout`;
-      const response = await fetch(fnUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseAnonKey,
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          product_type: productType,
-          success_url:  successUrl,
-          cancel_url:   cancelUrl,
-          ...(condition && productType === 'plan_onetime' ? { condition } : {}),
-        }),
-      });
+      console.log('[PaywallCard] POST', fnUrl, 'product:', productType);
 
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok || !data?.url) {
-        const detail = data?.error ?? `HTTP ${response.status}`;
-        console.error('[PaywallCard] checkout failed:', detail);
-        throw new Error(detail);
+      let response: Response;
+      try {
+        response = await fetch(fnUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseAnonKey,
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            product_type: productType,
+            success_url:  successUrl,
+            cancel_url:   cancelUrl,
+            ...(condition && productType === 'plan_onetime' ? { condition } : {}),
+          }),
+        });
+      } catch (networkErr) {
+        // fetch() itself threw – CORS block, DNS failure, or wrong URL
+        throw new Error(
+          `Cannot reach Supabase (${networkErr instanceof Error ? networkErr.message : 'network error'}). ` +
+          `Check that EXPO_PUBLIC_SUPABASE_URL is correct: ${supabaseUrl}`
+        );
       }
 
-      // Debug line – checkout_url only, no PHI
-      console.log('[PaywallCard] opening checkout_url:', data.url);
+      // ── Parse response ───────────────────────────────────────────────────
+      const rawText = await response.text();
+      console.log('[PaywallCard] response', response.status, rawText.slice(0, 300));
 
-      // Open Stripe hosted checkout in browser
+      let data: any = {};
+      try { data = JSON.parse(rawText); } catch { /* non-JSON body */ }
+
+      if (!response.ok || !data?.url) {
+        const detail =
+          data?.error ??
+          data?.message ??
+          (rawText.length < 200 ? rawText : '') ??
+          `HTTP ${response.status}`;
+        throw new Error(`[${response.status}] ${detail}`);
+      }
+
+      // ── Open Stripe checkout ─────────────────────────────────────────────
+      console.log('[PaywallCard] checkout_url:', data.url);
       if (Platform.OS === 'web') {
         window.location.assign(data.url);
       } else {
         await Linking.openURL(data.url);
       }
 
-      // After the user comes back, refresh entitlements
       onEntitlementsRefresh?.();
 
     } catch (err) {

@@ -127,9 +127,8 @@ export class AppointmentService {
     const query = queryParams ? `?${new URLSearchParams(queryParams).toString()}` : '';
     const url = `${supabaseUrl}/functions/v1/${functionName}${query}`;
     let accessToken = await this.getAccessToken();
+    console.log(`[AppointmentService] ${method} ${url}`);
 
-    // Build request with explicit headers – bypasses supabase.functions.invoke
-    // whose internal auth-header attachment is unreliable in React Native.
     const makeRequest = async (token: string | null) => {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -143,7 +142,15 @@ export class AppointmentService {
       });
     };
 
-    let response = await makeRequest(accessToken);
+    let response: Response;
+    try {
+      response = await makeRequest(accessToken);
+    } catch (networkErr) {
+      throw new Error(
+        `Cannot reach Supabase (${networkErr instanceof Error ? networkErr.message : 'network error'}). ` +
+        `URL: ${url}`
+      );
+    }
 
     // One automatic token-refresh retry on 401
     if (response.status === 401 && supabase) {
