@@ -24,7 +24,7 @@ import {
 } from 'react-native';
 import { Lock, Star, Video, Zap } from 'lucide-react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from '@/lib/supabase';
 import { PTBOT_PRODUCTS, type ProductType } from '@/src/config/stripe';
 
 interface PaywallCardProps {
@@ -58,21 +58,28 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
         ? `${appUrl}/checkout/cancel`
         : 'https://ptbot.app/checkout/cancel';
 
-      const { data, error } = await supabase.functions.invoke('stripe-checkout', {
+      // Direct fetch – bypasses supabase.functions.invoke whose internal auth-header
+      // attachment is unreliable in React Native (async listener race on session restore).
+      const fnUrl = `${supabaseUrl}/functions/v1/stripe-checkout`;
+      const response = await fetch(fnUrl, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: {
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
           product_type: productType,
           success_url:  successUrl,
           cancel_url:   cancelUrl,
           ...(condition && productType === 'plan_onetime' ? { condition } : {}),
-        },
+        }),
       });
 
-      if (error || !data?.url) {
-        // data may still carry the function's JSON body (e.g. { error: "No such price" })
-        // even when the HTTP status was non-2xx, giving a more actionable message.
-        const detail = (data as any)?.error ?? error?.message ?? 'No checkout URL returned';
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data?.url) {
+        const detail = data?.error ?? `HTTP ${response.status}`;
         console.error('[PaywallCard] checkout failed:', detail);
         throw new Error(detail);
       }
