@@ -46,20 +46,27 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
     const attemptCheckout = async (token: string, successUrl: string, cancelUrl: string) => {
       const fnUrl = `${supabaseUrl}/functions/v1/stripe-checkout`;
       console.log('[PaywallCard] POST', fnUrl, 'product:', productType);
-      return fetch(fnUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseAnonKey,
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          product_type: productType,
-          success_url:  successUrl,
-          cancel_url:   cancelUrl,
-          ...(condition && productType === 'plan_onetime' ? { condition } : {}),
-        }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20_000);
+      try {
+        return await fetch(fnUrl, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseAnonKey,
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            product_type: productType,
+            success_url:  successUrl,
+            cancel_url:   cancelUrl,
+            ...(condition && productType === 'plan_onetime' ? { condition } : {}),
+          }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
     };
 
     let { data: { session } } = await supabase.auth.getSession();
@@ -86,9 +93,11 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
       try {
         response = await attemptCheckout(session.access_token, successUrl, cancelUrl);
       } catch (networkErr) {
+        const isTimeout = networkErr instanceof Error && networkErr.name === 'AbortError';
         throw new Error(
-          `Cannot reach Supabase (${networkErr instanceof Error ? networkErr.message : 'network error'}). ` +
-          `URL: ${supabaseUrl}`
+          isTimeout
+            ? 'Request timed out. Please check your connection and try again.'
+            : `Cannot reach Supabase (${networkErr instanceof Error ? networkErr.message : 'network error'}). URL: ${supabaseUrl}`
         );
       }
 
@@ -108,7 +117,12 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
         try {
           response = await attemptCheckout(session.access_token, successUrl, cancelUrl);
         } catch (networkErr) {
-          throw new Error(`Cannot reach Supabase after token refresh. URL: ${supabaseUrl}`);
+          const isTimeout = networkErr instanceof Error && networkErr.name === 'AbortError';
+          throw new Error(
+            isTimeout
+              ? 'Request timed out after token refresh. Check your connection and try again.'
+              : `Cannot reach Supabase after token refresh. URL: ${supabaseUrl}`
+          );
         }
       }
 
