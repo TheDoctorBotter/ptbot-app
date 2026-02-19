@@ -25,9 +25,14 @@ verify_jwt = true
 [functions.openai-proxy]
 verify_jwt = true
 
-# stripe-checkout: Requires auth - user must be logged in to start checkout
+# stripe-checkout: verify_jwt = false so the Supabase gateway does NOT add a
+# second JWT check before the function runs.  The function already validates
+# the JWT internally via supabase.auth.getUser(), so gateway-level verification
+# is redundant.  Having verify_jwt = true can also produce a 401 at the gateway
+# when the JWT belongs to a project configuration the gateway doesn't recognise,
+# making the error hard to debug.
 [functions.stripe-checkout]
-verify_jwt = true
+verify_jwt = false
 
 # stripe-webhook: Public endpoint - Stripe sends webhooks without JWT
 [functions.stripe-webhook]
