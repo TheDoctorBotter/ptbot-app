@@ -21,11 +21,14 @@ import {
   Calendar,
   Heart,
   Filter,
+  FileText,
 } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { usePatientsMissingFollowups } from '@/hooks/useOutcomeSummary';
 import { ClipboardCheck, TrendingDown } from 'lucide-react-native';
+import { consultNotesService } from '@/services/telehealthService';
+import { ConsultNote } from '@/types/telehealth';
 
 interface PatientSummary {
   patient_id: string;
@@ -70,12 +73,14 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [patients, setPatients] = useState<PatientSummary[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [activePatientCount, setActivePatientCount] = useState(0);
+  const [totalPatientCount, setTotalPatientCount] = useState(0);
   const [atRiskCount, setAtRiskCount] = useState(0);
   const [avgSessionsPerWeek, setAvgSessionsPerWeek] = useState(0);
   const [alertFilter, setAlertFilter] = useState<AlertFilter>('all');
   const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(null);
   const [showPatientDetail, setShowPatientDetail] = useState(false);
+  const [patientConsultNotes, setPatientConsultNotes] = useState<ConsultNote[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState(false);
 
   // Outcome tracking - patients needing follow-up assessments
   const {
@@ -130,12 +135,25 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
 
       const patientList = patientData || [];
 
-      // Active patients (activity in last 7 days)
-      const activeCount = patientList.filter(p => {
-        if (!p.last_activity_at) return false;
-        return new Date(p.last_activity_at) >= sevenDaysAgo;
-      }).length;
-      setActivePatientCount(activeCount);
+      // Total patients: use clinic_patient_count view for accurate distinct count
+      try {
+        const { data: countData } = await supabase
+          .from('clinic_patient_count')
+          .select('registered_patients, guest_patients')
+          .eq('clinic_id', clinicId)
+          .maybeSingle();
+
+        if (countData) {
+          const registered = countData.registered_patients ?? 0;
+          const guests = countData.guest_patients ?? 0;
+          setTotalPatientCount(registered + guests);
+        } else {
+          // Fallback to local count
+          setTotalPatientCount(patientList.length);
+        }
+      } catch {
+        setTotalPatientCount(patientList.length);
+      }
 
       // Build alerts
       const newAlerts: AlertItem[] = [];
@@ -269,9 +287,20 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
     return date.toLocaleDateString();
   };
 
-  const handlePatientPress = (patient: PatientSummary) => {
+  const handlePatientPress = async (patient: PatientSummary) => {
     setSelectedPatient(patient);
+    setPatientConsultNotes([]);
     setShowPatientDetail(true);
+    // Load consult notes for this patient
+    setLoadingNotes(true);
+    try {
+      const notes = await consultNotesService.getPatientNotes(patient.patient_id);
+      setPatientConsultNotes(notes);
+    } catch {
+      setPatientConsultNotes([]);
+    } finally {
+      setLoadingNotes(false);
+    }
   };
 
   const handleAlertPress = (alert: AlertItem) => {
@@ -388,8 +417,8 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
       <View style={styles.kpiContainer}>
         <View style={styles.kpiTile}>
           <Users size={24} color={colors.success[500]} />
-          <Text style={styles.kpiValue}>{activePatientCount}</Text>
-          <Text style={styles.kpiLabel}>Active Patients</Text>
+          <Text style={styles.kpiValue}>{totalPatientCount}</Text>
+          <Text style={styles.kpiLabel}>Total Patients</Text>
         </View>
 
         <View style={styles.kpiTile}>
@@ -621,6 +650,49 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
                   </View>
                 </View>
               )}
+
+              {/* Telehealth Consultations */}
+              <View style={styles.detailCard}>
+                <View style={styles.consultNotesHeader}>
+                  <FileText size={18} color={colors.primary[500]} />
+                  <Text style={styles.detailCardTitle}>Telehealth Consultations</Text>
+                </View>
+                {loadingNotes ? (
+                  <ActivityIndicator size="small" color={colors.primary[500]} style={{ marginVertical: 8 }} />
+                ) : patientConsultNotes.length === 0 ? (
+                  <Text style={styles.noConsultText}>No SOAP notes documented yet</Text>
+                ) : (
+                  patientConsultNotes.map((note, index) => (
+                    <View key={note.id} style={[styles.consultNoteRow, index < patientConsultNotes.length - 1 && styles.consultNoteRowBorder]}>
+                      <View style={styles.consultNoteInfo}>
+                        <Text style={styles.consultNoteDate}>
+                          {new Date(note.created_at).toLocaleDateString('en-US', {
+                            month: 'short', day: 'numeric', year: 'numeric',
+                          })}
+                        </Text>
+                        {note.assessment ? (
+                          <Text style={styles.consultNotePreview} numberOfLines={2}>
+                            {note.assessment}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={styles.consultNoteFlags}>
+                        {note.red_flags && (
+                          <View style={styles.redFlagBadge}>
+                            <AlertTriangle size={10} color={colors.error[600]} />
+                            <Text style={styles.redFlagBadgeText}>Red Flag</Text>
+                          </View>
+                        )}
+                        {note.emr_synced && (
+                          <View style={styles.emrSyncedBadge}>
+                            <Text style={styles.emrSyncedBadgeText}>EMR</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
             </ScrollView>
           )}
         </View>
@@ -990,6 +1062,72 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 32,
+  },
+  // Consult notes in patient detail
+  consultNotesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  noConsultText: {
+    fontSize: 13,
+    color: colors.neutral[500],
+    fontStyle: 'italic',
+  },
+  consultNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 8,
+  },
+  consultNoteRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral[100],
+  },
+  consultNoteInfo: {
+    flex: 1,
+  },
+  consultNoteDate: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.neutral[800],
+    marginBottom: 2,
+  },
+  consultNotePreview: {
+    fontSize: 12,
+    color: colors.neutral[500],
+    lineHeight: 16,
+  },
+  consultNoteFlags: {
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  redFlagBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.error[50],
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    gap: 2,
+  },
+  redFlagBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: colors.error[700],
+  },
+  emrSyncedBadge: {
+    backgroundColor: colors.success[50],
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  emrSyncedBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: colors.success[700],
   },
   // Follow-up styles
   sectionSubtitle: {

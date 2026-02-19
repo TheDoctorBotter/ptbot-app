@@ -40,8 +40,8 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { consultNotesService, appointmentService } from '@/services/telehealthService';
-import { emrAdapter } from '@/services/emrAdapter';
+import { consultNotesService } from '@/services/telehealthService';
+import { appointmentService } from '@/services/appointmentService';
 import { AdminConsultOverview, ConsultNote, UpsertConsultNotePayload } from '@/types/telehealth';
 
 interface AdminConsultNoteScreenProps {
@@ -153,13 +153,12 @@ export default function AdminConsultNoteScreen({
 
       await consultNotesService.upsertNote(payload, user.id);
 
-      // Mark appointment as completed if it was scheduled/confirmed
+      // Mark appointment as completed when note is saved
       if (consult.appointment_status === 'scheduled' || consult.appointment_status === 'confirmed') {
         try {
-          // TODO: Update appointment status through Edge Function
-          // await appointmentService.completeAppointment(consult.appointment_id);
+          await appointmentService.completeAppointment(consult.appointment_id, 'Note documented');
         } catch {
-          // Non-critical error
+          // Non-critical — note was saved, status update is best-effort
         }
       }
 
@@ -187,10 +186,15 @@ export default function AdminConsultNoteScreen({
     onSaved,
   ]);
 
-  // Export to EMR
+  // Export to EMR via server-side Edge Function
   const handleExportToEMR = useCallback(async () => {
     if (!existingNote) {
       Alert.alert('Save First', 'Please save the note before exporting to EMR.');
+      return;
+    }
+
+    if (!supabase) {
+      Alert.alert('Error', 'Database not available.');
       return;
     }
 
@@ -198,40 +202,69 @@ export default function AdminConsultNoteScreen({
     setError(null);
 
     try {
-      const result = await emrAdapter.pushConsultNoteToEMR({
-        note_id: existingNote.id,
-        appointment_id: consult.appointment_id,
-        patient_user_id: consult.patient_user_id || '',
+      const emrPayload = {
+        external_id: existingNote.id,
+        appointment_external_id: consult.appointment_id,
+        patient_external_id: consult.patient_user_id || null,
         patient_name: consult.patient_name,
         patient_email: consult.patient_email,
+        patient_phone: consult.patient_phone,
         note_type: existingNote.note_type,
-        subjective: existingNote.subjective,
-        objective: existingNote.objective,
-        assessment: existingNote.assessment,
-        plan: existingNote.plan,
+        soap: {
+          subjective: existingNote.subjective,
+          objective: existingNote.objective,
+          assessment: existingNote.assessment,
+          plan: existingNote.plan,
+        },
         recommendations: existingNote.recommendations,
-        red_flags: existingNote.red_flags,
-        follow_up_recommended: existingNote.follow_up_recommended,
-        in_person_referral_recommended: existingNote.in_person_referral_recommended,
-        duration_minutes: existingNote.duration_minutes,
-        consult_date: consult.start_time,
-        clinician_user_id: existingNote.clinician_user_id,
-        location_verified: consult.location_verified,
-        location_state: consult.confirmed_state,
-        consent_version: consult.consent_version,
+        flags: {
+          red_flags: existingNote.red_flags,
+          follow_up_recommended: existingNote.follow_up_recommended,
+          in_person_referral: existingNote.in_person_referral_recommended,
+        },
+        session: {
+          duration_minutes: existingNote.duration_minutes,
+          date: consult.start_time,
+          clinician_id: existingNote.clinician_user_id,
+          delivery_method: 'telehealth_zoom',
+        },
+        compliance: {
+          location_verified: consult.location_verified,
+          location_state: consult.confirmed_state,
+          consent_version: consult.consent_version,
+        },
+      };
+
+      const { data, error: fnError } = await supabase.functions.invoke('emr-export', {
+        method: 'POST',
+        body: {
+          type: 'consult_note',
+          payload: emrPayload,
+          note_id: existingNote.id,
+        },
       });
 
-      if (result.success && result.emr_record_id) {
-        await consultNotesService.markEMRSynced(existingNote.id, result.emr_record_id);
-        Alert.alert('Export Successful', 'Note has been exported to Buckeye EMR.');
+      if (fnError) {
+        Alert.alert('Export Failed', fnError.message || 'Failed to reach EMR export service.');
+        return;
+      }
+
+      if (data?.success) {
+        // Edge function handles DB update; refresh the note state locally
+        setExistingNote(prev => prev ? {
+          ...prev,
+          emr_synced: true,
+          emr_record_id: data.record_id || null,
+        } : prev);
+        Alert.alert('Export Successful', 'SOAP note has been exported to Buckeye EMR.');
       } else {
         Alert.alert(
           'Export Failed',
-          result.error || 'Failed to export to EMR. The EMR integration may not be configured yet.'
+          data?.error || 'Failed to export to Buckeye EMR. Check that EMR_API_KEY is set in Supabase secrets.'
         );
       }
     } catch (err) {
-      Alert.alert('Export Failed', 'An error occurred while exporting to EMR.');
+      Alert.alert('Export Failed', err instanceof Error ? err.message : 'An unexpected error occurred.');
     } finally {
       setSyncing(false);
     }

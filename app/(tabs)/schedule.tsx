@@ -16,24 +16,33 @@ import {
   Linking,
   Pressable,
 } from 'react-native';
-import { Calendar, Clock, Check, X, ChevronRight, Phone, Mail, User, Shield, MapPin } from 'lucide-react-native';
+import { Calendar, Clock, Check, X, ChevronRight, Phone, Mail, User, Shield, MapPin, FileText } from 'lucide-react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '@/constants/theme';
 import { appointmentService, DaySlots, Appointment } from '@/services/appointmentService';
 import { supabase } from '@/lib/supabase';
 import { useEntitlements } from '@/hooks/useEntitlements';
+import { useUserRole } from '@/hooks/useUserRole';
 import PaywallCard from '@/components/PaywallCard';
-import { telehealthConsentService, checkPreConsultRequirements } from '@/services/telehealthService';
+import { telehealthConsentService, checkPreConsultRequirements, adminConsultService } from '@/services/telehealthService';
 import TelehealthConsentScreen from '@/components/telehealth/TelehealthConsentScreen';
 import LocationVerificationModal from '@/components/telehealth/LocationVerificationModal';
+import AdminConsultNoteScreen from '@/components/telehealth/AdminConsultNoteScreen';
+import { AdminConsultOverview } from '@/types/telehealth';
 
 type ViewMode = 'book' | 'appointments';
 
 export default function ScheduleScreen() {
+  const { isClinicStaff } = useUserRole();
   const [viewMode, setViewMode] = useState<ViewMode>('book');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Admin consult note modal
+  const [selectedConsult, setSelectedConsult] = useState<AdminConsultOverview | null>(null);
+  // Admin appointments list (all patients)
+  const [adminConsults, setAdminConsults] = useState<AdminConsultOverview[]>([]);
 
   // Availability state
   const [slotsByDay, setSlotsByDay] = useState<DaySlots[]>([]);
@@ -139,14 +148,28 @@ export default function ScheduleScreen() {
     try {
       setLoading(true);
       setError(null);
-      const response = await appointmentService.getMyAppointments({ upcoming: true });
-      setAppointments(response.appointments);
+
+      if (isClinicStaff) {
+        // Admin/clinician: load ALL appointments (all patients)
+        const consults = await adminConsultService.getConsultOverview({ limit: 100 });
+        setAdminConsults(consults);
+      } else {
+        const response = await appointmentService.getMyAppointments({ upcoming: true });
+        setAppointments(response.appointments);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load appointments');
     } finally {
       setLoading(false);
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, isClinicStaff]);
+
+  // Default admin to appointments view
+  useEffect(() => {
+    if (isClinicStaff) {
+      setViewMode('appointments');
+    }
+  }, [isClinicStaff]);
 
   // Initial load
   useEffect(() => {
@@ -524,8 +547,8 @@ export default function ScheduleScreen() {
         </View>
       )}
 
-      {/* Telehealth Credit Banner (for logged-in users) */}
-      {isLoggedIn && (
+      {/* Telehealth Credit Banner (for logged-in patients only, not admin) */}
+      {isLoggedIn && !isClinicStaff && (
         <View>
           <TouchableOpacity
             style={[
@@ -566,8 +589,8 @@ export default function ScheduleScreen() {
         </View>
       )}
 
-      {/* Consent Status Banner (for logged-in users) */}
-      {isLoggedIn && !checkingConsent && (
+      {/* Consent Status Banner (for logged-in patients only, not admin) */}
+      {isLoggedIn && !checkingConsent && !isClinicStaff && (
         <TouchableOpacity
           style={[
             styles.consentBanner,
@@ -621,7 +644,96 @@ export default function ScheduleScreen() {
     </>
   );
 
-  // Render appointments view
+  // Format date/time for admin cards
+  const formatConsultDateTime = (isoString: string) => {
+    const date = new Date(isoString);
+    return date.toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  // Render admin appointments view (all patients)
+  const renderAdminAppointmentsView = () => (
+    <>
+      <Text style={styles.adminSectionLabel}>
+        {adminConsults.length} appointment{adminConsults.length !== 1 ? 's' : ''}
+      </Text>
+      {adminConsults.length > 0 ? (
+        adminConsults.map((consult) => {
+          const hasNote = consult.has_note;
+          return (
+            <TouchableOpacity
+              key={consult.appointment_id}
+              style={styles.adminAppointmentCard}
+              onPress={() => setSelectedConsult(consult)}
+              activeOpacity={0.75}
+            >
+              {/* Patient info */}
+              <View style={styles.adminCardHeader}>
+                <View style={styles.adminPatientInfo}>
+                  <User size={16} color={colors.primary[500]} />
+                  <Text style={styles.adminPatientName}>{consult.patient_name}</Text>
+                </View>
+                <View style={[
+                  styles.adminNoteBadge,
+                  hasNote ? styles.adminNoteBadgeDone : styles.adminNoteBadgePending,
+                ]}>
+                  <FileText size={12} color={hasNote ? colors.success[600] : colors.warning[600]} />
+                  <Text style={[
+                    styles.adminNoteBadgeText,
+                    { color: hasNote ? colors.success[700] : colors.warning[700] },
+                  ]}>
+                    {hasNote ? 'Documented' : 'Needs Note'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Contact info */}
+              {consult.patient_phone && (
+                <View style={styles.adminContactRow}>
+                  <Phone size={14} color={colors.neutral[500]} />
+                  <Text style={styles.adminContactText}>{consult.patient_phone}</Text>
+                </View>
+              )}
+              {consult.patient_email && (
+                <View style={styles.adminContactRow}>
+                  <Mail size={14} color={colors.neutral[500]} />
+                  <Text style={styles.adminContactText}>{consult.patient_email}</Text>
+                </View>
+              )}
+
+              {/* Date/time */}
+              <View style={styles.adminDateRow}>
+                <Calendar size={14} color={colors.neutral[500]} />
+                <Text style={styles.adminDateText}>
+                  {formatConsultDateTime(consult.start_time)}
+                </Text>
+              </View>
+
+              {/* Action hint */}
+              <View style={styles.adminActionRow}>
+                <Text style={styles.adminActionText}>
+                  {hasNote ? 'View / Edit Note' : 'Complete Documentation'}
+                </Text>
+                <ChevronRight size={16} color={colors.primary[500]} />
+              </View>
+            </TouchableOpacity>
+          );
+        })
+      ) : (
+        <View style={styles.emptyState}>
+          <Calendar size={48} color={colors.neutral[400]} />
+          <Text style={styles.emptyStateText}>No appointments yet</Text>
+        </View>
+      )}
+    </>
+  );
+
+  // Render appointments view (patient)
   const renderAppointmentsView = () => (
     <>
       {appointments.length > 0 ? (
@@ -720,9 +832,13 @@ export default function ScheduleScreen() {
             <View style={styles.iconContainer}>
               <Calendar size={32} color={colors.white} />
             </View>
-            <Text style={styles.title}>Schedule a Call</Text>
+            <Text style={styles.title}>
+              {isClinicStaff ? 'Manage Consultations' : 'Schedule a Call'}
+            </Text>
             <Text style={styles.subtitle}>
-              Book a PTBot Zoom consultation
+              {isClinicStaff
+                ? 'View and manage patient zoom consults'
+                : 'Book a PTBot Zoom consultation'}
             </Text>
           </View>
 
@@ -791,10 +907,33 @@ export default function ScheduleScreen() {
 
           {/* Content */}
           {!loading && (
-            viewMode === 'book' ? renderBookingView() : renderAppointmentsView()
+            viewMode === 'book'
+              ? renderBookingView()
+              : isClinicStaff
+              ? renderAdminAppointmentsView()
+              : renderAppointmentsView()
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Admin: SOAP Note Modal */}
+      {isClinicStaff && selectedConsult && (
+        <Modal
+          visible={!!selectedConsult}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setSelectedConsult(null)}
+        >
+          <AdminConsultNoteScreen
+            consult={selectedConsult}
+            onSaved={() => {
+              setSelectedConsult(null);
+              loadAppointments();
+            }}
+            onClose={() => setSelectedConsult(null)}
+          />
+        </Modal>
+      )}
 
       {/* Telehealth Consent Modal */}
       <Modal
@@ -1210,5 +1349,89 @@ const styles = StyleSheet.create({
   },
   consentBannerTextRequired: {
     color: colors.warning[700],
+  },
+  // Admin appointment cards
+  adminSectionLabel: {
+    fontSize: typography.fontSize.sm,
+    color: colors.neutral[500],
+    marginBottom: spacing[3],
+  },
+  adminAppointmentCard: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.xl,
+    padding: spacing[4],
+    marginBottom: spacing[3],
+    ...shadows.sm,
+  },
+  adminCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing[2],
+  },
+  adminPatientInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    flex: 1,
+  },
+  adminPatientName: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.neutral[900],
+  },
+  adminNoteBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.full,
+  },
+  adminNoteBadgeDone: {
+    backgroundColor: colors.success[50],
+  },
+  adminNoteBadgePending: {
+    backgroundColor: colors.warning[50],
+  },
+  adminNoteBadgeText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+  },
+  adminContactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    marginBottom: spacing[1],
+  },
+  adminContactText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.neutral[600],
+  },
+  adminDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    marginTop: spacing[2],
+    paddingTop: spacing[2],
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral[100],
+  },
+  adminDateText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.neutral[700],
+    fontWeight: typography.fontWeight.medium,
+  },
+  adminActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: spacing[2],
+    gap: spacing[1],
+  },
+  adminActionText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.primary[500],
+    fontWeight: typography.fontWeight.medium,
   },
 });
