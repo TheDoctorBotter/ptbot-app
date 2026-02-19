@@ -118,9 +118,9 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
 
       if (!response.ok || !data?.url) {
         const detail =
-          data?.error ??
+          (data?.error ??
           data?.message ??
-          (rawText.length < 200 ? rawText : '') ||
+          (rawText.length < 200 ? rawText : '')) ||
           `HTTP ${response.status}`;
         throw new Error(`[${response.status}] ${detail}`);
       }
