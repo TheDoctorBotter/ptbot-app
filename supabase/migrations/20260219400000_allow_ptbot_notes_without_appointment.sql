@@ -1,6 +1,6 @@
 -- Allow consult_notes to be created without an appointment or clinician
--- This enables PTBot AI-generated notes (imports) that are not tied to a
--- telehealth appointment and have no human clinician.
+-- This enables PTBot-generated notes that are not tied to a telehealth
+-- appointment and have no human clinician.
 
 -- 1. Drop NOT NULL on appointment_id
 ALTER TABLE consult_notes
@@ -22,7 +22,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS consult_notes_appointment_id_unique
   WHERE appointment_id IS NOT NULL;
 
 COMMENT ON COLUMN consult_notes.appointment_id IS
-  'References a telehealth appointment. NULL for PTBot AI-generated import notes that are not linked to a scheduled consult.';
+  'References a telehealth appointment. NULL for PTBot-generated notes not linked to a scheduled consult.';
 
 COMMENT ON COLUMN consult_notes.clinician_user_id IS
-  'The clinician who created the note. NULL for PTBot AI-generated import notes (note_type = ''ptbot_import'').';
+  'The clinician who created the note. NULL for PTBot-generated notes (note_type = ''ptbot_import'').';
