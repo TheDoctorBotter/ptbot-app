@@ -65,18 +65,36 @@ Deno.serve(async (req) => {
     try { body = await req.json(); }
     catch { return corsResponse({ error: 'Invalid JSON body' }, 400); }
 
-    const { product_type, success_url, cancel_url, condition } = body;
+    // Accept two body formats:
+    //   Expo app:  { product_type, success_url, cancel_url, condition? }
+    //   Web app:   { price_id, mode, success_url, cancel_url }
+    const { product_type, price_id, mode: bodyMode, success_url, cancel_url, condition } = body;
 
-    if (!product_type || !success_url || !cancel_url) {
-      return corsResponse({ error: 'Missing required fields: product_type, success_url, cancel_url' }, 400);
-    }
-    const validTypes = ['plan_onetime', 'subscription', 'telehealth_onetime'];
-    if (!validTypes.includes(product_type)) {
-      return corsResponse({ error: `Unknown product_type: ${product_type}` }, 400);
+    if ((!product_type && !price_id) || !success_url || !cancel_url) {
+      return corsResponse({ error: 'Missing required fields: (product_type or price_id), success_url, cancel_url' }, 400);
     }
 
-    const stripeMode: 'payment' | 'subscription' =
-      product_type === 'subscription' ? 'subscription' : 'payment';
+    // Resolve price ID and Stripe mode
+    let priceId: string;
+    let stripeMode: 'payment' | 'subscription';
+    let effectiveProductType: string;
+
+    if (price_id) {
+      // Web app sends a literal Stripe price ID
+      priceId = price_id;
+      stripeMode = bodyMode === 'subscription' ? 'subscription' : 'payment';
+      effectiveProductType = product_type || 'direct_purchase';
+    } else {
+      // Expo app sends a logical product_type resolved via env vars
+      const validTypes = ['plan_onetime', 'subscription', 'telehealth_onetime'];
+      if (!validTypes.includes(product_type)) {
+        return corsResponse({ error: `Unknown product_type: ${product_type}` }, 400);
+      }
+      effectiveProductType = product_type;
+      stripeMode = product_type === 'subscription' ? 'subscription' : 'payment';
+      try { priceId = priceIdForProduct(product_type); }
+      catch (e: unknown) { return corsResponse({ error: (e as Error).message }, 500); }
+    }
 
     // ── Stripe customer: get or create ────────────────────────────────────
     const { data: existingCustomer } = await supabase
@@ -106,29 +124,19 @@ Deno.serve(async (req) => {
     }
 
     // ── Create pending purchase record ────────────────────────────────────
-    const purchaseMeta: Record<string, string> = { product_type };
+    const purchaseMeta: Record<string, string> = { product_type: effectiveProductType };
     if (condition) purchaseMeta.condition = condition;
 
     const { data: purchase, error: purchaseErr } = await supabase
       .from('purchases')
       .insert({
         user_id:      user.id,
-        product_type,
+        product_type: effectiveProductType,
         status:       'pending',
         metadata:     purchaseMeta,
       })
       .select('id')
       .single();
-
-    if (purchaseErr || !purchase) {
-      console.error('[stripe-checkout] purchase insert:', purchaseErr);
-      return corsResponse({ error: 'Failed to create purchase record' }, 500);
-    }
-
-    // ── Stripe Checkout Session ───────────────────────────────────────────
-    let priceId: string;
-    try { priceId = priceIdForProduct(product_type); }
-    catch (e: unknown) { return corsResponse({ error: (e as Error).message }, 500); }
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -138,9 +146,9 @@ Deno.serve(async (req) => {
       success_url,
       cancel_url,
       metadata: {
-        user_id:     user.id,
-        product_type,
-        purchase_id: purchase.id,
+        user_id:      user.id,
+        product_type: effectiveProductType,
+        purchase_id:  purchase.id,
         ...(condition ? { condition } : {}),
       },
     });
@@ -151,7 +159,7 @@ Deno.serve(async (req) => {
       .update({ stripe_checkout_session_id: session.id })
       .eq('id', purchase.id);
 
-    console.log(`[stripe-checkout] session=${session.id} product=${product_type} user=${user.id.slice(0, 8)}`);
+    console.log(`[stripe-checkout] session=${session.id} product=${effectiveProductType} user=${user.id.slice(0, 8)}`);
     return corsResponse({ sessionId: session.id, url: session.url });
 
   } catch (err: unknown) {
