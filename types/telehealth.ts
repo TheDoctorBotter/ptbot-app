@@ -237,6 +237,7 @@ export interface AdminConsultOverview {
   patient_last_name: string | null;
   patient_name: string;
   patient_email: string | null;
+  patient_phone: string | null;
   start_time: string;
   end_time: string;
   appointment_status: string;

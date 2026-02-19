@@ -70,7 +70,7 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [patients, setPatients] = useState<PatientSummary[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [activePatientCount, setActivePatientCount] = useState(0);
+  const [totalPatientCount, setTotalPatientCount] = useState(0);
   const [atRiskCount, setAtRiskCount] = useState(0);
   const [avgSessionsPerWeek, setAvgSessionsPerWeek] = useState(0);
   const [alertFilter, setAlertFilter] = useState<AlertFilter>('all');
@@ -130,12 +130,20 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
 
       const patientList = patientData || [];
 
-      // Active patients (activity in last 7 days)
-      const activeCount = patientList.filter(p => {
-        if (!p.last_activity_at) return false;
-        return new Date(p.last_activity_at) >= sevenDaysAgo;
-      }).length;
-      setActivePatientCount(activeCount);
+      // Total patients: registered profiles + unique guest appointment emails
+      let guestCount = 0;
+      try {
+        const { count } = await supabase
+          .from('appointments')
+          .select('patient_email', { count: 'estimated', head: false })
+          .is('user_id', null)
+          .not('patient_email', 'is', null);
+        // Count distinct guest emails (rough estimate; Supabase doesn't deduplicate here)
+        guestCount = count ?? 0;
+      } catch {
+        guestCount = 0;
+      }
+      setTotalPatientCount(patientList.length + guestCount);
 
       // Build alerts
       const newAlerts: AlertItem[] = [];
@@ -388,8 +396,8 @@ export default function ClinicDashboard({ clinicId, clinicName, userId }: Clinic
       <View style={styles.kpiContainer}>
         <View style={styles.kpiTile}>
           <Users size={24} color={colors.success[500]} />
-          <Text style={styles.kpiValue}>{activePatientCount}</Text>
-          <Text style={styles.kpiLabel}>Active Patients</Text>
+          <Text style={styles.kpiValue}>{totalPatientCount}</Text>
+          <Text style={styles.kpiLabel}>Total Patients</Text>
         </View>
 
         <View style={styles.kpiTile}>
