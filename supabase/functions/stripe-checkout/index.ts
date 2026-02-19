@@ -138,6 +138,11 @@ Deno.serve(async (req) => {
       .select('id')
       .single();
 
+    if (purchaseErr || !purchase) {
+      console.error('[stripe-checkout] purchase insert:', purchaseErr);
+      return corsResponse({ error: 'Failed to create purchase record' }, 500);
+    }
+
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
