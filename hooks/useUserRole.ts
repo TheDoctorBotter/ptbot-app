@@ -46,10 +46,15 @@ export function useUserRole(): UseUserRoleResult {
       setIsLoading(true);
       setError(null);
 
-      // Get current user
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      // Use getSession() (reads local storage – no network round-trip) instead of
+      // getUser() to avoid an indefinite hang on mobile/Safari when the network
+      // is slow or the app was backgrounded.  getUser() makes a live server
+      // request which can stall forever, keeping isLoading=true and the
+      // Dashboard spinning.
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
 
-      if (authError || !user) {
+      if (sessionError || !user) {
         // Not logged in - default to patient
         setRoleData({
           role: 'patient',
