@@ -120,49 +120,22 @@ export class AppointmentService {
     body?: Record<string, unknown>,
     queryParams?: Record<string, string>
   ): Promise<unknown> {
-    const query = queryParams ? `?${new URLSearchParams(queryParams).toString()}` : '';
-    const functionPath = `${functionName}${query}`;
-
-    // Prefer invoke() because it builds the functions endpoint from the active client config,
-    // preventing URL mismatch issues that commonly show up as 404 errors.
-    if (supabase) {
-      // Explicitly attach the session token so Supabase's verify_jwt=true gateway
-      // always receives a valid user JWT (auto-attachment is unreliable in RN).
-      const token = await this.getAccessToken();
-      const extraHeaders: Record<string, string> = {};
-      if (token) extraHeaders['Authorization'] = `Bearer ${token}`;
-
-      const { data, error } = await supabase.functions.invoke(functionPath, {
-        method,
-        body,
-        headers: extraHeaders,
-      });
-
-      if (error) {
-        // data may still contain the function's JSON error body even on non-2xx
-        const detail = (data as any)?.error ?? error.message;
-        console.error(`[AppointmentService] ${functionName} error:`, detail);
-        throw new Error(detail || `Failed to call ${functionPath}`);
-      }
-
-      return data;
-    }
-
     if (!supabaseUrl) {
-      throw new Error('Supabase URL not configured (EXPO_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL)');
+      throw new Error('Supabase URL not configured (EXPO_PUBLIC_SUPABASE_URL)');
     }
 
-    // Fallback for environments where the shared Supabase client is unavailable.
+    const query = queryParams ? `?${new URLSearchParams(queryParams).toString()}` : '';
     const url = `${supabaseUrl}/functions/v1/${functionName}${query}`;
     let accessToken = await this.getAccessToken();
 
+    // Build request with explicit headers – bypasses supabase.functions.invoke
+    // whose internal auth-header attachment is unreliable in React Native.
     const makeRequest = async (token: string | null) => {
       const headers: Record<string, string> = {
-        apikey: supabaseAnonKey,
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token || supabaseAnonKey}`,
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${token || supabaseAnonKey}`,
       };
-
       return fetch(url, {
         method,
         headers,
@@ -171,7 +144,10 @@ export class AppointmentService {
     };
 
     let response = await makeRequest(accessToken);
-    if (response.status === 401 && accessToken && supabase) {
+
+    // One automatic token-refresh retry on 401
+    if (response.status === 401 && supabase) {
+      console.log('[AppointmentService] 401 received, refreshing session...');
       const { data: { session } } = await supabase.auth.refreshSession();
       accessToken = session?.access_token || null;
       response = await makeRequest(accessToken);
@@ -180,15 +156,12 @@ export class AppointmentService {
     const raw = await response.text();
     let data: any = {};
     if (raw) {
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        data = { error: raw };
-      }
+      try { data = JSON.parse(raw); } catch { data = { error: raw }; }
     }
 
     if (!response.ok) {
-      const reason = data?.error || data?.reason || raw || `Request failed with status ${response.status}`;
+      const reason = data?.error || data?.reason || raw || `HTTP ${response.status}`;
+      console.error(`[AppointmentService] ${functionName} error (${response.status}):`, reason);
       throw new Error(reason);
     }
 
