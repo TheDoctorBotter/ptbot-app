@@ -126,13 +126,23 @@ export class AppointmentService {
     // Prefer invoke() because it builds the functions endpoint from the active client config,
     // preventing URL mismatch issues that commonly show up as 404 errors.
     if (supabase) {
+      // Explicitly attach the session token so Supabase's verify_jwt=true gateway
+      // always receives a valid user JWT (auto-attachment is unreliable in RN).
+      const token = await this.getAccessToken();
+      const extraHeaders: Record<string, string> = {};
+      if (token) extraHeaders['Authorization'] = `Bearer ${token}`;
+
       const { data, error } = await supabase.functions.invoke(functionPath, {
         method,
         body,
+        headers: extraHeaders,
       });
 
       if (error) {
-        throw new Error(error.message || `Failed to call ${functionPath}`);
+        // data may still contain the function's JSON error body even on non-2xx
+        const detail = (data as any)?.error ?? error.message;
+        console.error(`[AppointmentService] ${functionName} error:`, detail);
+        throw new Error(detail || `Failed to call ${functionPath}`);
       }
 
       return data;

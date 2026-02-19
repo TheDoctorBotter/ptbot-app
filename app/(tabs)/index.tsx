@@ -82,10 +82,15 @@ export default function HomeScreen() {
     location: '',
   });
   const scrollViewRef = useRef<ScrollView>(null);
+  // Track when we last initialised so we don't repeat the round-trip on every
+  // tab switch.  Five minutes is enough to feel fresh without re-fetching constantly.
+  const lastInitAt = useRef<number>(0);
+  const CHAT_STALE_MS = 5 * 60 * 1000;
 
   // Load user context and generate personalized greeting
   const initializeChat = useCallback(async () => {
     setIsInitializing(true);
+    lastInitAt.current = Date.now(); // stamp early to prevent parallel invocations
     try {
       const context = await chatbotContextService.getUserContext();
       setUserContext(context);
@@ -111,10 +116,13 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // Refresh context when tab becomes active
+  // Re-init only when the cached context is stale; skips the round-trip on
+  // rapid tab switching so transitions feel instant.
   useFocusEffect(
     useCallback(() => {
-      initializeChat();
+      if (Date.now() - lastInitAt.current > CHAT_STALE_MS) {
+        initializeChat();
+      }
     }, [initializeChat])
   );
 

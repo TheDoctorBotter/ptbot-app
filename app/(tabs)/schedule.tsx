@@ -14,6 +14,7 @@ import {
   Alert,
   Modal,
   Linking,
+  Pressable,
 } from 'react-native';
 import { Calendar, Clock, Check, X, ChevronRight, Phone, Mail, User, Shield, MapPin } from 'lucide-react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '@/constants/theme';
@@ -48,6 +49,8 @@ export default function ScheduleScreen() {
 
   // Appointments state
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  // Tracks which appointment id is currently being cancelled (for per-row loading)
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   // User state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -306,26 +309,30 @@ export default function ScheduleScreen() {
     setSelectedAppointmentForJoin(null);
   }, [selectedAppointmentForJoin]);
 
-  // Cancel appointment
+  // Cancel appointment – optimistic update so the UI responds immediately
   const handleCancelAppointment = (appointment: Appointment) => {
     Alert.alert(
       'Cancel Appointment',
       'Are you sure you want to cancel this appointment?',
       [
-        { text: 'No', style: 'cancel' },
+        { text: 'Back', style: 'cancel' },
         {
           text: 'Yes, Cancel',
           style: 'destructive',
           onPress: async () => {
+            // Optimistic: remove from list right away
+            setCancellingId(appointment.id);
+            setAppointments(prev => prev.filter(a => a.id !== appointment.id));
+            setError(null);
             try {
-              setLoading(true);
               await appointmentService.cancelAppointment(appointment.id, 'Cancelled by patient');
               setSuccessMessage('Appointment cancelled');
-              await loadAppointments();
             } catch (err) {
+              // Roll back on failure
+              setAppointments(prev => [appointment, ...prev]);
               setError(err instanceof Error ? err.message : 'Failed to cancel appointment');
             } finally {
-              setLoading(false);
+              setCancellingId(null);
             }
           },
         },
@@ -636,9 +643,13 @@ export default function ScheduleScreen() {
                 {(appointment.status === 'pending' || appointment.status === 'confirmed') && (
                   <TouchableOpacity
                     onPress={() => handleCancelAppointment(appointment)}
-                    style={styles.cancelButton}
+                    style={[styles.cancelButton, cancellingId !== null && { opacity: 0.5 }]}
+                    disabled={cancellingId !== null}
                   >
-                    <X size={16} color={colors.error[500]} />
+                    {cancellingId === appointment.id
+                      ? <ActivityIndicator size="small" color={colors.error[500]} />
+                      : <X size={16} color={colors.error[500]} />
+                    }
                     <Text style={styles.cancelButtonText}>Cancel</Text>
                   </TouchableOpacity>
                 )}
