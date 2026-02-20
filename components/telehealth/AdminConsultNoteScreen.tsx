@@ -171,8 +171,12 @@ export default function AdminConsultNoteScreen({
         'Consult documentation has been saved successfully.',
         [{ text: 'OK', onPress: onSaved }]
       );
-    } catch (err) {
-      setError('Failed to save note');
+    } catch (err: any) {
+      // Surface the real DB error so the issue can be diagnosed.
+      const msg = err?.message || err?.details || 'Failed to save note. Please try again.';
+      setError(msg);
+      // Also alert so it's visible regardless of scroll position.
+      Alert.alert('Save Failed', msg);
     } finally {
       setSaving(false);
     }

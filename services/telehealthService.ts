@@ -428,17 +428,39 @@ export class ConsultNotesService {
         consent_version: consentStatus,
       };
 
-      const { data, error } = await supabase
-        .from('consult_notes')
-        .upsert(noteData, {
-          onConflict: 'appointment_id',
-        })
-        .select()
-        .single();
+      // Explicit INSERT vs UPDATE avoids relying on ON CONFLICT (appointment_id),
+      // which requires a full unique CONSTRAINT. A partial unique index (used when
+      // appointment_id is nullable for PTBot notes) is not accepted by PostgreSQL
+      // for ON CONFLICT resolution, causing every save to fail.
+      const existingNote = payload.appointment_id
+        ? await this.getNote(payload.appointment_id).catch(() => null)
+        : null;
 
-      if (error) {
-        logger.error('Error upserting consult note', { error: error.message });
-        throw error;
+      let data: ConsultNote;
+      let saveError;
+
+      if (existingNote) {
+        const result = await supabase
+          .from('consult_notes')
+          .update(noteData)
+          .eq('id', existingNote.id)
+          .select()
+          .single();
+        data = result.data!;
+        saveError = result.error;
+      } else {
+        const result = await supabase
+          .from('consult_notes')
+          .insert(noteData)
+          .select()
+          .single();
+        data = result.data!;
+        saveError = result.error;
+      }
+
+      if (saveError) {
+        logger.error('Error saving consult note', { error: saveError.message });
+        throw saveError;
       }
 
       logger.audit('Consult note saved', {
