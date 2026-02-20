@@ -129,7 +129,11 @@ export default function AdminConsultNoteScreen({
     }
 
     if (!consult.patient_user_id) {
-      setError('Patient user ID not available');
+      Alert.alert(
+        'Cannot Save Note',
+        'This appointment was booked without a patient account. A PTBot account is required to attach documentation.\n\nAsk the patient to create a free account and re-book, or contact support.',
+        [{ text: 'OK' }]
+      );
       return;
     }
 
@@ -550,7 +554,7 @@ export default function AdminConsultNoteScreen({
               </View>
             ) : (
               <TouchableOpacity
-                style={[styles.emrButton, syncing && styles.emrButtonDisabled]}
+                style={[styles.emrButton, (syncing || !existingNote) && styles.emrButtonDisabled]}
                 onPress={handleExportToEMR}
                 disabled={syncing || !existingNote}
               >
