@@ -145,6 +145,11 @@ export default function ScheduleScreen() {
   const loadAppointments = useCallback(async () => {
     if (!isLoggedIn) return;
 
+    const timeoutId = setTimeout(() => {
+      setLoading(false);
+      setError('Loading timed out. Pull down to refresh or tap Retry.');
+    }, 20000);
+
     try {
       setLoading(true);
       setError(null);
@@ -160,6 +165,7 @@ export default function ScheduleScreen() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load appointments');
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   }, [isLoggedIn, isClinicStaff]);
@@ -208,8 +214,18 @@ export default function ScheduleScreen() {
       return;
     }
 
-    // Telehealth credit check: logged-in users must have a credit to book
-    if (isLoggedIn && !canBookTelehealth) {
+    // Require login to book - guests cannot book for free
+    if (!isLoggedIn) {
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in and purchase a telehealth credit to book an appointment.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Telehealth credit check: must have a credit to book
+    if (!canBookTelehealth) {
       setShowTelehealthPaywall(true);
       return;
     }
@@ -892,6 +908,12 @@ export default function ScheduleScreen() {
           {error && (
             <View style={styles.errorContainer}>
               <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity
+                onPress={() => viewMode === 'appointments' ? loadAppointments() : loadAvailability()}
+                style={styles.retryButton}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -1235,6 +1257,19 @@ const styles = StyleSheet.create({
   errorText: {
     color: colors.error[600],
     fontSize: typography.fontSize.sm,
+    marginBottom: spacing[2],
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.error[500],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.md,
+  },
+  retryButtonText: {
+    color: colors.white,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
   },
   successContainer: {
     flexDirection: 'row',
