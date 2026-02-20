@@ -961,7 +961,12 @@ export default function ScheduleScreen() {
               setSelectedConsult(null);
               loadAppointments();
             }}
-            onClose={() => setSelectedConsult(null)}
+            onClose={() => {
+              // Refresh the list on close so any saves made during the session
+              // (which show inline success rather than calling onSaved) are reflected.
+              setSelectedConsult(null);
+              loadAppointments();
+            }}
           />
         </Modal>
       )}

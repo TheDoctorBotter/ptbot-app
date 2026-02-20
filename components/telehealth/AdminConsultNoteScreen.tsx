@@ -68,6 +68,7 @@ export default function AdminConsultNoteScreen({
 }: AdminConsultNoteScreenProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [existingNote, setExistingNote] = useState<ConsultNote | null>(null);
@@ -155,7 +156,18 @@ export default function AdminConsultNoteScreen({
         duration_minutes: parseInt(durationMinutes, 10) || null,
       };
 
-      await consultNotesService.upsertNote(payload, user.id);
+      const savedNote = await consultNotesService.upsertNote(payload, user.id);
+
+      // Update existingNote immediately so the EMR button activates without
+      // requiring the user to close and reopen the modal.
+      setExistingNote(savedNote);
+
+      // Show inline success — Alert.alert maps to window.alert() on mobile
+      // Safari which may be blocked or dismissed without firing its callback.
+      setSavedSuccess(true);
+      setError(null);
+      // Auto-reset the "Saved" button label after 4 s so it goes back to "Save"
+      setTimeout(() => setSavedSuccess(false), 4000);
 
       // Mark appointment as completed when note is saved
       if (consult.appointment_status === 'scheduled' || consult.appointment_status === 'confirmed') {
@@ -165,18 +177,10 @@ export default function AdminConsultNoteScreen({
           // Non-critical — note was saved, status update is best-effort
         }
       }
-
-      Alert.alert(
-        'Note Saved',
-        'Consult documentation has been saved successfully.',
-        [{ text: 'OK', onPress: onSaved }]
-      );
     } catch (err: any) {
       // Surface the real DB error so the issue can be diagnosed.
       const msg = err?.message || err?.details || 'Failed to save note. Please try again.';
       setError(msg);
-      // Also alert so it's visible regardless of scroll position.
-      Alert.alert('Save Failed', msg);
     } finally {
       setSaving(false);
     }
@@ -191,7 +195,6 @@ export default function AdminConsultNoteScreen({
     followUpRecommended,
     inPersonReferral,
     durationMinutes,
-    onSaved,
   ]);
 
   // Export to EMR via server-side Edge Function
@@ -314,12 +317,17 @@ export default function AdminConsultNoteScreen({
           <Text style={styles.headerSubtitle}>SOAP Note</Text>
         </View>
         <TouchableOpacity
-          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+          style={[styles.saveButton, (saving || savedSuccess) && styles.saveButtonSaved]}
           onPress={handleSave}
           disabled={saving}
         >
           {saving ? (
             <ActivityIndicator size="small" color={colors.white} />
+          ) : savedSuccess ? (
+            <>
+              <Check size={18} color={colors.white} />
+              <Text style={styles.saveButtonText}>Saved</Text>
+            </>
           ) : (
             <>
               <Save size={18} color={colors.white} />
@@ -383,6 +391,16 @@ export default function AdminConsultNoteScreen({
               </View>
             </View>
           </View>
+
+          {/* Success message */}
+          {savedSuccess && (
+            <View style={styles.successAlert}>
+              <Check size={18} color={colors.success[600]} />
+              <Text style={styles.successText}>
+                Note saved! You can now export to EMR below.
+              </Text>
+            </View>
+          )}
 
           {/* Error message */}
           {error && (
@@ -633,6 +651,9 @@ const styles = StyleSheet.create({
   saveButtonDisabled: {
     backgroundColor: colors.neutral[400],
   },
+  saveButtonSaved: {
+    backgroundColor: colors.success[600],
+  },
   saveButtonText: {
     color: colors.white,
     fontSize: typography.fontSize.sm,
@@ -713,6 +734,20 @@ const styles = StyleSheet.create({
   },
   complianceTextWarning: {
     color: colors.warning[700],
+  },
+  successAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.success[50],
+    padding: spacing[3],
+    borderRadius: borderRadius.md,
+    marginBottom: spacing[4],
+    gap: spacing[2],
+  },
+  successText: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    color: colors.success[700],
   },
   errorAlert: {
     flexDirection: 'row',
