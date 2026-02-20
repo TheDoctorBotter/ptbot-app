@@ -161,7 +161,7 @@ The EMR adapter is ready for integration. Currently returns success=false with T
 
 #### Configuration Required
 ```env
-EMR_BASE_URL=https://your-buckeye-emr-instance.com
+EMR_BASE_URL=https://emr.buckeyephysicaltherapy.org
 EMR_API_KEY=your-api-key
 ```
 
@@ -274,11 +274,11 @@ EXPO_PUBLIC_SUPABASE_URL=your-project-url
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 # EMR Integration (optional - for Buckeye EMR)
-EXPO_PUBLIC_EMR_BASE_URL=https://emr-api.example.com
+EXPO_PUBLIC_EMR_BASE_URL=https://emr.buckeyephysicaltherapy.org
 EXPO_PUBLIC_EMR_API_KEY=your-emr-api-key
 
 # Or server-side only:
-EMR_BASE_URL=https://emr-api.example.com
+EMR_BASE_URL=https://emr.buckeyephysicaltherapy.org
 EMR_API_KEY=your-emr-api-key
 ```
 
