@@ -398,10 +398,16 @@ export class ConsultNotesService {
     }
 
     try {
-      // Get consent and location verification status for the appointment
+      // Get consent and location verification status for the appointment.
+      // These are metadata lookups only — failures must not block saving the note.
       const [consentStatus, locationStatus] = await Promise.all([
-        this.getPatientConsentVersion(payload.patient_user_id),
-        locationVerificationService.getVerificationStatus(payload.appointment_id),
+        this.getPatientConsentVersion(payload.patient_user_id).catch(() => null),
+        locationVerificationService.getVerificationStatus(payload.appointment_id).catch(() => ({
+          isVerified: false,
+          verification: null,
+          isAllowedState: false,
+          errorMessage: null,
+        })),
       ]);
 
       const noteData = {

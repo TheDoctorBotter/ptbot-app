@@ -32,7 +32,7 @@ import { AdminConsultOverview } from '@/types/telehealth';
 type ViewMode = 'book' | 'appointments';
 
 export default function ScheduleScreen() {
-  const { isClinicStaff } = useUserRole();
+  const { isClinicStaff, isLoading: roleLoading } = useUserRole();
   const [viewMode, setViewMode] = useState<ViewMode>('book');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -143,12 +143,14 @@ export default function ScheduleScreen() {
 
   // Load appointments
   const loadAppointments = useCallback(async () => {
-    if (!isLoggedIn) return;
+    // Wait until we know the user's role before fetching — prevents a double-load
+    // where we first fetch as patient, then re-fetch as clinician once roleLoading resolves.
+    if (!isLoggedIn || roleLoading) return;
 
     const timeoutId = setTimeout(() => {
       setLoading(false);
       setError('Loading timed out. Pull down to refresh or tap Retry.');
-    }, 20000);
+    }, 8000);
 
     try {
       setLoading(true);
@@ -168,7 +170,7 @@ export default function ScheduleScreen() {
       clearTimeout(timeoutId);
       setLoading(false);
     }
-  }, [isLoggedIn, isClinicStaff]);
+  }, [isLoggedIn, isClinicStaff, roleLoading]);
 
   // Default admin to appointments view
   useEffect(() => {
@@ -177,14 +179,21 @@ export default function ScheduleScreen() {
     }
   }, [isClinicStaff]);
 
-  // Initial load
+  // Load availability when in book mode — kept separate so role changes don't re-trigger this.
   useEffect(() => {
     if (viewMode === 'book') {
       loadAvailability();
-    } else {
+    }
+  }, [viewMode, loadAvailability]);
+
+  // Load appointments when in appointments mode.  Runs whenever the user's role
+  // resolves (roleLoading → false) or isClinicStaff changes, so we always load
+  // with the correct role without firing a competing patient-view load first.
+  useEffect(() => {
+    if (viewMode === 'appointments') {
       loadAppointments();
     }
-  }, [viewMode, loadAvailability, loadAppointments]);
+  }, [viewMode, loadAppointments]);
 
   // Refresh handler
   const onRefresh = useCallback(async () => {
