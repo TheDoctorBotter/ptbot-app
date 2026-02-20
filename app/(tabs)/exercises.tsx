@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,11 +16,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Heart, Dumbbell, Search, Sparkles, Target, Share2, FileText, AlertTriangle, ChevronRight } from 'lucide-react-native';
+import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Heart, Dumbbell, Search, Sparkles, Target, Share2, FileText, AlertTriangle, ChevronRight, Lock } from 'lucide-react-native';
 import { useAssessmentResults } from '@/hooks/useAssessmentResults';
+import { useEntitlements } from '@/hooks/useEntitlements';
 import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
 import type { ExerciseRecommendation } from '@/services/assessmentService';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from '@/lib/supabase';
 import { colors } from '@/constants/theme';
 import { activityService } from '@/services/activityService';
 import { protocolExerciseService, type ProtocolPhaseInfo, type ProtocolExercise } from '@/services/protocolExerciseService';
@@ -142,6 +143,8 @@ export default function ExercisesScreen() {
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { latestAssessment, isLoading: assessmentLoading, refreshAssessment } = useAssessmentResults();
+  const { hasAllVideos, hasSubscription } = useEntitlements();
+  const [membershipLoading, setMembershipLoading] = useState(false);
 
   // Protocol Mode state
   const [protocolPhaseInfo, setProtocolPhaseInfo] = useState<ProtocolPhaseInfo | null>(null);
@@ -156,6 +159,10 @@ export default function ExercisesScreen() {
 
   // Clinic branding for share
   const { branding } = useClinicBranding();
+
+  // Throttle focus-triggered refreshes to at most once every 60 seconds
+  const lastFocusRefresh = useRef<number>(0);
+  const FOCUS_REFRESH_TTL = 60_000;
 
   const bodyParts = ['All', 'Lower Back', 'Upper Back', 'Neck', 'Shoulder', 'Hip', 'Hamstrings', 'Knee', 'Ankle'];
 
@@ -294,9 +301,12 @@ export default function ExercisesScreen() {
     }
   };
 
-  // Refresh assessment data when screen comes into focus
+  // Refresh assessment data when screen comes into focus (throttled to 60s)
   useFocusEffect(
     useCallback(() => {
+      const now = Date.now();
+      if (now - lastFocusRefresh.current < FOCUS_REFRESH_TTL) return;
+      lastFocusRefresh.current = now;
       refreshAssessment();
       loadProtocolExercises();
       if (currentUserId) {
@@ -682,6 +692,45 @@ export default function ExercisesScreen() {
           [{ text: 'OK' }]
         );
       });
+  };
+
+  const checkoutMembership = async () => {
+    if (!supabase) {
+      Alert.alert('Not Available', 'Please configure the app before purchasing.');
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      Alert.alert('Sign In Required', 'Please sign in to become a member.');
+      return;
+    }
+    setMembershipLoading(true);
+    try {
+      const appUrl = (process.env.EXPO_PUBLIC_APP_URL ?? '').replace(/\/$/, '');
+      const successUrl = appUrl ? `${appUrl}/checkout/success` : 'https://ptbot.app/checkout/success';
+      const cancelUrl  = appUrl ? `${appUrl}/checkout/cancel`  : 'https://ptbot.app/checkout/cancel';
+      const response = await fetch(`${supabaseUrl}/functions/v1/stripe-checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ product_type: 'subscription', success_url: successUrl, cancel_url: cancelUrl }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.url) throw new Error(data?.error || `HTTP ${response.status}`);
+      if (Platform.OS === 'web') {
+        window.location.assign(data.url);
+      } else {
+        await Linking.openURL(data.url);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong';
+      Alert.alert('Error', msg);
+    } finally {
+      setMembershipLoading(false);
+    }
   };
 
   const getDifficultyColor = (difficulty: string) => {
@@ -1403,59 +1452,93 @@ export default function ExercisesScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            filteredExercises.map((exercise) => (
-              <View key={exercise.id} style={styles.exerciseCard}>
-                <View style={styles.exerciseHeader}>
-                  <View style={styles.exerciseInfo}>
-                    <Text style={styles.exerciseCardTitle}>{exercise.title}</Text>
-                    <View style={styles.exerciseMeta}>
-                      <View style={styles.exerciseMetaItem}>
-                        <Clock size={14} color="#6B7280" />
-                        <Text style={styles.exerciseMetaText}>{exercise.duration}</Text>
-                      </View>
-                      <View 
-                        style={[
-                          styles.difficultyBadge,
-                          { backgroundColor: getDifficultyColor(exercise.difficulty) + '20' }
-                        ]}
-                      >
-                        <Text 
+            <>
+              {(hasAllVideos ? filteredExercises : filteredExercises.slice(0, 2)).map((exercise) => (
+                <View key={exercise.id} style={styles.exerciseCard}>
+                  <View style={styles.exerciseHeader}>
+                    <View style={styles.exerciseInfo}>
+                      <Text style={styles.exerciseCardTitle}>{exercise.title}</Text>
+                      <View style={styles.exerciseMeta}>
+                        <View style={styles.exerciseMetaItem}>
+                          <Clock size={14} color="#6B7280" />
+                          <Text style={styles.exerciseMetaText}>{exercise.duration}</Text>
+                        </View>
+                        <View
                           style={[
-                            styles.difficultyText,
-                            { color: getDifficultyColor(exercise.difficulty) }
+                            styles.difficultyBadge,
+                            { backgroundColor: getDifficultyColor(exercise.difficulty) + '20' }
                           ]}
                         >
-                          {exercise.difficulty}
-                        </Text>
+                          <Text
+                            style={[
+                              styles.difficultyText,
+                              { color: getDifficultyColor(exercise.difficulty) }
+                            ]}
+                          >
+                            {exercise.difficulty}
+                          </Text>
+                        </View>
                       </View>
                     </View>
+                    <TouchableOpacity
+                      style={styles.favoriteButton}
+                      onPress={() => toggleFavorite(exercise.id)}
+                    >
+                      <Star
+                        size={24}
+                        color="#F59E0B"
+                        fill={favoriteIds.has(exercise.id) ? "#F59E0B" : "transparent"}
+                      />
+                    </TouchableOpacity>
                   </View>
+
+                  <Text style={styles.exerciseDescription}>{exercise.description}</Text>
+
                   <TouchableOpacity
-                    style={styles.favoriteButton}
-                    onPress={() => toggleFavorite(exercise.id)}
+                    style={styles.watchVideoButton}
+                    onPress={() => openExerciseVideo(exercise.url, {
+                      id: exercise.id,
+                      title: exercise.title,
+                    })}
                   >
-                    <Star
-                      size={24}
-                      color="#F59E0B"
-                      fill={favoriteIds.has(exercise.id) ? "#F59E0B" : "transparent"}
-                    />
+                    <Play size={16} color="#FFFFFF" />
+                    <Text style={styles.watchVideoText}>Watch on YouTube</Text>
                   </TouchableOpacity>
                 </View>
-                
-                <Text style={styles.exerciseDescription}>{exercise.description}</Text>
-                
-                <TouchableOpacity
-                  style={styles.watchVideoButton}
-                  onPress={() => openExerciseVideo(exercise.url, {
-                    id: exercise.id,
-                    title: exercise.title,
-                  })}
-                >
-                  <Play size={16} color="#FFFFFF" />
-                  <Text style={styles.watchVideoText}>Watch on YouTube</Text>
-                </TouchableOpacity>
-              </View>
-            ))
+              ))}
+
+              {/* Membership gate — shown when user doesn't have all-videos access */}
+              {!hasAllVideos && filteredExercises.length > 2 && (
+                <View style={styles.membershipGate}>
+                  <View style={styles.membershipGateTop}>
+                    <Lock size={28} color="#7C3AED" />
+                    <Text style={styles.membershipGateTitle}>
+                      {filteredExercises.length - 2} More Exercise{filteredExercises.length - 2 !== 1 ? 's' : ''} Locked
+                    </Text>
+                    <Text style={styles.membershipGateSubtitle}>
+                      Unlock the full exercise library with a PTBot Membership
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.membershipGateButton, membershipLoading && { opacity: 0.6 }]}
+                    onPress={checkoutMembership}
+                    disabled={membershipLoading}
+                  >
+                    {membershipLoading ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <>
+                        <Star size={18} color="#FFFFFF" fill="#FFFFFF" />
+                        <Text style={styles.membershipGateButtonText}>Become a PTBot Member — $30/mo</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <Text style={styles.membershipGateDisclaimer}>
+                    Includes unlimited exercises, AI assessments, PDF exports &amp; 1 telehealth credit/month
+                  </Text>
+                </View>
+              )}
+            </>
           )}
         </View>
 
@@ -2425,5 +2508,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: colors.primary[600],
+  },
+  membershipGate: {
+    marginTop: 8,
+    marginBottom: 16,
+    backgroundColor: '#F5F3FF',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: '#7C3AED',
+    alignItems: 'center',
+  },
+  membershipGateTop: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  membershipGateTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4C1D95',
+    marginTop: 10,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  membershipGateSubtitle: {
+    fontSize: 14,
+    color: '#6D28D9',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  membershipGateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#7C3AED',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    gap: 8,
+    width: '100%',
+  },
+  membershipGateButtonText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  membershipGateDisclaimer: {
+    fontSize: 12,
+    color: '#6D28D9',
+    textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 18,
   },
 });
