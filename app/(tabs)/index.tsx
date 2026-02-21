@@ -572,7 +572,7 @@ FORMATTING:
 - Keep paragraphs short
 - Include specific, actionable advice
 
-For Texas residents, you can mention booking virtual consultations with Dr. Lemmo at justinlemmodpt.com
+For Texas residents, you can mention booking a virtual telehealth consultation through the Schedule tab in the app.
 
 Remember: You're helping them on their recovery journey. Be encouraging, helpful, and always prioritize safety.`;
   };
@@ -714,24 +714,7 @@ Remember: You're helping them on their recovery journey. Be encouraging, helpful
   };
 
   const bookConsultation = () => {
-    const consultationUrl = 'https://www.justinlemmodpt.com';
-
-    Linking.canOpenURL(consultationUrl)
-      .then((supported) => {
-        if (supported) {
-          return Linking.openURL(consultationUrl);
-        } else {
-          throw new Error('URL not supported');
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to open consultation URL:', error);
-        Alert.alert(
-          'Open Website',
-          'Please visit www.justinlemmodpt.com in your browser to book a consultation.',
-          [{ text: 'OK' }]
-        );
-      });
+    router.push('/(tabs)/schedule');
   };
 
   // Render exercise card for recommendations
