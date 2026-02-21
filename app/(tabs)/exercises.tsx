@@ -27,6 +27,7 @@ import { activityService } from '@/services/activityService';
 import { protocolExerciseService, type ProtocolPhaseInfo, type ProtocolExercise } from '@/services/protocolExerciseService';
 import { sharePlanService, type PlanExercise } from '@/services/sharePlanService';
 import { useClinicBranding } from '@/hooks/useClinicBranding';
+import { useUserRole } from '@/hooks/useUserRole';
 import PrecautionsCard from '@/components/shared/PrecautionsCard';
 
 // Conditionally import expo-print and expo-sharing (not available on web)
@@ -144,6 +145,7 @@ export default function ExercisesScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { latestAssessment, isLoading: assessmentLoading, refreshAssessment } = useAssessmentResults();
   const { hasAllVideos, hasSubscription } = useEntitlements();
+  const { isClinicStaff } = useUserRole();
   const [membershipLoading, setMembershipLoading] = useState(false);
 
   // Protocol Mode state
@@ -671,27 +673,7 @@ export default function ExercisesScreen() {
   };
 
   const bookConsultation = () => {
-    const consultationUrl = 'https://www.justinlemmodpt.com';
-    
-    Linking.canOpenURL(consultationUrl)
-      .then((supported) => {
-        if (supported) {
-          return Linking.openURL(consultationUrl);
-        } else {
-          throw new Error('URL not supported');
-        }
-      })
-      .then(() => {
-        console.log('Successfully opened consultation website');
-      })
-      .catch((error) => {
-        console.error('Failed to open consultation URL:', error);
-        Alert.alert(
-          'Open Website',
-          'Please visit www.justinlemmodpt.com in your browser to book a consultation.',
-          [{ text: 'OK' }]
-        );
-      });
+    router.push('/(tabs)/schedule');
   };
 
   const checkoutMembership = async () => {
@@ -1453,7 +1435,7 @@ export default function ExercisesScreen() {
             </View>
           ) : (
             <>
-              {(hasAllVideos ? filteredExercises : filteredExercises.slice(0, 2)).map((exercise) => (
+              {(hasAllVideos || isClinicStaff ? filteredExercises : filteredExercises.slice(0, 2)).map((exercise) => (
                 <View key={exercise.id} style={styles.exerciseCard}>
                   <View style={styles.exerciseHeader}>
                     <View style={styles.exerciseInfo}>
@@ -1507,8 +1489,8 @@ export default function ExercisesScreen() {
                 </View>
               ))}
 
-              {/* Membership gate — shown when user doesn't have all-videos access */}
-              {!hasAllVideos && filteredExercises.length > 2 && (
+              {/* Membership gate — hidden for admins/clinicians who have full access */}
+              {!hasAllVideos && !isClinicStaff && filteredExercises.length > 2 && (
                 <View style={styles.membershipGate}>
                   <View style={styles.membershipGateTop}>
                     <Lock size={28} color="#7C3AED" />
