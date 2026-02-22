@@ -37,6 +37,10 @@ import {
   getCurrentConsentInfo,
 } from '@/services/telehealthService';
 import { ConsentStatus } from '@/types/telehealth';
+import {
+  pushDocumentToAidocs,
+  buildConsentFormBase64,
+} from '@/services/aidocsService';
 
 interface TelehealthConsentScreenProps {
   /**
@@ -157,6 +161,50 @@ export default function TelehealthConsentScreen({
       setError(null);
 
       await telehealthConsentService.acceptConsent(userId);
+
+      // Fire-and-forget: push consent document to AIDOCS EMR.
+      // Runs after the consent is saved; failure does not block the patient.
+      (async () => {
+        try {
+          if (!supabase) return;
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('first_name, last_name')
+            .eq('id', userId)
+            .maybeSingle();
+
+          const patientName = [
+            profile?.first_name,
+            profile?.last_name,
+          ]
+            .filter(Boolean)
+            .join(' ') || user.email || userId;
+
+          const { fileData, mimeType, fileName } = buildConsentFormBase64({
+            patientName,
+            patientEmail: user.email || '',
+            consentVersion: version,
+            consentText: text,
+            acceptedAt: new Date().toISOString(),
+          });
+
+          await pushDocumentToAidocs({
+            patient_email: user.email || '',
+            patient_name: patientName,
+            patient_external_id: userId,
+            file_type: 'consent_form',
+            file_name: fileName,
+            file_data: fileData,
+            mime_type: mimeType,
+            notes: 'Signed telehealth consent form',
+          });
+        } catch (err) {
+          console.error('[TelehealthConsentScreen] AIDOCS consent push failed:', err);
+        }
+      })();
 
       Alert.alert(
         'Consent Recorded',
