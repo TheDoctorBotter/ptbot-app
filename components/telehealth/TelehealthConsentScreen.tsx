@@ -206,10 +206,14 @@ export default function TelehealthConsentScreen({
         }
       })();
 
+      // Notify parent immediately so UI updates without waiting for Alert interaction.
+      // Alert.alert on web does not reliably fire button callbacks, which caused the
+      // schedule page banner to stay stale until a full page refresh.
+      onConsentAccepted();
+
       Alert.alert(
         'Consent Recorded',
-        'Thank you for accepting the telehealth consent agreement.',
-        [{ text: 'Continue', onPress: onConsentAccepted }]
+        'Thank you for accepting the telehealth consent agreement.'
       );
     } catch (err) {
       setError('Failed to record consent. Please try again.');
