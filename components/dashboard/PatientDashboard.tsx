@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import {
@@ -21,9 +22,14 @@ import {
   History,
   ChevronDown,
   ChevronUp,
+  FileText,
+  Upload,
+  XCircle,
 } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import * as ImagePicker from 'expo-image-picker';
+import { pushDocumentToAidocs, encodeBase64 } from '@/services/aidocsService';
 import { activityService } from '@/services/activityService';
 import { useOutcomeSummary } from '@/hooks/useOutcomeSummary';
 import { mapPainLocationToCondition } from '@/services/outcomeService';
@@ -84,6 +90,11 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [sessionsThisWeek, setSessionsThisWeek] = useState(0);
   const [lastActivityDate, setLastActivityDate] = useState<Date | null>(null);
+
+  // Referral upload state
+  const [referralStatus, setReferralStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [referralError, setReferralError] = useState<string | null>(null);
+  const [referralFileName, setReferralFileName] = useState<string | null>(null);
 
   // Get condition tag from latest assessment for outcome summary
   const conditionTag = latestAssessment?.pain_location
@@ -329,6 +340,119 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
     // Non-protocol plan based on pain location
     return `${latestAssessment.pain_location} Plan`;
   };
+
+  // -----------------------------------------------------------------------
+  // Referral upload
+  // -----------------------------------------------------------------------
+
+  /** Core upload: convert file to base64 and push to AIDOCS */
+  const uploadReferralToAidocs = useCallback(
+    async (fileName: string, mimeType: string, base64Data: string) => {
+      if (!supabase || !userId) return;
+
+      setReferralStatus('uploading');
+      setReferralError(null);
+      setReferralFileName(fileName);
+
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('first_name, last_name')
+          .eq('id', userId)
+          .maybeSingle();
+
+        const patientName = [profile?.first_name, profile?.last_name]
+          .filter(Boolean)
+          .join(' ') || user.email || userId;
+
+        const result = await pushDocumentToAidocs({
+          patient_email: user.email || '',
+          patient_name: patientName,
+          patient_external_id: userId,
+          file_type: 'referral',
+          file_name: fileName,
+          file_data: base64Data,
+          mime_type: mimeType,
+          notes: 'PT referral from physician',
+        });
+
+        if (result.success) {
+          setReferralStatus('success');
+        } else {
+          setReferralStatus('error');
+          setReferralError(result.error || 'Upload failed');
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Upload failed';
+        setReferralStatus('error');
+        setReferralError(msg);
+      }
+    },
+    [userId]
+  );
+
+  /** Pick a referral file and upload it */
+  const handlePickReferral = useCallback(async () => {
+    if (Platform.OS === 'web') {
+      // Web: trigger a hidden file input
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.pdf,.jpg,.jpeg,.png,.doc,.docx';
+      input.onchange = async (e: Event) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+
+        if (file.size > 10 * 1024 * 1024) {
+          setReferralStatus('error');
+          setReferralError('File is too large (max 10 MB).');
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(',')[1];
+          await uploadReferralToAidocs(file.name, file.type, base64);
+        };
+        reader.onerror = () => {
+          setReferralStatus('error');
+          setReferralError('Failed to read file.');
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    } else {
+      // Native: use expo-image-picker for image referrals (JPG, PNG)
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setReferralStatus('error');
+        setReferralError('Permission to access photos was denied.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.85,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        if (!asset.base64) {
+          setReferralStatus('error');
+          setReferralError('Could not read file data.');
+          return;
+        }
+        const fileName = asset.fileName || `referral_${Date.now()}.jpg`;
+        const mimeType = asset.mimeType || 'image/jpeg';
+        await uploadReferralToAidocs(fileName, mimeType, asset.base64);
+      }
+    }
+  }, [uploadReferralToAidocs]);
 
   const reassurance = getReassuranceMessage();
   const nextAction = getNextAction();
@@ -723,6 +847,69 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
         </View>
       )}
 
+      {/* Section: PT Referral Upload */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <FileText size={20} color={colors.primary[500]} />
+          <Text style={styles.cardTitle}>PT Referral from Your Doctor</Text>
+        </View>
+
+        <Text style={styles.referralDescription}>
+          If your insurance or state requires a physician referral for physical
+          therapy, upload it here. Accepted formats: PDF, JPG, PNG, DOC, DOCX
+          (max 10 MB).
+        </Text>
+
+        {referralStatus === 'idle' && (
+          <TouchableOpacity
+            style={styles.referralUploadButton}
+            onPress={handlePickReferral}
+          >
+            <Upload size={18} color={colors.primary[600]} />
+            <Text style={styles.referralUploadButtonText}>Select Referral File</Text>
+          </TouchableOpacity>
+        )}
+
+        {referralStatus === 'uploading' && (
+          <View style={styles.referralStatusRow}>
+            <ActivityIndicator size="small" color={colors.primary[500]} />
+            <Text style={styles.referralStatusText}>
+              Uploading {referralFileName}…
+            </Text>
+          </View>
+        )}
+
+        {referralStatus === 'success' && (
+          <View style={styles.referralStatusRow}>
+            <CheckCircle size={20} color={colors.success[600]} />
+            <Text style={[styles.referralStatusText, styles.referralStatusSuccess]}>
+              {referralFileName} uploaded successfully.
+            </Text>
+          </View>
+        )}
+
+        {referralStatus === 'error' && (
+          <>
+            <View style={styles.referralStatusRow}>
+              <XCircle size={20} color={colors.error[600]} />
+              <Text style={[styles.referralStatusText, styles.referralStatusError]}>
+                {referralError || 'Upload failed. Please try again.'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.referralRetryButton}
+              onPress={() => {
+                setReferralStatus('idle');
+                setReferralError(null);
+                setReferralFileName(null);
+              }}
+            >
+              <Text style={styles.referralRetryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
       {/* Bottom Spacer */}
       <View style={styles.bottomSpacer} />
     </ScrollView>
@@ -942,6 +1129,62 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 32,
+  },
+  // Referral upload styles
+  referralDescription: {
+    fontSize: 13,
+    color: colors.neutral[600],
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  referralUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 2,
+    borderColor: colors.primary[300],
+    borderStyle: 'dashed',
+    borderRadius: 10,
+    paddingVertical: 14,
+    backgroundColor: colors.primary[50],
+  },
+  referralUploadButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary[600],
+  },
+  referralStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+  },
+  referralStatusText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.neutral[700],
+  },
+  referralStatusSuccess: {
+    color: colors.success[700],
+  },
+  referralStatusError: {
+    color: colors.error[700],
+  },
+  referralRetryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.neutral[300],
+    backgroundColor: colors.white,
+  },
+  referralRetryButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.neutral[700],
   },
   // Re-check card styles
   recheckCard: {
