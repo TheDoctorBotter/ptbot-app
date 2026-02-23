@@ -10,7 +10,7 @@ export const Hero = () => {
             <img
               src="/Logo.png"
               alt="PTBot"
-              className="h-28 w-auto object-contain"
+              className="h-[10.5rem] w-auto object-contain"
             />
           </div>
           <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
