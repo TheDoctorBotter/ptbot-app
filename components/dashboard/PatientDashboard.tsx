@@ -29,7 +29,6 @@ import {
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
-import { pushDocumentToAidocs, encodeBase64 } from '@/services/aidocsService';
 import { activityService } from '@/services/activityService';
 import { useOutcomeSummary } from '@/hooks/useOutcomeSummary';
 import { mapPainLocationToCondition } from '@/services/outcomeService';
@@ -345,9 +344,9 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
   // Referral upload
   // -----------------------------------------------------------------------
 
-  /** Core upload: convert file to base64 and push to AIDOCS */
-  const uploadReferralToAidocs = useCallback(
-    async (fileName: string, mimeType: string, base64Data: string) => {
+  /** Upload a referral document to Supabase Storage under referrals/{userId}/ */
+  const uploadReferralToStorage = useCallback(
+    async (fileName: string, mimeType: string, fileBody: File | Uint8Array) => {
       if (!supabase || !userId) return;
 
       setReferralStatus('uploading');
@@ -355,36 +354,16 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
       setReferralFileName(fileName);
 
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not authenticated');
+        const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = `${userId}/${Date.now()}_${safeName}`;
 
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('first_name, last_name')
-          .eq('id', userId)
-          .maybeSingle();
+        const { error } = await supabase.storage
+          .from('referrals')
+          .upload(path, fileBody, { contentType: mimeType, upsert: false });
 
-        const patientName = [profile?.first_name, profile?.last_name]
-          .filter(Boolean)
-          .join(' ') || user.email || userId;
+        if (error) throw error;
 
-        const result = await pushDocumentToAidocs({
-          patient_email: user.email || '',
-          patient_name: patientName,
-          patient_external_id: userId,
-          file_type: 'referral',
-          file_name: fileName,
-          file_data: base64Data,
-          mime_type: mimeType,
-          notes: 'PT referral from physician',
-        });
-
-        if (result.success) {
-          setReferralStatus('success');
-        } else {
-          setReferralStatus('error');
-          setReferralError(result.error || 'Upload failed');
-        }
+        setReferralStatus('success');
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Upload failed';
         setReferralStatus('error');
@@ -394,10 +373,10 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
     [userId]
   );
 
-  /** Pick a referral file and upload it */
+  /** Pick a referral file and upload it to Supabase Storage */
   const handlePickReferral = useCallback(async () => {
     if (Platform.OS === 'web') {
-      // Web: trigger a hidden file input
+      // Web: create a hidden file input, pass the File object directly to storage
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.pdf,.jpg,.jpeg,.png,.doc,.docx';
@@ -411,17 +390,7 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
           return;
         }
 
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const dataUrl = reader.result as string;
-          const base64 = dataUrl.split(',')[1];
-          await uploadReferralToAidocs(file.name, file.type, base64);
-        };
-        reader.onerror = () => {
-          setReferralStatus('error');
-          setReferralError('Failed to read file.');
-        };
-        reader.readAsDataURL(file);
+        await uploadReferralToStorage(file.name, file.type, file);
       };
       input.click();
     } else {
@@ -447,12 +416,20 @@ export default function PatientDashboard({ userId, firstName }: PatientDashboard
           setReferralError('Could not read file data.');
           return;
         }
+
+        // Decode base64 → Uint8Array for Supabase Storage
+        const binary = atob(asset.base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+
         const fileName = asset.fileName || `referral_${Date.now()}.jpg`;
         const mimeType = asset.mimeType || 'image/jpeg';
-        await uploadReferralToAidocs(fileName, mimeType, asset.base64);
+        await uploadReferralToStorage(fileName, mimeType, bytes);
       }
     }
-  }, [uploadReferralToAidocs]);
+  }, [uploadReferralToStorage]);
 
   const reassurance = getReassuranceMessage();
   const nextAction = getNextAction();
