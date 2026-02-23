@@ -19,7 +19,7 @@ export interface InjurySummary {
 export interface InjuryPhase {
   id: string;
   phase_number: number;
-  phase_name: string;
+  name: string;
   display_order: number;
   goals: string[];
   precautions: string[];
@@ -113,7 +113,7 @@ export async function getInjuryDetail(injuryId: string): Promise<InjuryDetail | 
   if (protocol) {
     const { data: phaseData } = await supabase
       .from('protocol_phases')
-      .select('id, phase_number, phase_name, display_order, goals, precautions, progress_criteria')
+      .select('id, phase_number, name, display_order, goals, precautions, progress_criteria')
       .eq('protocol_id', protocol.id)
       .order('phase_number');
 
