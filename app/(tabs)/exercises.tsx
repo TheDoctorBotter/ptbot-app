@@ -30,6 +30,8 @@ import { sharePlanService, type PlanExercise } from '@/services/sharePlanService
 import { useClinicBranding } from '@/hooks/useClinicBranding';
 import { useUserRole } from '@/hooks/useUserRole';
 import PrecautionsCard from '@/components/shared/PrecautionsCard';
+import PaywallCard from '@/components/PaywallCard';
+import { FREE_EXERCISE_PREVIEW_COUNT } from '@/src/config/stripe';
 
 // Conditionally import expo-print and expo-sharing (not available on web)
 let Print: typeof import('expo-print') | null = null;
@@ -145,7 +147,7 @@ export default function ExercisesScreen() {
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { latestAssessment, isLoading: assessmentLoading, refreshAssessment } = useAssessmentResults();
-  const { hasAllVideos, hasSubscription } = useEntitlements();
+  const { hasAllVideos, hasSubscription, canAccessFullPlan, refresh: refreshEntitlements } = useEntitlements();
   const { isClinicStaff } = useUserRole();
   const [membershipLoading, setMembershipLoading] = useState(false);
 
@@ -1192,16 +1194,23 @@ export default function ExercisesScreen() {
         )}
 
         {/* Assessment-Based Recommendations */}
-        {hasRecommendations && (
+        {hasRecommendations && (() => {
+          const condition = latestAssessment!.assessment.painLocation ?? undefined;
+          const entitled = canAccessFullPlan(condition);
+          const allRecs = latestAssessment!.recommendations;
+          const visibleRecs = entitled ? allRecs : allRecs.slice(0, FREE_EXERCISE_PREVIEW_COUNT);
+          return (
           <View style={styles.recommendationsContainer}>
             <Text style={styles.recommendationsTitle}>
-              🎯 Your Personalized Exercises ({latestAssessment!.recommendations.length})
+              🎯 Your Personalized Exercises{' '}
+              ({entitled ? allRecs.length : `${visibleRecs.length} of ${allRecs.length}`})
             </Text>
             <Text style={styles.recommendationsSubtitle}>
               Based on your recent assessment, here are exercises specifically chosen for your condition:
             </Text>
 
-            {/* Share/Export Actions for Assessment Recommendations */}
+            {/* Share/Export Actions — only shown once the full plan is unlocked */}
+            {entitled && (
             <View style={styles.shareActionsContainer}>
               <TouchableOpacity
                 style={styles.shareActionButton}
@@ -1232,8 +1241,9 @@ export default function ExercisesScreen() {
                 )}
               </TouchableOpacity>
             </View>
-            
-            {latestAssessment!.recommendations.map((recommendation, index) => {
+            )}
+
+            {visibleRecs.map((recommendation, index) => {
               // Format dosage for display
               const dosageText = recommendation.dosage
                 ? `${recommendation.dosage.sets} sets${recommendation.dosage.reps ? ` x ${recommendation.dosage.reps} reps` : ''}${recommendation.dosage.holdTime ? ` (${recommendation.dosage.holdTime})` : ''}`
@@ -1319,6 +1329,14 @@ export default function ExercisesScreen() {
               );
             })}
             
+            {/* Paywall gate — shown once for free users when more exercises are available */}
+            {!entitled && allRecs.length > FREE_EXERCISE_PREVIEW_COUNT && (
+              <PaywallCard
+                condition={condition}
+                onEntitlementsRefresh={refreshEntitlements}
+              />
+            )}
+
             <TouchableOpacity
               style={styles.newAssessmentButton}
               onPress={() => router.push('/assessment')}
@@ -1327,7 +1345,8 @@ export default function ExercisesScreen() {
               <Text style={styles.newAssessmentText}>Take New Assessment</Text>
             </TouchableOpacity>
           </View>
-        )}
+          );
+        })()}
 
         {/* No Assessment Prompt */}
         {!hasRecommendations && !assessmentLoading && (
