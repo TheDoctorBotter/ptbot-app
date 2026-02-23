@@ -11,11 +11,11 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import {
-  MessageCircle,
   Send,
   Bot,
   User,
@@ -903,10 +903,11 @@ Remember: You're helping them on their recovery journey. Be encouraging, helpful
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <View style={styles.headerLogo}>
-            <View style={styles.logoContainer}>
-              <MessageCircle size={28} color="#FFFFFF" />
-              <Text style={styles.logoText}>PTBOT</Text>
-            </View>
+            <Image
+              source={require('@/assets/images/icon/Logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             <Text style={styles.headerTitle}>AI Physical Therapy Assistant</Text>
           </View>
         </View>
@@ -923,10 +924,11 @@ Remember: You're helping them on their recovery journey. Be encouraging, helpful
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.headerLogo}>
-            <View style={styles.logoContainer}>
-              <MessageCircle size={24} color="#FFFFFF" />
-              <Text style={styles.logoText}>PTBOT</Text>
-            </View>
+            <Image
+              source={require('@/assets/images/icon/Logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             <Text style={styles.headerTitle}>AI Physical Therapy Assistant</Text>
           </View>
           {renderProgressIndicator()}
@@ -1076,20 +1078,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary[600],
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+  logoImage: {
+    height: 36,
+    width: 100,
     marginRight: 10,
-  },
-  logoText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginLeft: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    padding: 3,
   },
   headerTitle: {
     fontSize: 16,

@@ -6,6 +6,13 @@ export const Hero = () => {
     <section className="bg-gradient-to-br from-primary-50 to-neutral-100 py-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center">
+          <div className="flex justify-center mb-8">
+            <img
+              src="/Logo.png"
+              alt="PTBot"
+              className="h-28 w-auto object-contain"
+            />
+          </div>
           <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
             Virtual Physical Therapy
             <span className="block text-primary-500">Tailored for You</span>
