@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PTBot – Video Recording Checklist</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 11pt;
+      color: #111;
+      background: #fff;
+      padding: 32px 40px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 20pt;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .subtitle {
+      text-align: center;
+      font-size: 10pt;
+      color: #555;
+      margin-bottom: 6px;
+    }
+
+    .instructions {
+      background: #f8f4f0;
+      border-left: 4px solid #c0392b;
+      padding: 10px 14px;
+      margin: 14px 0 22px;
+      font-size: 10pt;
+      line-height: 1.6;
+    }
+
+    .instructions strong { color: #c0392b; }
+
+    .stats {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      margin-bottom: 24px;
+      font-size: 10pt;
+    }
+
+    .stat {
+      text-align: center;
+      padding: 8px 18px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+    }
+
+    .stat strong { display: block; font-size: 16pt; color: #c0392b; }
+
+    /* ---- Region header ---- */
+    .region {
+      margin-top: 28px;
+      page-break-inside: avoid;
+    }
+
+    .region-title {
+      background: #c0392b;
+      color: #fff;
+      padding: 5px 12px;
+      font-size: 12pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-radius: 3px;
+      margin-bottom: 10px;
+    }
+
+    /* ---- Injury block ---- */
+    .injury {
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      margin-bottom: 12px;
+      page-break-inside: avoid;
+    }
+
+    .injury-header {
+      background: #f2f2f2;
+      padding: 6px 12px;
+      font-weight: bold;
+      font-size: 10.5pt;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .injury-number {
+      font-size: 9pt;
+      color: #888;
+      font-weight: normal;
+    }
+
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+    }
+
+    .video-slot {
+      padding: 7px 10px;
+      border-right: 1px solid #eee;
+      border-bottom: 1px solid #eee;
+      font-size: 9.5pt;
+    }
+
+    .video-slot:nth-child(4n) { border-right: none; }
+    .video-slot:nth-child(n+5) { border-bottom: none; }
+    .video-slot:nth-last-child(-n+4) { border-bottom: none; }
+
+    .slot-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 4px;
+    }
+
+    .slot-label input[type="checkbox"] {
+      width: 13px;
+      height: 13px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .slot-num {
+      font-weight: bold;
+      color: #555;
+      font-size: 9pt;
+    }
+
+    .yt-line {
+      font-size: 8pt;
+      color: #aaa;
+      padding-left: 20px;
+      font-family: monospace;
+    }
+
+    /* ---- Print overrides ---- */
+    @media print {
+      body { padding: 16px 24px; }
+      .no-print { display: none !important; }
+
+      .region { page-break-inside: avoid; }
+
+      h1 { font-size: 17pt; }
+
+      .region-title { background: #000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .injury-header { background: #e8e8e8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+      input[type="checkbox"] { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+
+    .print-btn {
+      display: block;
+      margin: 0 auto 24px;
+      padding: 10px 32px;
+      background: #c0392b;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: 11pt;
+      cursor: pointer;
+      font-family: sans-serif;
+    }
+
+    .print-btn:hover { background: #a93226; }
+
+    footer {
+      margin-top: 32px;
+      font-size: 8.5pt;
+      color: #aaa;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<h1>PTBot — Video Recording Checklist</h1>
+<p class="subtitle">Record on your phone &rarr; upload to YouTube &rarr; paste the video ID into the database</p>
+
+<div class="instructions">
+  <strong>How to go live:</strong>
+  1. Record the exercise demo on your phone.<br>
+  2. Upload to YouTube (can be <em>unlisted</em> — patients can still watch via the link).<br>
+  3. Copy the Video ID from the YouTube URL: <code>youtube.com/watch?v=<strong>VIDEO_ID_HERE</strong></code><br>
+  4. In Supabase → Table Editor → <strong>injury_videos</strong> → find the row by injury name + slot number → paste the ID into <strong>youtube_video_id</strong> and add a <strong>title</strong>. It goes live instantly.
+</div>
+
+<div class="stats">
+  <div class="stat"><strong>34</strong> Injuries</div>
+  <div class="stat"><strong>8</strong> Slots each</div>
+  <div class="stat"><strong>272</strong> Total videos</div>
+</div>
+
+<button class="print-btn no-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+
+<!-- ============================================================ -->
+<!--  LOWER BACK                                                   -->
+<!-- ============================================================ -->
+<div class="region">
+  <div class="region-title">Lower Back &nbsp;(4 injuries)</div>
+
+  <div class="injury">
+    <div class="injury-header">Lumbar Strain / Sprain <span class="injury-number">#1</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Disc-Related Pain / Sciatica <span class="injury-number">#2</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Lumbar Spinal Stenosis <span class="injury-number">#3</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Spondylolysis / Spondylolisthesis <span class="injury-number">#4</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--  THORACIC                                                     -->
+<!-- ============================================================ -->
+<div class="region">
+  <div class="region-title">Thoracic &nbsp;(2 injuries)</div>
+
+  <div class="injury">
+    <div class="injury-header">Thoracic Mobility Restriction / Postural Pain <span class="injury-number">#5</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Rib / Thoracic Strain <span class="injury-number">#6</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--  NECK                                                         -->
+<!-- ============================================================ -->
+<div class="region">
+  <div class="region-title">Neck &nbsp;(3 injuries)</div>
+
+  <div class="injury">
+    <div class="injury-header">Cervical Strain / Tech Neck <span class="injury-number">#7</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Cervicogenic Headache <span class="injury-number">#8</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Whiplash-Associated Disorder <span class="injury-number">#9</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--  SHOULDER                                                     -->
+<!-- ============================================================ -->
+<div class="region">
+  <div class="region-title">Shoulder &nbsp;(4 injuries)</div>
+
+  <div class="injury">
+    <div class="injury-header">Rotator Cuff Tendinopathy / Impingement <span class="injury-number">#10</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Adhesive Capsulitis (Frozen Shoulder) <span class="injury-number">#11</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Shoulder Instability (Non-op) <span class="injury-number">#12</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">AC Joint Sprain <span class="injury-number">#13</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--  ELBOW                                                        -->
+<!-- ============================================================ -->
+<div class="region">
+  <div class="region-title">Elbow &nbsp;(3 injuries)</div>
+
+  <div class="injury">
+    <div class="injury-header">Lateral Epicondylalgia (Tennis Elbow) <span class="injury-number">#14</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Medial Epicondylalgia (Golfer's Elbow) <span class="injury-number">#15</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Cubital Tunnel Irritation <span class="injury-number">#16</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--  WRIST / HAND                                                 -->
+<!-- ============================================================ -->
+<div class="region">
+  <div class="region-title">Wrist / Hand &nbsp;(3 injuries)</div>
+
+  <div class="injury">
+    <div class="injury-header">Carpal Tunnel Syndrome <span class="injury-number">#17</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">De Quervain's Tenosynovitis <span class="injury-number">#18</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Wrist Sprain <span class="injury-number">#19</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--  HIP                                                          -->
+<!-- ============================================================ -->
+<div class="region">
+  <div class="region-title">Hip &nbsp;(4 injuries)</div>
+
+  <div class="injury">
+    <div class="injury-header">Greater Trochanteric Pain Syndrome <span class="injury-number">#20</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Hip Osteoarthritis <span class="injury-number">#21</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Hip Flexor Strain / Tendinopathy <span class="injury-number">#22</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Femoroacetabular Impingement (Non-op) <span class="injury-number">#23</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--  KNEE                                                         -->
+<!-- ============================================================ -->
+<div class="region">
+  <div class="region-title">Knee &nbsp;(5 injuries)</div>
+
+  <div class="injury">
+    <div class="injury-header">Patellofemoral Pain <span class="injury-number">#24</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Meniscus Irritation (Non-op) <span class="injury-number">#25</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Knee Osteoarthritis <span class="injury-number">#26</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">MCL Sprain <span class="injury-number">#27</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">IT Band Syndrome <span class="injury-number">#28</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--  ANKLE / FOOT                                                 -->
+<!-- ============================================================ -->
+<div class="region">
+  <div class="region-title">Ankle / Foot &nbsp;(6 injuries)</div>
+
+  <div class="injury">
+    <div class="injury-header">Lateral Ankle Sprain <span class="injury-number">#29</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Achilles Tendinopathy <span class="injury-number">#30</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Posterior Tibialis Tendinopathy <span class="injury-number">#31</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Plantar Fasciitis <span class="injury-number">#32</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Metatarsalgia <span class="injury-number">#33</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+
+  <div class="injury">
+    <div class="injury-header">Hallux Rigidus / Limitus <span class="injury-number">#34</span></div>
+    <div class="video-grid">
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 1</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 2</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 3</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 4</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 5</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 6</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 7</span></div><div class="yt-line">YT ID: _______________</div></div>
+      <div class="video-slot"><div class="slot-label"><input type="checkbox"><span class="slot-num">Video 8</span></div><div class="yt-line">YT ID: _______________</div></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Generated for PTBot &mdash; /public/video-checklist.html &mdash; Open in browser and use File &rarr; Print (or Ctrl/Cmd+P) to print or save as PDF.
+</footer>
+
+</body>
+</html>
