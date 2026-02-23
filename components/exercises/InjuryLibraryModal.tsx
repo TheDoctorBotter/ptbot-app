@@ -29,6 +29,7 @@ import {
   type InjuryDetail,
 } from '@/services/injuryLibraryService';
 import { useEntitlements } from '@/hooks/useEntitlements';
+import { useUserRole } from '@/hooks/useUserRole';
 import PaywallCard from '@/components/PaywallCard';
 
 interface Props {
@@ -42,6 +43,7 @@ type View = 'regions' | 'injuries' | 'detail';
 
 export default function InjuryLibraryModal({ visible, onClose, initialInjuryId }: Props) {
   const { hasSubscription, refresh: refreshEntitlements } = useEntitlements();
+  const { isClinicStaff } = useUserRole();
   const [view, setView] = useState<View>('regions');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -265,7 +267,7 @@ export default function InjuryLibraryModal({ visible, onClose, initialInjuryId }
               <Text style={styles.protocolName}>{detail.protocol_name}</Text>
             ) : null}
             {detail.phases.map((phase) => {
-              const isLocked = !hasSubscription && phase.phase_number > 1;
+              const isLocked = !hasSubscription && !isClinicStaff && phase.phase_number > 1;
               return (
                 <View key={phase.id} style={[styles.phaseCard, isLocked && styles.phaseCardLocked]}>
                   <View style={styles.phaseHeader}>
@@ -307,7 +309,7 @@ export default function InjuryLibraryModal({ visible, onClose, initialInjuryId }
               );
             })}
             {/* Paywall upgrade prompt — shown once below locked phases */}
-            {!hasSubscription && detail.phases.some(p => p.phase_number > 1) && (
+            {!hasSubscription && !isClinicStaff && detail.phases.some(p => p.phase_number > 1) && (
               <PaywallCard onEntitlementsRefresh={refreshEntitlements} />
             )}
           </View>
