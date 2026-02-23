@@ -17,6 +17,7 @@ import {
   Play,
   BookOpen,
   Activity,
+  Lock,
 } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import {
@@ -27,15 +28,20 @@ import {
   type InjurySummary,
   type InjuryDetail,
 } from '@/services/injuryLibraryService';
+import { useEntitlements } from '@/hooks/useEntitlements';
+import PaywallCard from '@/components/PaywallCard';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
+  /** When provided the modal skips the browse flow and opens directly to this injury's detail. */
+  initialInjuryId?: string;
 }
 
 type View = 'regions' | 'injuries' | 'detail';
 
-export default function InjuryLibraryModal({ visible, onClose }: Props) {
+export default function InjuryLibraryModal({ visible, onClose, initialInjuryId }: Props) {
+  const { hasSubscription, refresh: refreshEntitlements } = useEntitlements();
   const [view, setView] = useState<View>('regions');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,14 +56,31 @@ export default function InjuryLibraryModal({ visible, onClose }: Props) {
   const regionsCache = useRef<InjuryRegion[] | null>(null);
   const injuriesCache = useRef<Record<string, InjurySummary[]>>({});
 
-  // Load regions when modal opens
+  // Load regions (or deep-link to detail) when modal opens
   const handleVisible = useCallback(async () => {
     if (!visible) return;
-    // Reset to regions view when reopened
+    setError(null);
+
+    // Deep-link: skip browse and go straight to injury detail
+    if (initialInjuryId) {
+      setView('detail');
+      setSelectedRegion(null);
+      setIsLoading(true);
+      try {
+        const data = await getInjuryDetail(initialInjuryId);
+        setDetail(data);
+      } catch (e) {
+        setError('Could not load injury details. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // Normal flow: reset to regions view
     setView('regions');
     setSelectedRegion(null);
     setDetail(null);
-    setError(null);
 
     if (regionsCache.current) {
       setRegions(regionsCache.current);
@@ -74,7 +97,7 @@ export default function InjuryLibraryModal({ visible, onClose }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [visible]);
+  }, [visible, initialInjuryId]);
 
   React.useEffect(() => {
     handleVisible();
@@ -241,40 +264,52 @@ export default function InjuryLibraryModal({ visible, onClose }: Props) {
             {detail.protocol_name ? (
               <Text style={styles.protocolName}>{detail.protocol_name}</Text>
             ) : null}
-            {detail.phases.map((phase) => (
-              <View key={phase.id} style={styles.phaseCard}>
-                <View style={styles.phaseHeader}>
-                  <View style={styles.phaseNumberBadge}>
-                    <Text style={styles.phaseNumberText}>{phase.phase_number}</Text>
+            {detail.phases.map((phase) => {
+              const isLocked = !hasSubscription && phase.phase_number > 1;
+              return (
+                <View key={phase.id} style={[styles.phaseCard, isLocked && styles.phaseCardLocked]}>
+                  <View style={styles.phaseHeader}>
+                    <View style={[styles.phaseNumberBadge, isLocked && styles.phaseNumberBadgeLocked]}>
+                      <Text style={styles.phaseNumberText}>{phase.phase_number}</Text>
+                    </View>
+                    <Text style={[styles.phaseName, isLocked && styles.phaseNameLocked]}>{phase.name}</Text>
+                    {isLocked && <Lock size={14} color="#4B5563" />}
                   </View>
-                  <Text style={styles.phaseName}>{phase.name}</Text>
+                  {!isLocked && (
+                    <>
+                      {phase.goals.length > 0 && (
+                        <View style={styles.phaseDetail}>
+                          <Text style={styles.phaseDetailLabel}>Goals</Text>
+                          {phase.goals.map((g, i) => (
+                            <Text key={i} style={styles.phaseDetailItem}>• {g}</Text>
+                          ))}
+                        </View>
+                      )}
+                      {phase.precautions.length > 0 && (
+                        <View style={styles.phaseDetail}>
+                          <Text style={[styles.phaseDetailLabel, styles.precautionLabel]}>Precautions</Text>
+                          {phase.precautions.map((p, i) => (
+                            <Text key={i} style={[styles.phaseDetailItem, styles.precautionItem]}>• {p}</Text>
+                          ))}
+                        </View>
+                      )}
+                      {phase.progress_criteria.length > 0 && (
+                        <View style={styles.phaseDetail}>
+                          <Text style={[styles.phaseDetailLabel, styles.criteriaLabel]}>Progress Criteria</Text>
+                          {phase.progress_criteria.map((c, i) => (
+                            <Text key={i} style={[styles.phaseDetailItem, styles.criteriaItem]}>• {c}</Text>
+                          ))}
+                        </View>
+                      )}
+                    </>
+                  )}
                 </View>
-                {phase.goals.length > 0 && (
-                  <View style={styles.phaseDetail}>
-                    <Text style={styles.phaseDetailLabel}>Goals</Text>
-                    {phase.goals.map((g, i) => (
-                      <Text key={i} style={styles.phaseDetailItem}>• {g}</Text>
-                    ))}
-                  </View>
-                )}
-                {phase.precautions.length > 0 && (
-                  <View style={styles.phaseDetail}>
-                    <Text style={[styles.phaseDetailLabel, styles.precautionLabel]}>Precautions</Text>
-                    {phase.precautions.map((p, i) => (
-                      <Text key={i} style={[styles.phaseDetailItem, styles.precautionItem]}>• {p}</Text>
-                    ))}
-                  </View>
-                )}
-                {phase.progress_criteria.length > 0 && (
-                  <View style={styles.phaseDetail}>
-                    <Text style={[styles.phaseDetailLabel, styles.criteriaLabel]}>Progress Criteria</Text>
-                    {phase.progress_criteria.map((c, i) => (
-                      <Text key={i} style={[styles.phaseDetailItem, styles.criteriaItem]}>• {c}</Text>
-                    ))}
-                  </View>
-                )}
-              </View>
-            ))}
+              );
+            })}
+            {/* Paywall upgrade prompt — shown once below locked phases */}
+            {!hasSubscription && detail.phases.some(p => p.phase_number > 1) && (
+              <PaywallCard onEntitlementsRefresh={refreshEntitlements} />
+            )}
           </View>
         )}
 
@@ -573,6 +608,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#F9FAFB',
     flex: 1,
+  },
+  phaseCardLocked: {
+    opacity: 0.5,
+  },
+  phaseNumberBadgeLocked: {
+    backgroundColor: '#374151',
+  },
+  phaseNameLocked: {
+    color: '#6B7280',
   },
   phaseDetail: {
     marginBottom: 8,

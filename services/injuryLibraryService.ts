@@ -85,6 +85,33 @@ export async function getInjuriesBySection(sectionId: string): Promise<InjurySum
 }
 
 /**
+ * Looks up the injury linked to a protocol_key.
+ * Used by the assessment results screen to deep-link into the Injury Library.
+ */
+export async function getInjuryByProtocolKey(
+  protocolKey: string,
+): Promise<{ id: string; display_name: string } | null> {
+  if (!supabase) throw new Error('Supabase client not initialized');
+
+  const { data: protocol } = await supabase
+    .from('protocols')
+    .select('injury_id')
+    .eq('protocol_key', protocolKey)
+    .eq('is_active', true)
+    .single();
+
+  if (!protocol?.injury_id) return null;
+
+  const { data: injury } = await supabase
+    .from('injuries')
+    .select('id, display_name')
+    .eq('id', protocol.injury_id)
+    .single();
+
+  return injury ? { id: injury.id, display_name: injury.display_name } : null;
+}
+
+/**
  * Returns full injury detail: injury row + conservative protocol + phases + videos.
  */
 export async function getInjuryDetail(injuryId: string): Promise<InjuryDetail | null> {
