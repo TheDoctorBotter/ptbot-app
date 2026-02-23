@@ -1,5 +1,5 @@
 import React from 'react';
-import { Stethoscope, Youtube, User, LogOut, Menu, X } from 'lucide-react';
+import { Youtube, User, LogOut, Menu, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface HeaderProps {
@@ -43,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onSignOut, onShowAuth, onS
             onClick={handleLogoClick}
             className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
           >
-            <Stethoscope className="h-8 w-8 text-primary-500" />
+            <img src="/Logo.png" alt="PTBot" className="h-10 w-auto object-contain" />
             <div>
               <h1 className="text-xl font-bold text-gray-900">Dr. Justin Lemmo</h1>
               <p className="text-sm text-gray-600">Doctor of Physical Therapy</p>
