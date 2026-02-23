@@ -247,7 +247,7 @@ export default function InjuryLibraryModal({ visible, onClose }: Props) {
                   <View style={styles.phaseNumberBadge}>
                     <Text style={styles.phaseNumberText}>{phase.phase_number}</Text>
                   </View>
-                  <Text style={styles.phaseName}>{phase.phase_name}</Text>
+                  <Text style={styles.phaseName}>{phase.name}</Text>
                 </View>
                 {phase.goals.length > 0 && (
                   <View style={styles.phaseDetail}>
