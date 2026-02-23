@@ -16,7 +16,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Heart, Dumbbell, Search, Sparkles, Target, Share2, FileText, AlertTriangle, ChevronRight, Lock } from 'lucide-react-native';
+import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Heart, Dumbbell, Search, Sparkles, Target, Share2, FileText, AlertTriangle, ChevronRight, Lock, BookOpen } from 'lucide-react-native';
+import InjuryLibraryModal from '@/components/exercises/InjuryLibraryModal';
 import { useAssessmentResults } from '@/hooks/useAssessmentResults';
 import { useEntitlements } from '@/hooks/useEntitlements';
 import { ExerciseRecommendationService } from '@/services/exerciseRecommendationService';
@@ -154,6 +155,9 @@ export default function ExercisesScreen() {
   const [protocolRoutineName, setProtocolRoutineName] = useState<string | null>(null);
   const [isLoadingProtocol, setIsLoadingProtocol] = useState(false);
   const [showProtocolMode, setShowProtocolMode] = useState(true);
+
+  // Injury Library state
+  const [showInjuryLibrary, setShowInjuryLibrary] = useState(false);
 
   // Share Plan state
   const [isSharing, setIsSharing] = useState(false);
@@ -1377,6 +1381,28 @@ export default function ExercisesScreen() {
           <Text style={styles.consultationCta}>Book Virtual Consult</Text>
         </TouchableOpacity>
 
+        {/* Injury Library */}
+        <View style={styles.injuryLibraryCard}>
+          <View style={styles.injuryLibraryHeader}>
+            <BookOpen size={20} color={colors.primary[500]} />
+            <Text style={styles.injuryLibraryTitle}>Injury Library</Text>
+          </View>
+          <Text style={styles.injuryLibraryDescription}>
+            Browse common injuries by body region, understand your condition, and explore rehab protocol phases.
+          </Text>
+          <TouchableOpacity
+            style={styles.injuryLibraryButton}
+            onPress={() => setShowInjuryLibrary(true)}
+          >
+            <Text style={styles.injuryLibraryButtonText}>Browse Injury Library</Text>
+            <ChevronRight size={16} color={colors.primary[500]} />
+          </TouchableOpacity>
+        </View>
+        <InjuryLibraryModal
+          visible={showInjuryLibrary}
+          onClose={() => setShowInjuryLibrary(false)}
+        />
+
         {/* Body Part Filter */}
         <View style={styles.filterContainer}>
           <Text style={styles.filterTitle}>Browse by Body Part</Text>
@@ -2541,5 +2567,46 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 10,
     lineHeight: 18,
+  },
+  injuryLibraryCard: {
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  injuryLibraryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  injuryLibraryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#F9FAFB',
+  },
+  injuryLibraryDescription: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  injuryLibraryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.primary[700],
+  },
+  injuryLibraryButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary[400],
   },
 });
