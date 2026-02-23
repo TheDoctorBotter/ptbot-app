@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Activity, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, Stethoscope, Brain, Heart, Shield, Dumbbell, Target, Info, Play, LogIn, Phone, Square, CheckSquare } from 'lucide-react-native';
+import { Activity, Clock, TriangleAlert as AlertTriangle, CircleCheck as CheckCircle, ArrowRight, ChevronRight, Stethoscope, Brain, Heart, Shield, Dumbbell, Target, Info, Play, LogIn, Phone, Square, CheckSquare, BookOpen } from 'lucide-react-native';
 import { AssessmentService } from '@/services/assessmentService';
 import type { AssessmentData, AssessmentResult, ExerciseRecommendation, PostOpData } from '@/services/assessmentService';
 import { sendRedFlagAlert, showRedFlagWarning } from '@/components/RedFlagAlert';
@@ -21,6 +21,8 @@ import { supabase } from '@/lib/supabase';
 import { useEntitlements } from '@/hooks/useEntitlements';
 import PaywallCard from '@/components/PaywallCard';
 import { FREE_EXERCISE_PREVIEW_COUNT } from '@/src/config/stripe';
+import { getInjuryByProtocolKey } from '@/services/injuryLibraryService';
+import InjuryLibraryModal from '@/components/exercises/InjuryLibraryModal';
 // Note: Outcome service functions are imported but questionnaire steps are disabled
 // To re-enable questionnaires, uncomment the steps in getStepConfig()
 import {
@@ -139,6 +141,8 @@ export default function AssessmentScreen() {
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
+  const [linkedInjury, setLinkedInjury] = useState<{ id: string; display_name: string } | null>(null);
+  const [showInjuryLibrary, setShowInjuryLibrary] = useState(false);
   const [expandedExercises, setExpandedExercises] = useState<Set<string>>(new Set());
 
   // Auth state
@@ -535,6 +539,13 @@ export default function AssessmentScreen() {
       setAssessmentResult(result);
       setCurrentStep(totalSteps + 1); // Go to results step
 
+      // For post-op patients, look up the linked injury so we can show the Injury Guide card
+      if (protocolKey) {
+        getInjuryByProtocolKey(protocolKey)
+          .then((injury) => { if (injury) setLinkedInjury(injury); })
+          .catch(() => { /* non-critical, ignore */ });
+      }
+
     } catch (error) {
       console.error('Assessment processing error:', error);
       Alert.alert(
@@ -646,6 +657,8 @@ export default function AssessmentScreen() {
       location: '',
     });
     setAssessmentResult(null);
+    setLinkedInjury(null);
+    setShowInjuryLibrary(false);
     setExpandedExercises(new Set());
     // Reset consent (keep phone number)
     setConsentContact(false);
@@ -1957,6 +1970,25 @@ export default function AssessmentScreen() {
           ))}
         </View>
 
+        {/* Injury Guide Card — post-op patients only */}
+        {linkedInjury && (
+          <TouchableOpacity
+            style={styles.injuryGuideCard}
+            onPress={() => setShowInjuryLibrary(true)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.injuryGuideIcon}>
+              <BookOpen size={20} color={colors.primary[400]} />
+            </View>
+            <View style={styles.injuryGuideContent}>
+              <Text style={styles.injuryGuideLabel}>Your Injury Guide</Text>
+              <Text style={styles.injuryGuideName}>{linkedInjury.display_name}</Text>
+              <Text style={styles.injuryGuideHint}>View your full rehab protocol</Text>
+            </View>
+            <ChevronRight size={18} color={colors.primary[400]} />
+          </TouchableOpacity>
+        )}
+
         {/* Exercise Recommendations - Displayed Inline */}
         {assessmentResult.recommendations.length > 0 && (() => {
           const condition = assessmentData.painLocation ?? undefined;
@@ -2152,6 +2184,14 @@ export default function AssessmentScreen() {
           {renderResults()}
           <View style={styles.bottomSpacer} />
         </ScrollView>
+
+        {linkedInjury && (
+          <InjuryLibraryModal
+            visible={showInjuryLibrary}
+            onClose={() => setShowInjuryLibrary(false)}
+            initialInjuryId={linkedInjury.id}
+          />
+        )}
       </SafeAreaView>
     );
   }
@@ -3209,5 +3249,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.gray[700],
+  },
+
+  // Injury Guide Card (assessment results)
+  injuryGuideCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.primary[800],
+    gap: 12,
+  },
+  injuryGuideIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary[900] + '80',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  injuryGuideContent: {
+    flex: 1,
+  },
+  injuryGuideLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary[400],
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  injuryGuideName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#F9FAFB',
+    marginBottom: 2,
+  },
+  injuryGuideHint: {
+    fontSize: 12,
+    color: '#9CA3AF',
   },
 });
