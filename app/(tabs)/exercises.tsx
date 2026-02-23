@@ -1196,7 +1196,7 @@ export default function ExercisesScreen() {
         {/* Assessment-Based Recommendations */}
         {hasRecommendations && (() => {
           const condition = latestAssessment!.assessment.painLocation ?? undefined;
-          const entitled = canAccessFullPlan(condition);
+          const entitled = isClinicStaff || canAccessFullPlan(condition);
           const allRecs = latestAssessment!.recommendations;
           const visibleRecs = entitled ? allRecs : allRecs.slice(0, FREE_EXERCISE_PREVIEW_COUNT);
           return (

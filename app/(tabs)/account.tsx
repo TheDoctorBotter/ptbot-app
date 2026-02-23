@@ -13,7 +13,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus, Building2, FileText, Shield, ClipboardList, Star, CreditCard } from 'lucide-react-native';
+import { User, Mail, Lock, Eye, EyeOff, CircleCheck as CheckCircle, CircleAlert as AlertCircle, LogIn, UserPlus, Building2, FileText, Shield, ClipboardList, Star } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import ProfileTabs from '@/components/ProfileTabs';
 import ClinicSettings from '@/components/account/ClinicSettings';
@@ -63,16 +63,6 @@ export default function AccountScreen() {
   // Membership / entitlement state
   const { hasSubscription } = useEntitlements();
 
-  // Payment history state
-  const [paymentHistory, setPaymentHistory] = useState<Array<{
-    id: string;
-    product_type: string;
-    amount_cents: number | null;
-    currency: string | null;
-    created_at: string;
-  }>>([]);
-  const [loadingPayments, setLoadingPayments] = useState(false);
-
   // Clinic settings modal state
   const [showClinicSettings, setShowClinicSettings] = useState(false);
 
@@ -101,28 +91,6 @@ export default function AccountScreen() {
   // Profile data from Supabase
   const [profileData, setProfileData] = useState<UserProfile | null>(null);
   const [emailPreferences, setEmailPreferences] = useState<EmailPreferences | null>(null);
-
-  // Load payment history from Supabase
-  const loadPaymentHistory = async (userId: string) => {
-    if (!supabase) return;
-    setLoadingPayments(true);
-    try {
-      const { data, error } = await supabase
-        .from('purchases')
-        .select('id, product_type, amount_cents, currency, created_at')
-        .eq('user_id', userId)
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(20);
-      if (!error && data) {
-        setPaymentHistory(data);
-      }
-    } catch {
-      // silently fail - payment history is non-critical
-    } finally {
-      setLoadingPayments(false);
-    }
-  };
 
   // Load profile from Supabase
   const loadProfile = async (userId: string) => {
@@ -189,15 +157,13 @@ export default function AccountScreen() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load profile and payment history when user changes
+  // Load profile when user changes
   useEffect(() => {
     if (user) {
       loadProfile(user.id);
-      loadPaymentHistory(user.id);
     } else {
       setProfileData(null);
       setEmailPreferences(null);
-      setPaymentHistory([]);
     }
   }, [user]);
 
@@ -785,45 +751,6 @@ export default function AccountScreen() {
               <Text style={styles.actionButtonText}>View Telehealth Consent</Text>
               <Text style={styles.actionButtonArrow}>→</Text>
             </TouchableOpacity>
-          </View>
-
-          {/* Payment History */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment History</Text>
-            {loadingPayments ? (
-              <ActivityIndicator size="small" color={colors.primary[500]} style={{ marginVertical: 12 }} />
-            ) : paymentHistory.length === 0 ? (
-              <View style={styles.noPaymentsContainer}>
-                <CreditCard size={32} color={colors.neutral[400]} />
-                <Text style={styles.noPaymentsText}>No payments yet</Text>
-                <Text style={styles.noPaymentsSubtext}>
-                  Your payment history will appear here after a purchase.
-                </Text>
-              </View>
-            ) : (
-              paymentHistory.map((payment) => {
-                const productLabel =
-                  payment.product_type === 'subscription' ? 'PTBot Membership' :
-                  payment.product_type === 'plan_onetime' ? 'Full Exercise Plan' :
-                  payment.product_type === 'telehealth_onetime' ? 'Telehealth Consult' :
-                  payment.product_type;
-                const amount = payment.amount_cents != null
-                  ? `$${(payment.amount_cents / 100).toFixed(2)}`
-                  : '';
-                const date = new Date(payment.created_at).toLocaleDateString('en-US', {
-                  year: 'numeric', month: 'short', day: 'numeric',
-                });
-                return (
-                  <View key={payment.id} style={styles.paymentRow}>
-                    <View style={styles.paymentInfo}>
-                      <Text style={styles.paymentLabel}>{productLabel}</Text>
-                      <Text style={styles.paymentDate}>{date}</Text>
-                    </View>
-                    <Text style={styles.paymentAmount}>{amount}</Text>
-                  </View>
-                );
-              })
-            )}
           </View>
 
           {/* Admin Tools - only for clinicians/admins */}
