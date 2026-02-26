@@ -19,8 +19,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   FileCheck,
   Check,
@@ -362,8 +363,11 @@ export default function TelehealthConsentScreen({
     );
   }
 
+  const insets = useSafeAreaInsets();
+  const FOOTER_HEIGHT = 280;
+
   return (
-    <SafeAreaView style={[styles.container, isModal && styles.modalContainer]}>
+    <SafeAreaView style={[styles.container, isModal && styles.modalContainer]} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerIcon}>
@@ -382,7 +386,10 @@ export default function TelehealthConsentScreen({
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: FOOTER_HEIGHT + insets.bottom + spacing[4] },
+        ]}
         showsVerticalScrollIndicator={true}
       >
         {/* Re-consent notice if upgrading */}
@@ -441,13 +448,12 @@ export default function TelehealthConsentScreen({
             <Text style={styles.errorAlertText}>{error}</Text>
           </View>
         )}
+      </ScrollView>
 
+      {/* Fixed footer: checkboxes + action buttons */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
         {/* Checkboxes */}
-        <View style={styles.checkboxSection}>
-          <Text style={styles.checkboxSectionTitle}>
-            Please confirm the following:
-          </Text>
-
+        <View style={styles.checkboxFooterSection}>
           <TouchableOpacity
             style={styles.checkboxRow}
             onPress={() => setAgreeToTerms(!agreeToTerms)}
@@ -457,7 +463,7 @@ export default function TelehealthConsentScreen({
               {agreeToTerms && <Check size={16} color={colors.white} />}
             </View>
             <Text style={styles.checkboxLabel}>
-              I have read and agree to the telehealth consent agreement above
+              I have read and agree to the consent agreement
             </Text>
           </TouchableOpacity>
 
@@ -470,7 +476,7 @@ export default function TelehealthConsentScreen({
               {understandLimitations && <Check size={16} color={colors.white} />}
             </View>
             <Text style={styles.checkboxLabel}>
-              I understand the limitations of telehealth and that some conditions may require in-person care
+              I understand telehealth limitations
             </Text>
           </TouchableOpacity>
 
@@ -483,50 +489,46 @@ export default function TelehealthConsentScreen({
               {confirmTexasLocation && <Check size={16} color={colors.white} />}
             </View>
             <Text style={styles.checkboxLabel}>
-              I understand I must be physically located in Texas during each telehealth session
+              I will be in Texas during each session
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* Action buttons */}
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[
-              styles.acceptButton,
-              (!agreeToTerms || !understandLimitations || !confirmTexasLocation) &&
-                styles.acceptButtonDisabled,
-            ]}
-            onPress={handleAcceptConsent}
-            disabled={
-              submitting ||
-              !agreeToTerms ||
-              !understandLimitations ||
-              !confirmTexasLocation
-            }
-          >
-            {submitting ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <>
-                <Check size={20} color={colors.white} />
-                <Text style={styles.acceptButtonText}>Accept & Continue</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {onCancel && (
-            <TouchableOpacity
-              style={styles.declineButton}
-              onPress={handleCancel}
-              disabled={submitting}
-            >
-              <Text style={styles.declineButtonText}>Decline</Text>
-            </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.acceptButton,
+            (!agreeToTerms || !understandLimitations || !confirmTexasLocation) &&
+              styles.acceptButtonDisabled,
+          ]}
+          onPress={handleAcceptConsent}
+          disabled={
+            submitting ||
+            !agreeToTerms ||
+            !understandLimitations ||
+            !confirmTexasLocation
+          }
+        >
+          {submitting ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <>
+              <Check size={20} color={colors.white} />
+              <Text style={styles.acceptButtonText}>Accept & Continue</Text>
+            </>
           )}
-        </View>
+        </TouchableOpacity>
 
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+        {onCancel && (
+          <TouchableOpacity
+            style={styles.declineButton}
+            onPress={handleCancel}
+            disabled={submitting}
+          >
+            <Text style={styles.declineButtonText}>Decline</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -701,7 +703,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neutral[50],
     padding: spacing[4],
     borderRadius: borderRadius.md,
-    maxHeight: 300,
   },
   consentText: {
     fontSize: typography.fontSize.sm,
@@ -722,18 +723,16 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: colors.error[700],
   },
-  checkboxSection: {
+  footer: {
     backgroundColor: colors.white,
-    borderRadius: borderRadius.lg,
-    padding: spacing[4],
-    marginBottom: spacing[4],
-    ...shadows.sm,
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[3],
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral[200],
+    ...shadows.md,
   },
-  checkboxSectionTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold,
-    color: colors.neutral[900],
-    marginBottom: spacing[4],
+  checkboxFooterSection: {
+    marginBottom: spacing[3],
   },
   checkboxRow: {
     flexDirection: 'row',
@@ -761,9 +760,7 @@ const styles = StyleSheet.create({
     color: colors.neutral[700],
     lineHeight: typography.fontSize.sm * typography.lineHeight.normal,
   },
-  buttonContainer: {
-    marginTop: spacing[2],
-  },
+  // (buttonContainer removed — buttons are now in footer)
   acceptButton: {
     backgroundColor: colors.primary[500],
     flexDirection: 'row',

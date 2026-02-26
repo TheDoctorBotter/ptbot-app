@@ -58,6 +58,9 @@ export default function ScheduleScreen() {
   const [notes, setNotes] = useState('');
   const [isBooking, setIsBooking] = useState(false);
 
+  // Track whether user manually edited the name field so we don't overwrite
+  const nameEditedByUser = useRef(false);
+
   // Appointments state
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   // Tracks which appointment id is currently being cancelled (for per-row loading)
@@ -145,6 +148,25 @@ export default function ScheduleScreen() {
     }
   }, [texasGate.status]);
 
+  // Pre-fill name from profile (parallel to consent check)
+  const prefillFromProfile = useCallback(async (uid: string) => {
+    if (!supabase || nameEditedByUser.current) return;
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('first_name, last_name')
+        .eq('id', uid)
+        .maybeSingle();
+
+      if (data && !nameEditedByUser.current) {
+        const fullName = [data.first_name, data.last_name].filter(Boolean).join(' ');
+        if (fullName) setPatientName(fullName);
+      }
+    } catch {
+      // Non-critical — form stays empty
+    }
+  }, []);
+
   // Check auth status and consent
   useEffect(() => {
     const checkAuth = async () => {
@@ -160,13 +182,15 @@ export default function ScheduleScreen() {
         setUserId(session.user.id);
         setPatientEmail(session.user.email || '');
 
-        // Check telehealth consent status
-        try {
-          const consentStatus = await telehealthConsentService.getConsentStatus(session.user.id);
-          setHasValidConsent(consentStatus.hasValidConsent);
-        } catch {
-          setHasValidConsent(false);
-        }
+        // Fetch profile + consent in parallel
+        const consentPromise = telehealthConsentService
+          .getConsentStatus(session.user.id)
+          .then(s => setHasValidConsent(s.hasValidConsent))
+          .catch(() => setHasValidConsent(false));
+
+        const profilePromise = prefillFromProfile(session.user.id);
+
+        await Promise.all([consentPromise, profilePromise]);
       }
       setCheckingConsent(false);
     };
@@ -177,6 +201,7 @@ export default function ScheduleScreen() {
       if (session?.user) {
         setUserId(session.user.id);
         setPatientEmail(session.user.email || '');
+        prefillFromProfile(session.user.id);
 
         // Re-check consent on auth change
         try {
@@ -192,7 +217,7 @@ export default function ScheduleScreen() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [prefillFromProfile]);
 
   // Load availability
   const loadAvailability = useCallback(async () => {
@@ -594,7 +619,10 @@ export default function ScheduleScreen() {
                 placeholder="Enter your full name"
                 placeholderTextColor={colors.neutral[400]}
                 value={patientName}
-                onChangeText={setPatientName}
+                onChangeText={(text) => {
+                  nameEditedByUser.current = true;
+                  setPatientName(text);
+                }}
                 autoCapitalize="words"
               />
             </View>
