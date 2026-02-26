@@ -41,7 +41,7 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta property="og:url" content="https://justinlemmodpt.com" />
         <meta
           property="og:image"
-          content="https://justinlemmodpt.com/Logo copy.png"
+          content="https://justinlemmodpt.com/Logo.png"
         />
         <meta
           property="og:site_name"
@@ -60,7 +60,7 @@ export default function Root({ children }: { children: React.ReactNode }) {
         />
         <meta
           name="twitter:image"
-          content="https://justinlemmodpt.com/Logo copy.png"
+          content="https://justinlemmodpt.com/Logo.png"
         />
 
         {/* Additional SEO Meta Tags */}
