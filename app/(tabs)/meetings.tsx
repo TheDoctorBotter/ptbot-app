@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -28,7 +28,9 @@ export default function MeetingsScreen() {
   const webViewRef = useRef<WebView>(null);
 
   // Texas GPS location gate (session-level)
-  const texasGate = useTexasLocationGate();
+  const texasGate = useTexasLocationGate() as ReturnType<typeof useTexasLocationGate> & {
+    _onGrantedRef: React.MutableRefObject<(() => void) | null>;
+  };
 
   // Clean meeting ID (remove spaces and dashes)
   const cleanMeetingId = (id: string) => {
@@ -58,11 +60,13 @@ export default function MeetingsScreen() {
 
   // Join meeting via WebView
   const handleJoinMeeting = () => {
-    // Texas GPS location gate
+    // Texas GPS location gate — auto-resume after verification
     if (texasGate.status !== 'granted') {
+      texasGate._onGrantedRef.current = () => handleJoinMeeting();
       texasGate.requestCheck();
       return;
     }
+    texasGate._onGrantedRef.current = null;
 
     const cleanedId = cleanMeetingId(meetingId);
 
@@ -88,11 +92,13 @@ export default function MeetingsScreen() {
 
   // Open in external Zoom app/browser
   const handleOpenExternal = () => {
-    // Texas GPS location gate
+    // Texas GPS location gate — auto-resume after verification
     if (texasGate.status !== 'granted') {
+      texasGate._onGrantedRef.current = () => handleOpenExternal();
       texasGate.requestCheck();
       return;
     }
+    texasGate._onGrantedRef.current = null;
 
     const cleanedId = cleanMeetingId(meetingId);
     if (!cleanedId) {

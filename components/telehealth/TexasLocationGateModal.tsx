@@ -153,16 +153,14 @@ export default function TexasLocationGateModal({
               </View>
 
               <View style={styles.buttonContainer}>
-                {/* Allow retry on error or permission denied */}
-                {(isError || status === 'permission_denied') && (
-                  <TouchableOpacity
-                    style={styles.primaryButton}
-                    onPress={onCheckEligibility}
-                  >
-                    <MapPin size={20} color={colors.white} />
-                    <Text style={styles.primaryButtonText}>Try Again</Text>
-                  </TouchableOpacity>
-                )}
+                {/* Allow retry for any non-granted state */}
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={onCheckEligibility}
+                >
+                  <MapPin size={20} color={colors.white} />
+                  <Text style={styles.primaryButtonText}>Try Again</Text>
+                </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.backButton}

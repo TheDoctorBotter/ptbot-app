@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -81,7 +81,9 @@ export default function ScheduleScreen() {
   const [selectedAppointmentForJoin, setSelectedAppointmentForJoin] = useState<Appointment | null>(null);
 
   // Texas GPS location gate (for scheduling — session-level)
-  const texasGate = useTexasLocationGate();
+  const texasGate = useTexasLocationGate() as ReturnType<typeof useTexasLocationGate> & {
+    _onGrantedRef: React.MutableRefObject<(() => void) | null>;
+  };
 
   // Check auth status and consent
   useEffect(() => {
@@ -211,7 +213,9 @@ export default function ScheduleScreen() {
     setRefreshing(false);
   }, [viewMode, loadAvailability, loadAppointments]);
 
-  // Check consent before booking
+  // Check consent before booking — runs each gate in sequence.
+  // If the Texas location gate is not yet passed, opens the modal and
+  // registers a callback so booking auto-continues after verification.
   const handleBookAppointment = async () => {
     if (!selectedSlot) {
       setError('Please select a time slot');
@@ -238,11 +242,20 @@ export default function ScheduleScreen() {
       return;
     }
 
-    // Texas location gate: must be in Texas to book a Zoom call
+    // Texas location gate: must be in Texas to book a Zoom call.
+    // Register a callback so the booking flow auto-resumes after
+    // the user passes the location check — no double-tap required.
     if (texasGate.status !== 'granted') {
+      texasGate._onGrantedRef.current = () => {
+        // Re-run the booking flow; status will now be 'granted'
+        handleBookAppointment();
+      };
       texasGate.requestCheck();
       return;
     }
+
+    // Clear callback once we've passed the gate
+    texasGate._onGrantedRef.current = null;
 
     // Telehealth credit check: must have a credit to book
     if (!canBookTelehealth) {
@@ -325,11 +338,17 @@ export default function ScheduleScreen() {
       return;
     }
 
-    // Texas GPS location gate (session-level)
+    // Texas GPS location gate (session-level).
+    // Register callback so join auto-proceeds after verification.
     if (texasGate.status !== 'granted') {
+      texasGate._onGrantedRef.current = () => {
+        handleJoinConsult(appointment);
+      };
       texasGate.requestCheck();
       return;
     }
+
+    texasGate._onGrantedRef.current = null;
 
     // Check pre-consult requirements
     try {

@@ -2,13 +2,14 @@
  * useTexasLocationGate
  *
  * React hook that manages GPS-based Texas location verification for Zoom
- * scheduling. Caches the result in sessionStorage so users are not
- * re-prompted within the same browser session.
+ * scheduling. Caches GRANTED results in sessionStorage so users are not
+ * re-prompted within the same browser session. Denials are NOT cached so
+ * users can retry (e.g. if they were traveling and are now in Texas).
  *
  * Privacy: coordinates are sent to /api/verify-texas and are NOT stored.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 
 // Session-storage keys
@@ -38,6 +39,8 @@ interface UseTexasLocationGateReturn {
   verify: () => Promise<void>;
   /** Dismiss the modal without verifying */
   dismiss: () => void;
+  /** Clear cached location data (call on sign-out) */
+  clearCache: () => void;
 }
 
 /**
@@ -64,40 +67,52 @@ function sessionSet(key: string, value: string): void {
   }
 }
 
+/**
+ * Remove a session-storage value (web only; no-ops on native).
+ */
+function sessionRemove(key: string): void {
+  if (Platform.OS !== 'web' || typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // silently ignore
+  }
+}
+
 export function useTexasLocationGate(): UseTexasLocationGateReturn {
   const [status, setStatus] = useState<GateStatus>('idle');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  // On mount, rehydrate from sessionStorage
+  // Callback ref: called when verification succeeds (status → 'granted').
+  // schedule.tsx sets this so booking auto-proceeds after the gate passes.
+  const onGrantedRef = useRef<(() => void) | null>(null);
+
+  // On mount, rehydrate from sessionStorage — only restore GRANTED status.
+  // Denials are never cached, so user can always retry.
   useEffect(() => {
     const checked = sessionGet(KEY_CHECKED);
     if (checked === 'true') {
       const inTexas = sessionGet(KEY_IN_TEXAS);
-      setStatus(inTexas === 'true' ? 'granted' : 'denied');
-      if (inTexas !== 'true') {
-        setMessage(
-          'Zoom consultations are available only in Texas at this time. ' +
-          'You can continue using PTBot features without booking a call.'
-        );
+      if (inTexas === 'true') {
+        setStatus('granted');
       }
+      // If not 'true', leave status as 'idle' so user can re-verify
     }
   }, []);
 
   /**
    * Called when the user reaches a scheduling entry point.
-   * If already checked this session, does nothing (status is already set).
+   * If already granted this session, does nothing.
    * Otherwise opens the modal to prompt for location access.
    */
   const requestCheck = useCallback(() => {
-    if (status === 'granted' || status === 'denied') {
-      // Already resolved this session — just surface modal for denied
-      if (status === 'denied') {
-        setShowModal(true);
-      }
-      return;
+    if (status === 'granted') {
+      return; // already passed — caller should proceed
     }
+    // For any other status (idle, denied, error, permission_denied),
+    // open the modal so user can (re-)verify
     setShowModal(true);
   }, [status]);
 
@@ -107,6 +122,7 @@ export function useTexasLocationGate(): UseTexasLocationGateReturn {
   const verify = useCallback(async () => {
     setLoading(true);
     setMessage(null);
+    setStatus('checking');
 
     // 1. Check for Geolocation API availability
     if (
@@ -151,15 +167,18 @@ export function useTexasLocationGate(): UseTexasLocationGateReturn {
 
       const { inTexas } = await res.json();
 
-      // 4. Persist to session
-      sessionSet(KEY_CHECKED, 'true');
-      sessionSet(KEY_IN_TEXAS, String(!!inTexas));
-
       if (inTexas) {
+        // Cache GRANTED in sessionStorage so user isn't re-prompted
+        sessionSet(KEY_CHECKED, 'true');
+        sessionSet(KEY_IN_TEXAS, 'true');
         setStatus('granted');
         setMessage(null);
         setShowModal(false);
+
+        // Fire the onGranted callback so the booking flow auto-proceeds
+        onGrantedRef.current?.();
       } else {
+        // Do NOT cache denial — user can retry immediately
         setStatus('denied');
         setMessage(
           'Zoom consultations are available only in Texas at this time. ' +
@@ -198,6 +217,18 @@ export function useTexasLocationGate(): UseTexasLocationGateReturn {
     setShowModal(false);
   }, []);
 
+  /**
+   * Clear cached location data from sessionStorage.
+   * Call this on sign-out so the next user gets a fresh check.
+   */
+  const clearCache = useCallback(() => {
+    sessionRemove(KEY_CHECKED);
+    sessionRemove(KEY_IN_TEXAS);
+    setStatus('idle');
+    setMessage(null);
+    setShowModal(false);
+  }, []);
+
   return {
     status,
     loading,
@@ -206,5 +237,8 @@ export function useTexasLocationGate(): UseTexasLocationGateReturn {
     requestCheck,
     verify,
     dismiss,
-  };
+    clearCache,
+    // Expose the ref setter so schedule.tsx can register a post-granted callback
+    _onGrantedRef: onGrantedRef,
+  } as UseTexasLocationGateReturn & { _onGrantedRef: React.MutableRefObject<(() => void) | null> };
 }
