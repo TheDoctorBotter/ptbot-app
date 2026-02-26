@@ -27,7 +27,9 @@ import { telehealthConsentService, checkPreConsultRequirements, adminConsultServ
 import TelehealthConsentScreen from '@/components/telehealth/TelehealthConsentScreen';
 import LocationVerificationModal from '@/components/telehealth/LocationVerificationModal';
 import AdminConsultNoteScreen from '@/components/telehealth/AdminConsultNoteScreen';
+import TexasLocationGateModal from '@/components/telehealth/TexasLocationGateModal';
 import { AdminConsultOverview } from '@/types/telehealth';
+import { useTexasLocationGate } from '@/hooks/useTexasLocationGate';
 
 type ViewMode = 'book' | 'appointments';
 
@@ -74,9 +76,12 @@ export default function ScheduleScreen() {
   const [hasValidConsent, setHasValidConsent] = useState(false);
   const [checkingConsent, setCheckingConsent] = useState(true);
 
-  // Location verification state
+  // Location verification state (per-appointment, for joining consults)
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [selectedAppointmentForJoin, setSelectedAppointmentForJoin] = useState<Appointment | null>(null);
+
+  // Texas GPS location gate (for scheduling — session-level)
+  const texasGate = useTexasLocationGate();
 
   // Check auth status and consent
   useEffect(() => {
@@ -233,6 +238,12 @@ export default function ScheduleScreen() {
       return;
     }
 
+    // Texas location gate: must be in Texas to book a Zoom call
+    if (texasGate.status !== 'granted') {
+      texasGate.requestCheck();
+      return;
+    }
+
     // Telehealth credit check: must have a credit to book
     if (!canBookTelehealth) {
       setShowTelehealthPaywall(true);
@@ -314,6 +325,12 @@ export default function ScheduleScreen() {
       return;
     }
 
+    // Texas GPS location gate (session-level)
+    if (texasGate.status !== 'granted') {
+      texasGate.requestCheck();
+      return;
+    }
+
     // Check pre-consult requirements
     try {
       const requirements = await checkPreConsultRequirements(userId, appointment.id);
@@ -343,7 +360,7 @@ export default function ScheduleScreen() {
       setSelectedAppointmentForJoin(appointment);
       setShowLocationModal(true);
     }
-  }, [userId]);
+  }, [userId, texasGate]);
 
   // Handle location verified
   const handleLocationVerified = useCallback(() => {
@@ -644,6 +661,17 @@ export default function ScheduleScreen() {
             <ChevronRight size={16} color={colors.warning[600]} />
           )}
         </TouchableOpacity>
+      )}
+
+      {/* Texas Location Gate Banner (shown when user is outside Texas) */}
+      {(texasGate.status === 'denied' || texasGate.status === 'permission_denied') && (
+        <View style={styles.locationDeniedBanner}>
+          <MapPin size={18} color={colors.warning[600]} />
+          <Text style={styles.locationDeniedText}>
+            Zoom consultations are available only in Texas at this time.
+            You can continue using PTBot features without booking a call.
+          </Text>
+        </View>
       )}
 
       {/* Info Card */}
@@ -986,7 +1014,7 @@ export default function ScheduleScreen() {
         />
       </Modal>
 
-      {/* Location Verification Modal */}
+      {/* Location Verification Modal (per-appointment, for joining) */}
       {selectedAppointmentForJoin && (
         <LocationVerificationModal
           visible={showLocationModal}
@@ -999,6 +1027,16 @@ export default function ScheduleScreen() {
           }}
         />
       )}
+
+      {/* Texas GPS Location Gate Modal (session-level, for scheduling) */}
+      <TexasLocationGateModal
+        visible={texasGate.showModal}
+        status={texasGate.status}
+        loading={texasGate.loading}
+        message={texasGate.message}
+        onCheckEligibility={texasGate.verify}
+        onDismiss={texasGate.dismiss}
+      />
     </SafeAreaView>
   );
 }
@@ -1369,6 +1407,24 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
+  },
+  locationDeniedBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.warning[50],
+    padding: spacing[3],
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing[4],
+    gap: spacing[2],
+    borderWidth: 1,
+    borderColor: colors.warning[100],
+  },
+  locationDeniedText: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.warning[700],
+    lineHeight: typography.fontSize.sm * typography.lineHeight.normal,
   },
   consentBanner: {
     flexDirection: 'row',
