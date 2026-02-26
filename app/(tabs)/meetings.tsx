@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -28,9 +28,36 @@ export default function MeetingsScreen() {
   const webViewRef = useRef<WebView>(null);
 
   // Texas GPS location gate (session-level)
-  const texasGate = useTexasLocationGate() as ReturnType<typeof useTexasLocationGate> & {
-    _onGrantedRef: React.MutableRefObject<(() => void) | null>;
-  };
+  const texasGate = useTexasLocationGate();
+
+  // Pending-action ref: 'join' | 'external' | null
+  const pendingActionRef = useRef<'join' | 'external' | null>(null);
+
+  // When the Texas gate transitions to 'granted', auto-proceed with
+  // the pending action. Runs after re-render so all state is fresh.
+  useEffect(() => {
+    if (texasGate.status !== 'granted') return;
+    const action = pendingActionRef.current;
+    if (!action) return;
+    pendingActionRef.current = null;
+
+    if (action === 'join') {
+      // Re-run join logic — gate will pass now
+      const cleanedId = cleanMeetingId(meetingId);
+      if (!cleanedId) { setError('Please enter a meeting ID'); return; }
+      if (cleanedId.length < 9) { setError('Meeting ID should be at least 9 digits'); return; }
+      if (!displayName.trim()) { setError('Please enter your name'); return; }
+      setError(null);
+      setIsLoading(true);
+      setIsInMeeting(true);
+    } else if (action === 'external') {
+      const cleanedId = cleanMeetingId(meetingId);
+      if (!cleanedId) { setError('Please enter a meeting ID'); return; }
+      let url = `https://zoom.us/j/${cleanedId}`;
+      if (passcode) { url += `?pwd=${passcode}`; }
+      Linking.openURL(url);
+    }
+  }, [texasGate.status]);
 
   // Clean meeting ID (remove spaces and dashes)
   const cleanMeetingId = (id: string) => {
@@ -60,13 +87,12 @@ export default function MeetingsScreen() {
 
   // Join meeting via WebView
   const handleJoinMeeting = () => {
-    // Texas GPS location gate — auto-resume after verification
+    // Texas GPS location gate — mark pending, useEffect auto-resumes
     if (texasGate.status !== 'granted') {
-      texasGate._onGrantedRef.current = () => handleJoinMeeting();
+      pendingActionRef.current = 'join';
       texasGate.requestCheck();
       return;
     }
-    texasGate._onGrantedRef.current = null;
 
     const cleanedId = cleanMeetingId(meetingId);
 
@@ -92,13 +118,12 @@ export default function MeetingsScreen() {
 
   // Open in external Zoom app/browser
   const handleOpenExternal = () => {
-    // Texas GPS location gate — auto-resume after verification
+    // Texas GPS location gate — mark pending, useEffect auto-resumes
     if (texasGate.status !== 'granted') {
-      texasGate._onGrantedRef.current = () => handleOpenExternal();
+      pendingActionRef.current = 'external';
       texasGate.requestCheck();
       return;
     }
-    texasGate._onGrantedRef.current = null;
 
     const cleanedId = cleanMeetingId(meetingId);
     if (!cleanedId) {

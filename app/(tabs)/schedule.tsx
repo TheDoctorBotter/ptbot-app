@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -81,9 +81,69 @@ export default function ScheduleScreen() {
   const [selectedAppointmentForJoin, setSelectedAppointmentForJoin] = useState<Appointment | null>(null);
 
   // Texas GPS location gate (for scheduling — session-level)
-  const texasGate = useTexasLocationGate() as ReturnType<typeof useTexasLocationGate> & {
-    _onGrantedRef: React.MutableRefObject<(() => void) | null>;
-  };
+  const texasGate = useTexasLocationGate();
+
+  // Pending-action refs: track what to do after the Texas gate passes.
+  // Using refs (not state) so we never have stale closure issues.
+  const pendingBookRef = useRef(false);
+  const pendingJoinRef = useRef<Appointment | null>(null);
+
+  // When the Texas gate transitions to 'granted', auto-proceed with
+  // whatever action was pending. This runs after React re-renders, so
+  // all state values are fresh — no stale closure problem.
+  useEffect(() => {
+    if (texasGate.status !== 'granted') return;
+
+    if (pendingBookRef.current) {
+      pendingBookRef.current = false;
+      // Continue the booking flow past the Texas gate.
+      // Credit check → consent check → proceedWithBooking
+      const continueBooking = async () => {
+        if (!canBookTelehealth) {
+          setShowTelehealthPaywall(true);
+          return;
+        }
+        if (isLoggedIn && !hasValidConsent) {
+          setShowConsentModal(true);
+          return;
+        }
+        await proceedWithBooking();
+      };
+      continueBooking();
+    }
+
+    if (pendingJoinRef.current) {
+      const appointment = pendingJoinRef.current;
+      pendingJoinRef.current = null;
+      // Continue the join flow past the Texas gate
+      const continueJoin = async () => {
+        if (!userId) return;
+        try {
+          const requirements = await checkPreConsultRequirements(userId, appointment.id);
+          if (requirements.needsConsent) {
+            setShowConsentModal(true);
+            return;
+          }
+          if (requirements.needsLocationVerification) {
+            setSelectedAppointmentForJoin(appointment);
+            setShowLocationModal(true);
+            return;
+          }
+          if (requirements.locationError) {
+            Alert.alert('Location Required', requirements.locationError);
+            return;
+          }
+          if (appointment.zoom_meeting_url) {
+            Linking.openURL(appointment.zoom_meeting_url);
+          }
+        } catch {
+          setSelectedAppointmentForJoin(appointment);
+          setShowLocationModal(true);
+        }
+      };
+      continueJoin();
+    }
+  }, [texasGate.status]);
 
   // Check auth status and consent
   useEffect(() => {
@@ -243,19 +303,12 @@ export default function ScheduleScreen() {
     }
 
     // Texas location gate: must be in Texas to book a Zoom call.
-    // Register a callback so the booking flow auto-resumes after
-    // the user passes the location check — no double-tap required.
+    // Mark pending so the useEffect auto-proceeds after verification.
     if (texasGate.status !== 'granted') {
-      texasGate._onGrantedRef.current = () => {
-        // Re-run the booking flow; status will now be 'granted'
-        handleBookAppointment();
-      };
+      pendingBookRef.current = true;
       texasGate.requestCheck();
       return;
     }
-
-    // Clear callback once we've passed the gate
-    texasGate._onGrantedRef.current = null;
 
     // Telehealth credit check: must have a credit to book
     if (!canBookTelehealth) {
@@ -339,16 +392,12 @@ export default function ScheduleScreen() {
     }
 
     // Texas GPS location gate (session-level).
-    // Register callback so join auto-proceeds after verification.
+    // Mark pending so the useEffect auto-proceeds after verification.
     if (texasGate.status !== 'granted') {
-      texasGate._onGrantedRef.current = () => {
-        handleJoinConsult(appointment);
-      };
+      pendingJoinRef.current = appointment;
       texasGate.requestCheck();
       return;
     }
-
-    texasGate._onGrantedRef.current = null;
 
     // Check pre-consult requirements
     try {
