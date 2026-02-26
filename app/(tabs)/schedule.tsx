@@ -292,11 +292,18 @@ export default function ScheduleScreen() {
       return;
     }
 
-    // Require login to book - guests cannot book for free
+    // Telehealth credit check first — catches both guests and logged-in
+    // users without credits, showing the paywall so they can purchase.
+    if (!canBookTelehealth) {
+      setShowTelehealthPaywall(true);
+      return;
+    }
+
+    // Safety net: users with credits should always be logged in
     if (!isLoggedIn) {
       Alert.alert(
         'Sign In Required',
-        'Please sign in and purchase a telehealth credit to book an appointment.',
+        'Please sign in to book an appointment.',
         [{ text: 'OK' }]
       );
       return;
@@ -307,12 +314,6 @@ export default function ScheduleScreen() {
     if (texasGate.status !== 'granted') {
       pendingBookRef.current = true;
       texasGate.requestCheck();
-      return;
-    }
-
-    // Telehealth credit check: must have a credit to book
-    if (!canBookTelehealth) {
-      setShowTelehealthPaywall(true);
       return;
     }
 
@@ -660,8 +661,8 @@ export default function ScheduleScreen() {
         </View>
       )}
 
-      {/* Telehealth Credit Banner (for logged-in patients only, not admin) */}
-      {isLoggedIn && !isClinicStaff && (
+      {/* Telehealth Credit Banner (for all non-admin users) */}
+      {!isClinicStaff && (
         <View>
           <TouchableOpacity
             style={[
@@ -683,7 +684,9 @@ export default function ScheduleScreen() {
             >
               {canBookTelehealth
                 ? `${telehealthCreditsAvailable} telehealth credit${telehealthCreditsAvailable !== 1 ? 's' : ''} available`
-                : 'No consult credits — tap to purchase'}
+                : isLoggedIn
+                  ? 'No consult credits — tap to purchase'
+                  : 'Sign in & purchase a credit to book'}
             </Text>
             {canBookTelehealth ? (
               <Check size={16} color={colors.success[600]} />
