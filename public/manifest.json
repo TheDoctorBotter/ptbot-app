@@ -4,7 +4,7 @@
   "description": "AI-powered virtual physical therapy assistant by Dr. Justin Lemmo, PT, DPT",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#FFFFFF",
+  "background_color": "#000000",
   "theme_color": "#C41E3A",
   "orientation": "portrait-primary",
   "scope": "/",
