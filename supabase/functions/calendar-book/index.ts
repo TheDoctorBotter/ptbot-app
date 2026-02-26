@@ -263,6 +263,18 @@ Deno.serve(async (req) => {
 
     console.log(`[calendar-book] Appointment saved: ${appointment.id}, status: ${status}`);
 
+    // Build an honest message based on what actually succeeded
+    let message: string;
+    if (autoConfirm && zoomMeetingUrl) {
+      message = 'Your appointment has been confirmed! A Zoom link has been created for your session.';
+    } else if (autoConfirm && !zoomMeetingUrl) {
+      message = 'Your appointment has been confirmed, but we could not create a Zoom link automatically. One will be provided before your session.';
+    } else if (!autoConfirm && zoomMeetingUrl) {
+      message = 'Your appointment is pending confirmation. A Zoom link is ready and will be available once confirmed.';
+    } else {
+      message = 'Your appointment is pending confirmation. You will receive a Zoom link once your appointment is confirmed.';
+    }
+
     return corsResponse({
       ok: true,
       appointment: {
@@ -275,9 +287,8 @@ Deno.serve(async (req) => {
         zoomMeetingUrl: appointment.zoom_meeting_url,
         zoomMeetingId: appointment.zoom_meeting_id,
       },
-      message: autoConfirm
-        ? 'Your appointment has been confirmed! A Zoom link has been created for your session.'
-        : 'Your appointment is pending confirmation. You will receive a confirmation with Zoom details soon.',
+      zoomCreated: !!zoomMeetingUrl,
+      message,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';

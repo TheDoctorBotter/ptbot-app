@@ -340,6 +340,9 @@ export default function ScheduleScreen() {
       });
 
       setSuccessMessage(response.message);
+      if (!response.zoomCreated) {
+        console.warn('[schedule] Zoom meeting was not created for this booking');
+      }
       setSelectedSlot(null);
       setNotes('');
 
@@ -899,7 +902,7 @@ export default function ScheduleScreen() {
                   </Text>
                 </View>
 
-                {appointment.zoom_meeting_url && (
+                {appointment.zoom_meeting_url ? (
                   <TouchableOpacity
                     style={styles.zoomLink}
                     onPress={() => handleJoinConsult(appointment)}
@@ -908,7 +911,12 @@ export default function ScheduleScreen() {
                     <Text style={styles.zoomLinkText}>Join Zoom Meeting</Text>
                     <ChevronRight size={16} color={colors.primary[500]} />
                   </TouchableOpacity>
-                )}
+                ) : (appointment.status === 'pending' || appointment.status === 'confirmed') ? (
+                  <View style={styles.zoomPending}>
+                    <Clock size={16} color={colors.warning[500]} />
+                    <Text style={styles.zoomPendingText}>Zoom link will be provided before your session</Text>
+                  </View>
+                ) : null}
 
                 {appointment.patient_notes && (
                   <Text style={styles.appointmentNotes}>
@@ -1463,6 +1471,18 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: colors.primary[500],
     fontWeight: typography.fontWeight.medium,
+  },
+  zoomPending: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing[2],
+    gap: spacing[2],
+  },
+  zoomPendingText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.warning[600],
+    fontWeight: typography.fontWeight.medium,
+    flex: 1,
   },
   bookNowButton: {
     backgroundColor: colors.primary[500],
