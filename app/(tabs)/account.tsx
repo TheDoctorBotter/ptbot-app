@@ -340,6 +340,14 @@ export default function AccountScreen() {
       await assessmentService.clearAssessments();
       console.log('Assessment data cleared on sign out');
 
+      // Clear Texas location gate cache so next user gets a fresh check
+      try {
+        sessionStorage.removeItem('ptbot_zoom_location_checked');
+        sessionStorage.removeItem('ptbot_in_texas');
+      } catch {
+        // sessionStorage may not be available — safe to ignore
+      }
+
       // Sign out from Supabase - use global scope to sign out everywhere
       const { error } = await supabase.auth.signOut();
 
