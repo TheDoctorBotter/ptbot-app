@@ -1,6 +1,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.49.1';
 import { getGoogleCalendar } from '../_shared/googleCalendar.ts';
+import { createZoomMeeting } from '../_shared/zoom.ts';
 import {
   isSlotAvailable,
   isBusinessHours,
@@ -177,15 +178,47 @@ Deno.serve(async (req) => {
     const autoConfirm = isBusinessHours(startISO);
     const status = autoConfirm ? 'confirmed' : 'pending';
 
-    // Create Google Calendar event
+    // Create Zoom meeting first so we can include the link in the calendar event
+    let zoomMeetingId: string | null = null;
+    let zoomMeetingUrl: string | null = null;
+    let zoomMeetingPasscode: string | null = null;
+
+    try {
+      const zoomMeeting = await createZoomMeeting(
+        patientName,
+        startISO,
+        APPOINTMENT_DURATION_MIN
+      );
+      zoomMeetingId = String(zoomMeeting.id);
+      zoomMeetingUrl = zoomMeeting.join_url;
+      zoomMeetingPasscode = zoomMeeting.password || null;
+      console.log(`[calendar-book] Created Zoom meeting: ${zoomMeetingId}`);
+    } catch (zoomErr) {
+      // Log but don't block the booking — Zoom link can be added manually later
+      console.error(`[calendar-book] Zoom meeting creation failed (non-blocking): ${zoomErr}`);
+    }
+
+    // Create Google Calendar event (with Zoom link if available)
     const summary = `PTBot Zoom Call - ${patientName}`;
-    const description = notes ? `Notes: ${notes}` : '';
+    const descriptionParts: string[] = [];
+    if (zoomMeetingUrl) {
+      descriptionParts.push(`Join Zoom Meeting: ${zoomMeetingUrl}`);
+      if (zoomMeetingPasscode) {
+        descriptionParts.push(`Passcode: ${zoomMeetingPasscode}`);
+      }
+      descriptionParts.push('');
+    }
+    if (notes) {
+      descriptionParts.push(`Notes: ${notes}`);
+    }
+    const description = descriptionParts.join('\n');
 
     const calendarEvent = await calendar.createEvent({
       summary,
       description,
       startISO,
       endISO,
+      location: zoomMeetingUrl || undefined,
       patientName,
       phone: patientPhone,
       userId: userId || undefined,
@@ -206,6 +239,9 @@ Deno.serve(async (req) => {
         duration_minutes: APPOINTMENT_DURATION_MIN,
         google_event_id: calendarEvent.id,
         google_event_link: calendarEvent.htmlLink,
+        zoom_meeting_id: zoomMeetingId,
+        zoom_meeting_url: zoomMeetingUrl,
+        zoom_meeting_passcode: zoomMeetingPasscode,
         status,
         auto_confirmed: autoConfirm,
         confirmed_at: autoConfirm ? new Date().toISOString() : null,
@@ -236,10 +272,12 @@ Deno.serve(async (req) => {
         status: appointment.status,
         autoConfirmed: appointment.auto_confirmed,
         googleEventLink: appointment.google_event_link,
+        zoomMeetingUrl: appointment.zoom_meeting_url,
+        zoomMeetingId: appointment.zoom_meeting_id,
       },
       message: autoConfirm
-        ? 'Your appointment has been confirmed!'
-        : 'Your appointment is pending confirmation. You will receive a confirmation soon.',
+        ? 'Your appointment has been confirmed! A Zoom link has been created for your session.'
+        : 'Your appointment is pending confirmation. You will receive a confirmation with Zoom details soon.',
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
