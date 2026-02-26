@@ -13,8 +13,10 @@ import {
   Linking,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { Video, ExternalLink, X, ArrowLeft } from 'lucide-react-native';
+import { Video, ExternalLink, X, ArrowLeft, MapPin } from 'lucide-react-native';
 import { colors, spacing, borderRadius, typography, shadows, cardStyles } from '@/constants/theme';
+import TexasLocationGateModal from '@/components/telehealth/TexasLocationGateModal';
+import { useTexasLocationGate } from '@/hooks/useTexasLocationGate';
 
 export default function MeetingsScreen() {
   const [meetingId, setMeetingId] = useState('');
@@ -24,6 +26,9 @@ export default function MeetingsScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const webViewRef = useRef<WebView>(null);
+
+  // Texas GPS location gate (session-level)
+  const texasGate = useTexasLocationGate();
 
   // Clean meeting ID (remove spaces and dashes)
   const cleanMeetingId = (id: string) => {
@@ -53,6 +58,12 @@ export default function MeetingsScreen() {
 
   // Join meeting via WebView
   const handleJoinMeeting = () => {
+    // Texas GPS location gate
+    if (texasGate.status !== 'granted') {
+      texasGate.requestCheck();
+      return;
+    }
+
     const cleanedId = cleanMeetingId(meetingId);
 
     if (!cleanedId) {
@@ -77,6 +88,12 @@ export default function MeetingsScreen() {
 
   // Open in external Zoom app/browser
   const handleOpenExternal = () => {
+    // Texas GPS location gate
+    if (texasGate.status !== 'granted') {
+      texasGate.requestCheck();
+      return;
+    }
+
     const cleanedId = cleanMeetingId(meetingId);
     if (!cleanedId) {
       setError('Please enter a meeting ID');
@@ -171,6 +188,17 @@ export default function MeetingsScreen() {
               Join your physical therapy video session
             </Text>
           </View>
+
+          {/* Texas Location Gate Banner */}
+          {(texasGate.status === 'denied' || texasGate.status === 'permission_denied') && (
+            <View style={styles.locationDeniedBanner}>
+              <MapPin size={18} color={colors.warning[600]} />
+              <Text style={styles.locationDeniedText}>
+                Zoom consultations are available only in Texas at this time.
+                You can continue using PTBot features without joining a call.
+              </Text>
+            </View>
+          )}
 
           {/* Join Form Card */}
           <View style={styles.card}>
@@ -270,6 +298,16 @@ export default function MeetingsScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Texas GPS Location Gate Modal */}
+      <TexasLocationGateModal
+        visible={texasGate.showModal}
+        status={texasGate.status}
+        loading={texasGate.loading}
+        message={texasGate.message}
+        onCheckEligibility={texasGate.verify}
+        onDismiss={texasGate.dismiss}
+      />
     </SafeAreaView>
   );
 }
@@ -278,6 +316,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.neutral[50],
+  },
+  locationDeniedBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.warning[50],
+    padding: spacing[3],
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing[4],
+    gap: spacing[2],
+    borderWidth: 1,
+    borderColor: colors.warning[100],
+  },
+  locationDeniedText: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.warning[700],
+    lineHeight: typography.fontSize.sm * typography.lineHeight.normal,
   },
   keyboardView: {
     flex: 1,
