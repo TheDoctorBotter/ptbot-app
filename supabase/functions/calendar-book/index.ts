@@ -6,6 +6,7 @@ import {
   isSlotAvailable,
   isBusinessHours,
   APPOINTMENT_DURATION_MIN,
+  BOOKING_LEAD_MIN,
   addMinMs,
   toISO,
   toMs,
@@ -62,9 +63,10 @@ function validateBookingRequest(body: unknown): { valid: true; data: BookingRequ
     return { valid: false, error: 'Invalid startISO format' };
   }
 
-  // Must be in the future
-  if (startDate.getTime() < Date.now()) {
-    return { valid: false, error: 'Appointment time must be in the future' };
+  // Must be in the future with a minimum lead buffer
+  const earliestAllowed = Date.now() + BOOKING_LEAD_MIN * 60_000;
+  if (startDate.getTime() < earliestAllowed) {
+    return { valid: false, error: 'Please select a future time.' };
   }
 
   if (!request.patientName || typeof request.patientName !== 'string' || request.patientName.length < 2) {

@@ -161,6 +161,10 @@ export interface DaySlots {
   }>;
 }
 
+// Minimum lead time (in minutes) before a slot can be booked.
+// Slots starting earlier than now + this buffer are excluded.
+export const BOOKING_LEAD_MIN = 15;
+
 export function generateSlotsByDay({
   days = 7,
   startFromISO,
@@ -171,6 +175,7 @@ export function generateSlotsByDay({
   existingEvents: ExistingEvent[];
 }): DaySlots[] {
   const now = startFromISO ? new Date(startFromISO) : new Date();
+  const earliestBookable = new Date(now.getTime() + BOOKING_LEAD_MIN * 60_000);
   const result: DaySlots[] = [];
 
   for (let d = 0; d < days; d++) {
@@ -186,8 +191,19 @@ export function generateSlotsByDay({
       continue;
     }
 
+    // For today (d === 0), start from whichever is later:
+    // business-hours start or now + lead buffer.
+    const effectiveStart = d === 0 && earliestBookable > dayStart
+      ? earliestBookable
+      : dayStart;
+
+    // If the entire business day has passed, skip it
+    if (effectiveStart >= dayEnd) {
+      continue;
+    }
+
     const slots = generateAvailableSlots({
-      windowStartISO: dayStart.toISOString(),
+      windowStartISO: effectiveStart.toISOString(),
       windowEndISO: dayEnd.toISOString(),
       existingEvents,
     });
