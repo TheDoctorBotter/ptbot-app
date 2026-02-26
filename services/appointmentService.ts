@@ -70,7 +70,10 @@ export interface BookingResponse {
     status: string;
     autoConfirmed: boolean;
     googleEventLink: string | null;
+    zoomMeetingUrl: string | null;
+    zoomMeetingId: string | null;
   };
+  zoomCreated: boolean;
   message: string;
 }
 
