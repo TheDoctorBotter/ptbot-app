@@ -183,6 +183,7 @@ Deno.serve(async (req) => {
     let zoomMeetingUrl: string | null = null;
     let zoomMeetingPasscode: string | null = null;
 
+    console.log(`[calendar-book] Attempting Zoom meeting creation...`);
     try {
       const zoomMeeting = await createZoomMeeting(
         patientName,
@@ -194,8 +195,9 @@ Deno.serve(async (req) => {
       zoomMeetingPasscode = zoomMeeting.password || null;
       console.log(`[calendar-book] Created Zoom meeting: ${zoomMeetingId}`);
     } catch (zoomErr) {
-      // Log but don't block the booking — Zoom link can be added manually later
-      console.error(`[calendar-book] Zoom meeting creation failed (non-blocking): ${zoomErr}`);
+      // Log at info level so it appears in standard Supabase logs (console.error goes to a separate stream)
+      const zoomErrMsg = zoomErr instanceof Error ? zoomErr.message : String(zoomErr);
+      console.log(`[calendar-book] WARNING: Zoom meeting creation failed (non-blocking): ${zoomErrMsg}`);
     }
 
     // Create Google Calendar event (with Zoom link if available)
