@@ -739,6 +739,9 @@ export default function ScheduleScreen() {
           </TouchableOpacity>
           {showTelehealthPaywall && !canBookTelehealth && (
             <PaywallCard
+              visibleProducts={['telehealth_onetime', 'subscription']}
+              headerTitle="Book a Telehealth Visit"
+              headerSubtitle="Purchase a consult credit or become a PTBot member to schedule your appointment."
               onEntitlementsRefresh={() => {
                 refreshEntitlements();
                 setShowTelehealthPaywall(false);
@@ -748,8 +751,9 @@ export default function ScheduleScreen() {
         </View>
       )}
 
-      {/* Consent Status Banner (for logged-in patients only, not admin) */}
-      {isLoggedIn && !checkingConsent && !isClinicStaff && (
+      {/* Consent Status Banner — only shown once the user has telehealth credits
+          (i.e. they've paid).  No point asking for consent before purchase. */}
+      {isLoggedIn && !checkingConsent && !isClinicStaff && canBookTelehealth && (
         <TouchableOpacity
           style={[
             styles.consentBanner,

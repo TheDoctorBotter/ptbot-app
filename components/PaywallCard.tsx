@@ -30,9 +30,21 @@ import { PTBOT_PRODUCTS, type ProductType } from '@/src/config/stripe';
 interface PaywallCardProps {
   condition?: string;
   onEntitlementsRefresh?: () => void;
+  /** Restrict which product cards are shown (default: all three). */
+  visibleProducts?: ProductType[];
+  /** Override the header title. */
+  headerTitle?: string;
+  /** Override the header subtitle. */
+  headerSubtitle?: string;
 }
 
-export default function PaywallCard({ condition, onEntitlementsRefresh }: PaywallCardProps) {
+export default function PaywallCard({
+  condition,
+  onEntitlementsRefresh,
+  visibleProducts,
+  headerTitle,
+  headerSubtitle,
+}: PaywallCardProps) {
   const [loadingType, setLoadingType] = useState<ProductType | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -177,16 +189,15 @@ export default function PaywallCard({ condition, onEntitlementsRefresh }: Paywal
       <View style={styles.header}>
         <Lock size={24} color={colors.primary[500]} />
         <View style={styles.headerText}>
-          <Text style={styles.title}>Unlock Your Full Plan</Text>
+          <Text style={styles.title}>{headerTitle ?? 'Unlock Your Full Plan'}</Text>
           <Text style={styles.subtitle}>
-            You're seeing 2 of your personalised exercises.
-            Choose an option to access everything.
+            {headerSubtitle ?? 'You\'re seeing 2 of your personalised exercises. Choose an option to access everything.'}
           </Text>
         </View>
       </View>
 
       {/* Product cards */}
-      {(['plan_onetime', 'subscription', 'telehealth_onetime'] as ProductType[]).map((type) => {
+      {(visibleProducts ?? ['plan_onetime', 'subscription', 'telehealth_onetime'] as ProductType[]).map((type) => {
         const product = PTBOT_PRODUCTS[type];
         const isLoading = loadingType === type;
         const icon =
