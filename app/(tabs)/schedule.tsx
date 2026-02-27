@@ -148,8 +148,8 @@ export default function ScheduleScreen() {
     }
   }, [texasGate.status]);
 
-  // Pre-fill name from profile (parallel to consent check)
-  const prefillFromProfile = useCallback(async (uid: string) => {
+  // Pre-fill name from profile, falling back to auth user_metadata
+  const prefillFromProfile = useCallback(async (uid: string, userMetadata?: Record<string, string>) => {
     if (!supabase || nameEditedByUser.current) return;
     try {
       const { data } = await supabase
@@ -158,12 +158,25 @@ export default function ScheduleScreen() {
         .eq('id', uid)
         .maybeSingle();
 
-      if (data && !nameEditedByUser.current) {
-        const fullName = [data.first_name, data.last_name].filter(Boolean).join(' ');
-        if (fullName) setPatientName(fullName);
-      }
+      if (nameEditedByUser.current) return;
+
+      // Try profile first_name + last_name
+      const profileName = data
+        ? [data.first_name, data.last_name].filter(Boolean).join(' ')
+        : '';
+
+      // Fall back to user_metadata.full_name (web signup) or first+last
+      const metaName = userMetadata?.full_name
+        || [userMetadata?.first_name, userMetadata?.last_name].filter(Boolean).join(' ')
+        || '';
+
+      const resolvedName = profileName || metaName;
+      if (resolvedName) setPatientName(resolvedName);
     } catch {
-      // Non-critical — form stays empty
+      // Non-critical — try metadata fallback
+      if (!nameEditedByUser.current && userMetadata?.full_name) {
+        setPatientName(userMetadata.full_name);
+      }
     }
   }, []);
 
@@ -183,12 +196,13 @@ export default function ScheduleScreen() {
         setPatientEmail(session.user.email || '');
 
         // Fetch profile + consent in parallel
+        const meta = (session.user.user_metadata ?? {}) as Record<string, string>;
         const consentPromise = telehealthConsentService
           .getConsentStatus(session.user.id)
           .then(s => setHasValidConsent(s.hasValidConsent))
           .catch(() => setHasValidConsent(false));
 
-        const profilePromise = prefillFromProfile(session.user.id);
+        const profilePromise = prefillFromProfile(session.user.id, meta);
 
         await Promise.all([consentPromise, profilePromise]);
       }
@@ -201,7 +215,8 @@ export default function ScheduleScreen() {
       if (session?.user) {
         setUserId(session.user.id);
         setPatientEmail(session.user.email || '');
-        prefillFromProfile(session.user.id);
+        const meta = (session.user.user_metadata ?? {}) as Record<string, string>;
+        prefillFromProfile(session.user.id, meta);
 
         // Re-check consent on auth change
         try {
@@ -307,18 +322,8 @@ export default function ScheduleScreen() {
       return;
     }
 
-    if (!patientName.trim()) {
-      setError('Please enter your name');
-      return;
-    }
-
-    if (patientName.trim().length < 2) {
-      setError('Name must be at least 2 characters');
-      return;
-    }
-
-    // Telehealth credit check first — catches both guests and logged-in
-    // users without credits, showing the paywall so they can purchase.
+    // Credit / paywall gate runs first so non-members see the purchase
+    // prompt immediately — before we ask them to fill in form fields.
     if (!canBookTelehealth) {
       setShowTelehealthPaywall(true);
       return;
@@ -331,6 +336,16 @@ export default function ScheduleScreen() {
         'Please sign in to book an appointment.',
         [{ text: 'OK' }]
       );
+      return;
+    }
+
+    if (!patientName.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+
+    if (patientName.trim().length < 2) {
+      setError('Name must be at least 2 characters');
       return;
     }
 
