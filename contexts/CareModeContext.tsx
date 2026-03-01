@@ -15,14 +15,14 @@ interface CareModeContextValue {
 export const CareModeContext = createContext<CareModeContextValue>({
   careMode: 'adult',
   setCareMode: async () => {},
-  isLoading: true,
+  isLoading: false,
 });
 
 export function CareModeProvider({ children }: { children: React.ReactNode }) {
   const [careMode, setCareModeState] = useState<CareMode>('adult');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load from cache first, then sync from DB
+  // Load care mode — read cache first (fast), then sync from DB in the background
   useEffect(() => {
     let cancelled = false;
 
@@ -30,23 +30,21 @@ export function CareModeProvider({ children }: { children: React.ReactNode }) {
       // 1. Read from local cache for instant display
       try {
         const cached = await AsyncStorage.getItem(CACHE_KEY);
-        if (cached === 'adult' || cached === 'pediatric') {
-          if (!cancelled) setCareModeState(cached);
+        if (!cancelled && (cached === 'adult' || cached === 'pediatric')) {
+          setCareModeState(cached);
         }
-      } catch {}
-
-      // 2. Sync from Supabase
-      if (!supabase) {
-        if (!cancelled) setIsLoading(false);
-        return;
+      } catch {
+        // Cache miss is fine — default to 'adult'
       }
 
+      // Mark loading done after cache read — don't wait for Supabase
+      if (!cancelled) setIsLoading(false);
+
+      // 2. Background sync from Supabase (non-blocking)
+      if (!supabase) return;
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user || cancelled) {
-          if (!cancelled) setIsLoading(false);
-          return;
-        }
+        if (!user || cancelled) return;
 
         const { data, error } = await supabase
           .from('profiles')
@@ -59,8 +57,8 @@ export function CareModeProvider({ children }: { children: React.ReactNode }) {
           setCareModeState(mode);
           await AsyncStorage.setItem(CACHE_KEY, mode);
         }
-      } catch {} finally {
-        if (!cancelled) setIsLoading(false);
+      } catch {
+        // Supabase sync failed — cache value is good enough
       }
     };
 
@@ -68,12 +66,12 @@ export function CareModeProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Re-sync care mode when the user signs in/out
+  // Re-load care mode when a different user signs in
   useEffect(() => {
     if (!supabase) return;
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event) => {
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (event === 'SIGNED_IN') {
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
@@ -87,10 +85,9 @@ export function CareModeProvider({ children }: { children: React.ReactNode }) {
               setCareModeState(mode);
               await AsyncStorage.setItem(CACHE_KEY, mode);
             }
-          } catch {}
-        } else if (event === 'SIGNED_OUT') {
-          setCareModeState('adult');
-          await AsyncStorage.removeItem(CACHE_KEY);
+          } catch {
+            // Non-critical — keep current care mode
+          }
         }
       }
     );
@@ -100,7 +97,11 @@ export function CareModeProvider({ children }: { children: React.ReactNode }) {
   const setCareMode = useCallback(async (mode: CareMode) => {
     // Optimistic local update — all consumers of the context re-render immediately
     setCareModeState(mode);
-    await AsyncStorage.setItem(CACHE_KEY, mode);
+    try {
+      await AsyncStorage.setItem(CACHE_KEY, mode);
+    } catch {
+      // Cache write failed, state update still works for this session
+    }
 
     // Persist to Supabase
     if (!supabase) return;
