@@ -71,6 +71,7 @@ export default function PediatricDashboard() {
   const [childAgeMonths, setChildAgeMonths] = useState(0);
   const [startIdx, setStartIdx] = useState(0);
   const [isSavingResult, setIsSavingResult] = useState(false);
+  const [selectedAnswer, setSelectedAnswer] = useState<'yes' | 'sometimes' | 'not_yet' | null>(null);
 
   // Results
   const [resultData, setResultData] = useState<{
@@ -102,6 +103,7 @@ export default function PediatricDashboard() {
     setAssessmentDone(false);
     setResultData(null);
     setAssessmentHistory([]);
+    setSelectedAnswer(null);
   }, []);
 
   // Load data for the current user
@@ -230,7 +232,28 @@ export default function PediatricDashboard() {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [selectedProfile, allMilestones]);
 
-  // ── Handle answer ────────────────────────────────────────────────────────
+  // ── Handle answer press — show visual feedback, then advance ─────────
+  const handleAnswerPress = (answer: 'yes' | 'sometimes' | 'not_yet') => {
+    if (selectedAnswer !== null) return; // already processing
+    setSelectedAnswer(answer);
+
+    // Brief delay so user sees their selection highlighted
+    setTimeout(() => {
+      handleAnswer(answer);
+      setSelectedAnswer(null);
+    }, 400);
+  };
+
+  // ── Handle answer — core assessment logic ──────────────────────────────
+  //
+  // Flow:
+  //  1. Start at the child's age-level milestone (startIdx), direction = 'backward'
+  //  2. If child says YES at startIdx → switch to 'forward' and continue upward
+  //  3. If child says NO/SOMETIMES → go backward (lower milestones)
+  //  4. Going backward: if they say YES below startIdx → FINISH (we found the floor;
+  //     everything between here and startIdx was already failed, no need to re-ask)
+  //  5. Going forward: if they say NO/SOMETIMES → FINISH (we found the ceiling)
+  //
   const handleAnswer = (answer: 'yes' | 'sometimes' | 'not_yet') => {
     const milestone = orderedMilestones[currentMilestoneIdx];
     if (!milestone) return;
@@ -239,39 +262,28 @@ export default function PediatricDashboard() {
     setAnswers(newAnswers);
 
     if (answer === 'yes') {
-      // Child can do this. If we were going backward, we found the floor.
-      // Now go forward from start to check if they're on track or ahead.
       if (direction === 'backward') {
-        // We found a mastered milestone going backward. Now go forward from startIdx.
-        if (currentMilestoneIdx >= startIdx) {
-          // They said yes at or above start — try next one forward
+        if (currentMilestoneIdx === startIdx) {
+          // Child can do their age-appropriate milestone — great!
+          // Switch to forward to see if they're ahead of schedule.
           const nextIdx = currentMilestoneIdx + 1;
           if (nextIdx < orderedMilestones.length) {
             setDirection('forward');
             setCurrentMilestoneIdx(nextIdx);
             scrollRef.current?.scrollTo({ y: 0, animated: true });
           } else {
+            // Already at the last milestone — done
             finishAssessment(newAnswers);
           }
         } else {
-          // We were below start going backward, and child said yes.
-          // Now jump forward to startIdx to test age-appropriate milestones.
-          setDirection('forward');
-          if (startIdx < orderedMilestones.length && newAnswers[orderedMilestones[startIdx].id] === undefined) {
-            setCurrentMilestoneIdx(startIdx);
-          } else {
-            // Already answered start, go one past it
-            const nextUnanswered = findNextUnanswered(startIdx, newAnswers);
-            if (nextUnanswered !== null) {
-              setCurrentMilestoneIdx(nextUnanswered);
-            } else {
-              finishAssessment(newAnswers);
-            }
-          }
-          scrollRef.current?.scrollTo({ y: 0, animated: true });
+          // Child said YES below startIdx while going backward.
+          // We found their floor. Everything between here and startIdx was
+          // already answered "no"/"sometimes" going backward — no need to
+          // jump forward and re-ask those. Assessment is complete.
+          finishAssessment(newAnswers);
         }
       } else {
-        // Going forward — try next milestone
+        // Going forward — child can do this, try next milestone
         const nextIdx = findNextUnanswered(currentMilestoneIdx + 1, newAnswers);
         if (nextIdx !== null && nextIdx < orderedMilestones.length) {
           setCurrentMilestoneIdx(nextIdx);
@@ -281,18 +293,18 @@ export default function PediatricDashboard() {
         }
       }
     } else {
-      // Child can't do this (or sometimes). Go backward to find what they CAN do.
+      // Child can't do this (or sometimes)
       if (direction === 'forward') {
-        // They failed going forward — we're done, we found the ceiling
+        // They failed going forward — we found the ceiling, done
         finishAssessment(newAnswers);
       } else {
-        // Going backward — keep going back
+        // Going backward — keep going back to find what they CAN do
         const prevIdx = currentMilestoneIdx - 1;
         if (prevIdx >= 0) {
           setCurrentMilestoneIdx(prevIdx);
           scrollRef.current?.scrollTo({ y: 0, animated: true });
         } else {
-          // We've gone all the way to the beginning
+          // We've gone all the way to the beginning and child can't do anything
           finishAssessment(newAnswers);
         }
       }
@@ -555,8 +567,8 @@ export default function PediatricDashboard() {
           <View style={styles.directionBadge}>
             <Text style={styles.directionText}>
               {direction === 'backward'
-                ? 'Finding your child\'s starting level...'
-                : 'Checking skills above your child\'s level...'}
+                ? 'Finding your child\'s current level...'
+                : 'Checking if your child is ahead of schedule...'}
             </Text>
           </View>
 
@@ -583,11 +595,20 @@ export default function PediatricDashboard() {
 
           {/* Answer Buttons */}
           <TouchableOpacity
-            style={[styles.answerBtn, styles.answerBtnYes]}
-            onPress={() => handleAnswer('yes')}
+            style={[
+              styles.answerBtn,
+              styles.answerBtnYes,
+              selectedAnswer === 'yes' && styles.answerBtnYesSelected,
+            ]}
+            onPress={() => handleAnswerPress('yes')}
             activeOpacity={0.7}
+            disabled={selectedAnswer !== null}
           >
-            <CheckCircle size={22} color={colors.success[600]} />
+            {selectedAnswer === 'yes' ? (
+              <CheckCircle size={22} color={colors.success[600]} />
+            ) : (
+              <Circle size={22} color={colors.success[600]} />
+            )}
             <View style={styles.answerBtnContent}>
               <Text style={styles.answerBtnTitle}>Yes</Text>
               <Text style={styles.answerBtnHint}>My child does this consistently</Text>
@@ -595,11 +616,20 @@ export default function PediatricDashboard() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.answerBtn, styles.answerBtnSometimes]}
-            onPress={() => handleAnswer('sometimes')}
+            style={[
+              styles.answerBtn,
+              styles.answerBtnSometimes,
+              selectedAnswer === 'sometimes' && styles.answerBtnSometimesSelected,
+            ]}
+            onPress={() => handleAnswerPress('sometimes')}
             activeOpacity={0.7}
+            disabled={selectedAnswer !== null}
           >
-            <Circle size={22} color={colors.warning[600]} />
+            {selectedAnswer === 'sometimes' ? (
+              <CheckCircle size={22} color={colors.warning[600]} />
+            ) : (
+              <Circle size={22} color={colors.warning[600]} />
+            )}
             <View style={styles.answerBtnContent}>
               <Text style={styles.answerBtnTitle}>Sometimes</Text>
               <Text style={styles.answerBtnHint}>My child does this inconsistently or is just starting to</Text>
@@ -607,11 +637,20 @@ export default function PediatricDashboard() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.answerBtn, styles.answerBtnNo]}
-            onPress={() => handleAnswer('not_yet')}
+            style={[
+              styles.answerBtn,
+              styles.answerBtnNo,
+              selectedAnswer === 'not_yet' && styles.answerBtnNoSelected,
+            ]}
+            onPress={() => handleAnswerPress('not_yet')}
             activeOpacity={0.7}
+            disabled={selectedAnswer !== null}
           >
-            <Circle size={22} color={colors.error[500]} />
+            {selectedAnswer === 'not_yet' ? (
+              <CheckCircle size={22} color={colors.error[500]} />
+            ) : (
+              <Circle size={22} color={colors.error[500]} />
+            )}
             <View style={styles.answerBtnContent}>
               <Text style={styles.answerBtnTitle}>Not Yet</Text>
               <Text style={styles.answerBtnHint}>My child is not doing this yet</Text>
@@ -1126,8 +1165,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   answerBtnYes: { borderColor: colors.success[100] },
+  answerBtnYesSelected: { borderColor: colors.success[500], backgroundColor: colors.success[50] },
   answerBtnSometimes: { borderColor: colors.warning[100] },
+  answerBtnSometimesSelected: { borderColor: colors.warning[500], backgroundColor: colors.warning[50] },
   answerBtnNo: { borderColor: colors.error[100] },
+  answerBtnNoSelected: { borderColor: colors.error[500], backgroundColor: colors.error[50] },
   answerBtnContent: { flex: 1 },
   answerBtnTitle: { fontSize: 16, fontWeight: '600', color: colors.neutral[800] },
   answerBtnHint: { fontSize: 12, color: colors.neutral[500], marginTop: 1 },
