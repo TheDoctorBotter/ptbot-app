@@ -204,7 +204,10 @@ class ChatbotContextService {
     }
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      // Use getSession() instead of getUser() — getUser() makes a network
+      // request that can hang indefinitely after sign-out or on slow networks.
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
       if (!user) {
         return emptyContext;
       }
