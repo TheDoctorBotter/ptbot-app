@@ -23,6 +23,8 @@ import PaywallCard from '@/components/PaywallCard';
 import { FREE_EXERCISE_PREVIEW_COUNT } from '@/src/config/stripe';
 import { getInjuryByProtocolKey } from '@/services/injuryLibraryService';
 import InjuryLibraryModal from '@/components/exercises/InjuryLibraryModal';
+import { useCareMode } from '@/hooks/useCareMode';
+import PediatricAssessment from '@/components/pediatric/PediatricAssessment';
 // Note: Outcome service functions are imported but questionnaire steps are disabled
 // To re-enable questionnaires, uncomment the steps in getStepConfig()
 import {
@@ -116,6 +118,15 @@ const weightBearingOptions = [
 ];
 
 export default function AssessmentScreen() {
+  const { careMode } = useCareMode();
+  if (careMode === 'pediatric') {
+    return <PediatricAssessment />;
+  }
+
+  return <AdultAssessmentScreen />;
+}
+
+function AdultAssessmentScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ mode?: string; conditionTag?: string }>();
 
