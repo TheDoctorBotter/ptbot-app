@@ -336,6 +336,19 @@ export async function unsaveVideo(videoId: string): Promise<boolean> {
 
 // ── Assessment Flow ───────────────────────────────────────────────────────
 
+/** Fetch only the simplified milestone set (simple_ prefix), sorted by expected month */
+export async function fetchSimplifiedMilestones(): Promise<PediatricMilestone[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('pediatric_milestones')
+    .select('*, age_group:pediatric_age_groups(*)')
+    .like('milestone_key', 'simple_%')
+    .order('expected_by_month', { ascending: true })
+    .order('display_order', { ascending: true });
+  if (error) { console.warn('[pediatricService] fetchSimplifiedMilestones:', error.message); return []; }
+  return data ?? [];
+}
+
 export async function fetchAllMilestonesSorted(): Promise<PediatricMilestone[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
@@ -412,101 +425,46 @@ export async function fetchAssessmentHistory(profileId: string): Promise<Assessm
 }
 
 /**
- * Calculate age equivalency from milestone scores.
+ * Adaptive age equivalency for simplified milestone screening.
  *
- * Strategy (inspired by PDMS-2 basal/ceiling approach):
- * - Each milestone has an age_equivalent_months value
- * - Score: 0 = cannot perform, 1 = emerging, 2 = mastered
- * - We compute a weighted average of all scored items to find
- *   the child's overall gross motor age equivalency.
- * - The age equivalency is the highest age_equivalent_months
- *   where the child has a cumulative score >= 80% of max possible
- *   up to that point, then interpolated for partial scores above.
+ * Given the ordered milestones and which ones the child can/cannot do,
+ * find the highest milestone they've mastered. That milestone's
+ * expected_by_month is their gross motor age equivalency.
  */
-export function calculateAgeEquivalency(
+export function calculateSimpleAgeEquivalency(
   milestones: PediatricMilestone[],
-  scores: Record<string, number>
-): { ageEquivalentMonths: number; rawScore: number; maxScore: number; categoryScores: Record<string, { raw: number; max: number }> } {
-  // Sort milestones by age_equivalent_months
-  const sorted = [...milestones]
-    .filter(m => m.age_equivalent_months != null)
-    .sort((a, b) => (a.age_equivalent_months ?? 0) - (b.age_equivalent_months ?? 0));
+  answers: Record<string, 'yes' | 'sometimes' | 'not_yet'>
+): {
+  ageEquivalentMonths: number;
+  highestMastered: PediatricMilestone | null;
+  firstNotMet: PediatricMilestone | null;
+  masteredCount: number;
+  totalAsked: number;
+} {
+  const sorted = [...milestones].sort(
+    (a, b) => a.expected_by_month - b.expected_by_month
+  );
 
-  if (sorted.length === 0) {
-    return { ageEquivalentMonths: 0, rawScore: 0, maxScore: 0, categoryScores: {} };
-  }
+  let highestMastered: PediatricMilestone | null = null;
+  let firstNotMet: PediatricMilestone | null = null;
+  let masteredCount = 0;
+  let totalAsked = 0;
 
-  let rawScore = 0;
-  let maxScore = sorted.length * 2;
-
-  // Category breakdown
-  const categoryScores: Record<string, { raw: number; max: number }> = {};
   for (const m of sorted) {
-    const cat = (m as any).category ?? 'locomotion';
-    if (!categoryScores[cat]) categoryScores[cat] = { raw: 0, max: 0 };
-    categoryScores[cat].max += 2;
-    const s = scores[m.id] ?? 0;
-    categoryScores[cat].raw += s;
-    rawScore += s;
-  }
-
-  // Find age equivalency using basal/ceiling approach
-  // Walk through milestones in age order. Track running score.
-  // The age equivalent is interpolated based on where scoring drops below threshold.
-  let cumulativeScore = 0;
-  let cumulativeMax = 0;
-  let lastFullAge = 0; // highest age where score >= 80%
-
-  // Group by age_equivalent_months
-  const ageGroups = new Map<number, { score: number; max: number }>();
-  for (const m of sorted) {
-    const ageEq = m.age_equivalent_months ?? 0;
-    if (!ageGroups.has(ageEq)) ageGroups.set(ageEq, { score: 0, max: 0 });
-    const g = ageGroups.get(ageEq)!;
-    g.max += 2;
-    g.score += scores[m.id] ?? 0;
-  }
-
-  const ageEntries = Array.from(ageGroups.entries()).sort((a, b) => a[0] - b[0]);
-
-  for (const [ageEq, group] of ageEntries) {
-    cumulativeScore += group.score;
-    cumulativeMax += group.max;
-    const pct = cumulativeMax > 0 ? cumulativeScore / cumulativeMax : 0;
-    if (pct >= 0.8) {
-      lastFullAge = ageEq;
+    const answer = answers[m.id];
+    if (answer === undefined) continue;
+    totalAsked++;
+    if (answer === 'yes') {
+      highestMastered = m;
+      masteredCount++;
+    } else if (answer === 'not_yet' && !firstNotMet) {
+      firstNotMet = m;
     }
   }
 
-  // Interpolate: check partial performance above the lastFullAge
-  let ageEquivalentMonths = lastFullAge;
+  const ageEquivalentMonths = highestMastered?.expected_by_month ?? 0;
 
-  // Find items above lastFullAge that are partially scored
-  const aboveItems = ageEntries.filter(([age]) => age > lastFullAge);
-  if (aboveItems.length > 0) {
-    let partialScore = 0;
-    let partialMax = 0;
-    let nextAge = aboveItems[0][0];
-
-    for (const [age, group] of aboveItems) {
-      partialScore += group.score;
-      partialMax += group.max;
-      nextAge = age;
-      if (partialScore === 0) break; // no more partial credit
-    }
-
-    if (partialMax > 0 && partialScore > 0) {
-      const fraction = partialScore / partialMax;
-      ageEquivalentMonths = lastFullAge + (nextAge - lastFullAge) * fraction;
-    }
-  }
-
-  return {
-    ageEquivalentMonths: Math.round(ageEquivalentMonths * 10) / 10,
-    rawScore,
-    maxScore,
-    categoryScores,
-  };
+  return { ageEquivalentMonths, highestMastered, firstNotMet, masteredCount, totalAsked };
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────
