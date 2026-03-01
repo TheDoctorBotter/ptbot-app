@@ -26,6 +26,8 @@ import { colors } from '@/constants/theme';
 import { AssessmentService } from '@/services/assessmentService';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useEntitlements } from '@/hooks/useEntitlements';
+import { useCareMode } from '@/hooks/useCareMode';
+import CareModeSwitcher from '@/components/pediatric/CareModeSwitcher';
 import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 interface UserProfile {
@@ -52,6 +54,9 @@ interface EmailPreferences {
 }
 
 export default function AccountScreen() {
+  // Care mode
+  const { careMode, setCareMode } = useCareMode();
+
   // Auth state
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<SupabaseUser | null>(null);
@@ -702,6 +707,12 @@ export default function AccountScreen() {
                 </View>
               </View>
             )}
+          </View>
+
+          {/* Care Mode Switcher */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Care Mode</Text>
+            <CareModeSwitcher careMode={careMode} setCareMode={setCareMode} />
           </View>
 
           {/* Account Actions */}

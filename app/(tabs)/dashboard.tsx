@@ -6,13 +6,39 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LayoutDashboard, Users, User } from 'lucide-react-native';
+import { LayoutDashboard, Users, User, Baby } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import { useUserRole } from '@/hooks/useUserRole';
 import PatientDashboard from '@/components/dashboard/PatientDashboard';
 import ClinicDashboard from '@/components/dashboard/ClinicDashboard';
+import { useCareMode } from '@/hooks/useCareMode';
+import PediatricDashboard from '@/components/pediatric/PediatricDashboard';
 
 export default function DashboardScreen() {
+  const { careMode } = useCareMode();
+
+  if (careMode === 'pediatric') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.headerLogo}>
+            <View style={styles.logoContainer}>
+              <Baby size={28} color="#FFFFFF" />
+              <Text style={styles.logoText}>PTBOT</Text>
+            </View>
+            <Text style={styles.headerTitle}>Dashboard</Text>
+          </View>
+          <Text style={styles.headerSubtitle}>Pediatric Development</Text>
+        </View>
+        <PediatricDashboard />
+      </SafeAreaView>
+    );
+  }
+
+  return <AdultDashboardScreen />;
+}
+
+function AdultDashboardScreen() {
   const { roleData, isLoading, error, isClinicStaff } = useUserRole();
 
   // Show loading state

@@ -42,6 +42,8 @@ import {
   QUICK_COMMANDS,
   ExerciseRecommendation,
 } from '@/services/chatbotContextService';
+import { useCareMode } from '@/hooks/useCareMode';
+import PediatricHome from '@/components/pediatric/PediatricHome';
 
 interface ExerciseSuggestion {
   id: string;
@@ -68,6 +70,15 @@ interface PainLogState {
 }
 
 export default function HomeScreen() {
+  const { careMode, setCareMode } = useCareMode();
+  if (careMode === 'pediatric') {
+    return <PediatricHome setCareMode={setCareMode} />;
+  }
+
+  return <AdultHomeScreen setCareMode={setCareMode} />;
+}
+
+function AdultHomeScreen({ setCareMode }: { setCareMode: (mode: 'adult' | 'pediatric') => void }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -935,6 +946,18 @@ Remember: You're helping them on their recovery journey. Be encouraging, helpful
         </View>
       </View>
 
+      {/* Care Mode Banner */}
+      <TouchableOpacity
+        style={styles.careModeBar}
+        onPress={() => setCareMode('pediatric')}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.careModeBarText}>
+          Looking for pediatric development?{' '}
+          <Text style={styles.careModeBarLink}>Switch to Pediatric Mode</Text>
+        </Text>
+      </TouchableOpacity>
+
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardContainer}
@@ -1062,6 +1085,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.neutral[50],
+  },
+  careModeBar: {
+    backgroundColor: colors.info[50],
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.info[100],
+  },
+  careModeBarText: {
+    fontSize: 13,
+    color: colors.neutral[600],
+    textAlign: 'center',
+  },
+  careModeBarLink: {
+    color: colors.primary[500],
+    fontWeight: '600',
   },
   header: {
     backgroundColor: colors.primary[500],

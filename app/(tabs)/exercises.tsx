@@ -32,6 +32,8 @@ import { useUserRole } from '@/hooks/useUserRole';
 import PrecautionsCard from '@/components/shared/PrecautionsCard';
 import PaywallCard from '@/components/PaywallCard';
 import { FREE_EXERCISE_PREVIEW_COUNT } from '@/src/config/stripe';
+import { useCareMode } from '@/hooks/useCareMode';
+import PediatricExercises from '@/components/pediatric/PediatricExercises';
 
 // Conditionally import expo-print and expo-sharing (not available on web)
 let Print: typeof import('expo-print') | null = null;
@@ -134,6 +136,15 @@ const previewExercises: Exercise[] = [
 ];
 
 export default function ExercisesScreen() {
+  const { careMode } = useCareMode();
+  if (careMode === 'pediatric') {
+    return <PediatricExercises />;
+  }
+
+  return <AdultExercisesScreen />;
+}
+
+function AdultExercisesScreen() {
   const router = useRouter();
   const [exercises, setExercises] = useState<Exercise[]>(previewExercises);
   const [databaseExercises, setDatabaseExercises] = useState<Exercise[]>([]);
