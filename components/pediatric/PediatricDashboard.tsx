@@ -9,24 +9,20 @@ import {
   TextInput,
   Alert,
   Platform,
-  Animated,
 } from 'react-native';
 import {
   Baby,
   TriangleAlert as AlertTriangle,
   Plus,
   Trash2,
-  CircleCheck as CheckCircle,
-  Circle,
-  ChevronDown,
-  ChevronUp,
   ArrowLeft,
   ArrowRight,
-  RotateCcw,
-  Award,
-  BarChart3,
-  Clock,
+  CircleCheck as CheckCircle,
+  Circle,
+  Phone,
   History,
+  Clock,
+  Award,
 } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import PediatricDisclaimer from './PediatricDisclaimer';
@@ -35,28 +31,19 @@ import {
   fetchChildProfiles,
   createChildProfile,
   deleteChildProfile,
-  fetchAllMilestonesSorted,
-  fetchMilestoneTracking,
+  fetchSimplifiedMilestones,
   saveMilestoneScore,
   saveAssessmentResult,
   fetchAssessmentHistory,
-  calculateAgeEquivalency,
+  calculateSimpleAgeEquivalency,
   formatAgeEquivalency,
   PediatricAgeGroup,
   PediatricProfile,
   PediatricMilestone,
-  MilestoneTracking,
   AssessmentResult,
 } from '@/services/pediatricService';
 
 type Screen = 'profiles' | 'assessment' | 'results' | 'history';
-
-const CATEGORY_LABELS: Record<string, { label: string; description: string }> = {
-  reflexes: { label: 'Reflexes', description: 'Automatic reactions to environmental events (0-11 months)' },
-  stationary: { label: 'Stationary', description: 'Controlling body within center of gravity and retaining balance' },
-  locomotion: { label: 'Locomotion', description: 'Moving from one place to another' },
-  object_manipulation: { label: 'Object Manipulation', description: 'Catching, throwing, and kicking objects (12+ months)' },
-};
 
 export default function PediatricDashboard() {
   const [screen, setScreen] = useState<Screen>('profiles');
@@ -71,22 +58,26 @@ export default function PediatricDashboard() {
   // Add child form
   const [showAddForm, setShowAddForm] = useState(false);
   const [newChildName, setNewChildName] = useState('');
-  const [selectedAgeGroup, setSelectedAgeGroup] = useState<string | null>(null);
+  const [newChildAgeMonths, setNewChildAgeMonths] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Assessment state
-  const [assessmentMilestones, setAssessmentMilestones] = useState<PediatricMilestone[]>([]);
-  const [currentCategoryIdx, setCurrentCategoryIdx] = useState(0);
-  const [scores, setScores] = useState<Record<string, number>>({});
-  const [categories, setCategories] = useState<string[]>([]);
-  const [isSavingAssessment, setIsSavingAssessment] = useState(false);
+  const [currentMilestoneIdx, setCurrentMilestoneIdx] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, 'yes' | 'sometimes' | 'not_yet'>>({});
+  const [orderedMilestones, setOrderedMilestones] = useState<PediatricMilestone[]>([]);
+  const [direction, setDirection] = useState<'forward' | 'backward'>('backward');
+  const [assessmentDone, setAssessmentDone] = useState(false);
+  const [childAgeMonths, setChildAgeMonths] = useState(0);
+  const [startIdx, setStartIdx] = useState(0);
+  const [isSavingResult, setIsSavingResult] = useState(false);
 
   // Results
-  const [assessmentResultData, setAssessmentResultData] = useState<{
+  const [resultData, setResultData] = useState<{
     ageEquivalentMonths: number;
-    rawScore: number;
-    maxScore: number;
-    categoryScores: Record<string, { raw: number; max: number }>;
+    highestMastered: PediatricMilestone | null;
+    firstNotMet: PediatricMilestone | null;
+    masteredCount: number;
+    totalAsked: number;
   } | null>(null);
 
   // History
@@ -101,7 +92,7 @@ export default function PediatricDashboard() {
       const [ag, cp, ms] = await Promise.all([
         fetchAgeGroups(),
         fetchChildProfiles(),
-        fetchAllMilestonesSorted(),
+        fetchSimplifiedMilestones(),
       ]);
       setAgeGroups(ag);
       setProfiles(cp);
@@ -112,16 +103,37 @@ export default function PediatricDashboard() {
     load();
   }, []);
 
+  // Find the matching age group for a given age in months
+  const findAgeGroup = (months: number): PediatricAgeGroup | null => {
+    for (const ag of ageGroups) {
+      if (months >= ag.min_months && months < ag.max_months) return ag;
+    }
+    if (months >= 60) return ageGroups[ageGroups.length - 1] ?? null;
+    if (months >= 36) return ageGroups.find(ag => ag.age_key === '3_5y') ?? ageGroups[ageGroups.length - 1] ?? null;
+    return null;
+  };
+
   const handleAddChild = async () => {
-    if (!newChildName.trim() || !selectedAgeGroup) return;
+    const ageNum = parseInt(newChildAgeMonths, 10);
+    if (!newChildName.trim() || isNaN(ageNum) || ageNum < 0 || ageNum > 60) return;
+
+    const matchedAgeGroup = findAgeGroup(ageNum);
+    if (!matchedAgeGroup) {
+      const msg = 'Could not determine age group. Please enter an age between 0 and 60 months.';
+      if (Platform.OS === 'web') alert(msg);
+      else Alert.alert('Error', msg);
+      return;
+    }
+
     setIsSaving(true);
-    const profile = await createChildProfile(newChildName.trim(), null, selectedAgeGroup, null);
+    const profile = await createChildProfile(newChildName.trim(), null, matchedAgeGroup.id, null);
     if (profile) {
+      // Store age in months in the notes field for now
       setProfiles((prev) => [profile, ...prev]);
       setSelectedProfile(profile);
       setShowAddForm(false);
       setNewChildName('');
-      setSelectedAgeGroup(null);
+      setNewChildAgeMonths('');
     } else {
       const msg = 'Failed to save child profile. Please try again.';
       if (Platform.OS === 'web') alert(msg);
@@ -138,7 +150,6 @@ export default function PediatricDashboard() {
         setSelectedProfile(profiles.find((p) => p.id !== profile.id) ?? null);
       }
     };
-
     if (Platform.OS === 'web') {
       if (confirm(`Remove ${profile.child_name}'s profile?`)) doDelete();
     } else {
@@ -149,114 +160,149 @@ export default function PediatricDashboard() {
     }
   };
 
-  // Start assessment for a child
-  const startAssessment = useCallback(() => {
-    if (!selectedProfile) return;
+  // ── Start Assessment ────────────────────────────────────────────────────
+  const startAssessment = useCallback((ageMonths: number) => {
+    if (!selectedProfile || allMilestones.length === 0) return;
 
-    // Determine which milestones to show based on child's age group
-    const ageGroup = ageGroups.find((ag) => ag.id === selectedProfile.age_group_id);
-    if (!ageGroup) return;
+    // Sort milestones by expected_by_month
+    const sorted = [...allMilestones].sort((a, b) => a.expected_by_month - b.expected_by_month);
+    setOrderedMilestones(sorted);
 
-    // Include milestones from birth up through the child's age group
-    // This is how PDMS-2 works: start from below and work up
-    const maxMonths = ageGroup.max_months;
-    const relevantMilestones = allMilestones.filter(
-      (m) => (m.age_equivalent_months ?? 0) <= maxMonths
-    );
-
-    // Sort by age then display order
-    relevantMilestones.sort((a, b) => {
-      const aDiff = (a.age_equivalent_months ?? 0) - (b.age_equivalent_months ?? 0);
-      if (aDiff !== 0) return aDiff;
-      return a.display_order - b.display_order;
-    });
-
-    setAssessmentMilestones(relevantMilestones);
-
-    // Determine categories present
-    const cats: string[] = [];
-    const catSet = new Set<string>();
-    for (const m of relevantMilestones) {
-      const cat = m.category ?? 'locomotion';
-      if (!catSet.has(cat)) {
-        catSet.add(cat);
-        cats.push(cat);
+    // Find the starting milestone — the one closest to the child's age
+    let startIndex = sorted.length - 1;
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].expected_by_month >= ageMonths) {
+        startIndex = i;
+        break;
       }
     }
-    // Order categories logically
-    const catOrder = ['reflexes', 'stationary', 'locomotion', 'object_manipulation'];
-    cats.sort((a, b) => catOrder.indexOf(a) - catOrder.indexOf(b));
-
-    // Remove reflexes for children 12m+
-    if (ageGroup.min_months >= 12) {
-      const idx = cats.indexOf('reflexes');
-      if (idx >= 0) cats.splice(idx, 1);
+    // If child's age is beyond all milestones, start at the last one
+    if (ageMonths > sorted[sorted.length - 1].expected_by_month) {
+      startIndex = sorted.length - 1;
     }
 
-    setCategories(cats);
-    setCurrentCategoryIdx(0);
-    setScores({});
+    setStartIdx(startIndex);
+    setCurrentMilestoneIdx(startIndex);
+    setChildAgeMonths(ageMonths);
+    setAnswers({});
+    setAssessmentDone(false);
+    setDirection('backward');
+    setResultData(null);
     setScreen('assessment');
     scrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, [selectedProfile, ageGroups, allMilestones]);
+  }, [selectedProfile, allMilestones]);
 
-  // Get milestones for current category
-  const currentCategory = categories[currentCategoryIdx] ?? '';
-  const currentMilestones = assessmentMilestones.filter(
-    (m) => (m.category ?? 'locomotion') === currentCategory
-  );
+  // ── Handle answer ────────────────────────────────────────────────────────
+  const handleAnswer = (answer: 'yes' | 'sometimes' | 'not_yet') => {
+    const milestone = orderedMilestones[currentMilestoneIdx];
+    if (!milestone) return;
 
-  const handleScore = (milestoneId: string, score: number) => {
-    setScores((prev) => ({ ...prev, [milestoneId]: score }));
-  };
+    const newAnswers = { ...answers, [milestone.id]: answer };
+    setAnswers(newAnswers);
 
-  const allCurrentScored = currentMilestones.every((m) => scores[m.id] !== undefined);
-
-  const goNextCategory = () => {
-    if (currentCategoryIdx < categories.length - 1) {
-      setCurrentCategoryIdx((prev) => prev + 1);
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    if (answer === 'yes') {
+      // Child can do this. If we were going backward, we found the floor.
+      // Now go forward from start to check if they're on track or ahead.
+      if (direction === 'backward') {
+        // We found a mastered milestone going backward. Now go forward from startIdx.
+        if (currentMilestoneIdx >= startIdx) {
+          // They said yes at or above start — try next one forward
+          const nextIdx = currentMilestoneIdx + 1;
+          if (nextIdx < orderedMilestones.length) {
+            setDirection('forward');
+            setCurrentMilestoneIdx(nextIdx);
+            scrollRef.current?.scrollTo({ y: 0, animated: true });
+          } else {
+            finishAssessment(newAnswers);
+          }
+        } else {
+          // We were below start going backward, and child said yes.
+          // Now jump forward to startIdx to test age-appropriate milestones.
+          setDirection('forward');
+          if (startIdx < orderedMilestones.length && newAnswers[orderedMilestones[startIdx].id] === undefined) {
+            setCurrentMilestoneIdx(startIdx);
+          } else {
+            // Already answered start, go one past it
+            const nextUnanswered = findNextUnanswered(startIdx, newAnswers);
+            if (nextUnanswered !== null) {
+              setCurrentMilestoneIdx(nextUnanswered);
+            } else {
+              finishAssessment(newAnswers);
+            }
+          }
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+        }
+      } else {
+        // Going forward — try next milestone
+        const nextIdx = findNextUnanswered(currentMilestoneIdx + 1, newAnswers);
+        if (nextIdx !== null && nextIdx < orderedMilestones.length) {
+          setCurrentMilestoneIdx(nextIdx);
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+        } else {
+          finishAssessment(newAnswers);
+        }
+      }
     } else {
-      // Finish assessment
-      finishAssessment();
+      // Child can't do this (or sometimes). Go backward to find what they CAN do.
+      if (direction === 'forward') {
+        // They failed going forward — we're done, we found the ceiling
+        finishAssessment(newAnswers);
+      } else {
+        // Going backward — keep going back
+        const prevIdx = currentMilestoneIdx - 1;
+        if (prevIdx >= 0) {
+          setCurrentMilestoneIdx(prevIdx);
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+        } else {
+          // We've gone all the way to the beginning
+          finishAssessment(newAnswers);
+        }
+      }
     }
   };
 
-  const goPrevCategory = () => {
-    if (currentCategoryIdx > 0) {
-      setCurrentCategoryIdx((prev) => prev - 1);
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
+  const findNextUnanswered = (fromIdx: number, currentAnswers: Record<string, string>): number | null => {
+    for (let i = fromIdx; i < orderedMilestones.length; i++) {
+      if (currentAnswers[orderedMilestones[i].id] === undefined) return i;
     }
+    return null;
   };
 
-  const finishAssessment = async () => {
+  // ── Finish Assessment ──────────────────────────────────────────────────
+  const finishAssessment = async (finalAnswers: Record<string, 'yes' | 'sometimes' | 'not_yet'>) => {
     if (!selectedProfile) return;
-    setIsSavingAssessment(true);
+    setAssessmentDone(true);
+    setIsSavingResult(true);
 
-    // Calculate results
-    const result = calculateAgeEquivalency(assessmentMilestones, scores);
-    setAssessmentResultData(result);
+    const result = calculateSimpleAgeEquivalency(orderedMilestones, finalAnswers);
+    setResultData(result);
 
-    // Save individual milestone scores
-    const savePromises = Object.entries(scores).map(([milestoneId, score]) =>
-      saveMilestoneScore(selectedProfile.id, milestoneId, score)
-    );
-    await Promise.all(savePromises);
+    // Save individual scores
+    const scorePromises = Object.entries(finalAnswers).map(([milestoneId, answer]) => {
+      const score = answer === 'yes' ? 2 : answer === 'sometimes' ? 1 : 0;
+      return saveMilestoneScore(selectedProfile.id, milestoneId, score);
+    });
+    await Promise.all(scorePromises);
 
     // Save assessment result
+    const snapshotScores: Record<string, number> = {};
+    for (const [id, answer] of Object.entries(finalAnswers)) {
+      snapshotScores[id] = answer === 'yes' ? 2 : answer === 'sometimes' ? 1 : 0;
+    }
     await saveAssessmentResult(
       selectedProfile.id,
-      result.rawScore,
+      result.masteredCount,
       result.ageEquivalentMonths,
-      result.categoryScores,
-      scores
+      {},
+      snapshotScores
     );
 
-    setIsSavingAssessment(false);
+    setIsSavingResult(false);
     setScreen('results');
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   };
 
+  // ── Load History ─────────────────────────────────────────────────────────
   const loadHistory = async () => {
     if (!selectedProfile) return;
     setIsLoadingHistory(true);
@@ -266,20 +312,19 @@ export default function PediatricDashboard() {
     setScreen('history');
   };
 
-  const totalMilestonesScored = Object.keys(scores).length;
-  const totalMilestones = assessmentMilestones.length;
-  const progressPct = totalMilestones > 0 ? (totalMilestonesScored / totalMilestones) * 100 : 0;
-
+  // ── Loading ──────────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary[500]} />
-        <Text style={styles.loadingText}>Loading dashboard...</Text>
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
-  // ── PROFILES SCREEN ───────────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════════════
+  // PROFILES SCREEN
+  // ═════════════════════════════════════════════════════════════════════════
   if (screen === 'profiles') {
     return (
       <ScrollView
@@ -290,14 +335,11 @@ export default function PediatricDashboard() {
       >
         <PediatricDisclaimer compact />
 
-        {/* Child Profile Selector */}
+        {/* Child Profiles */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Child Profiles</Text>
-            <TouchableOpacity
-              onPress={() => setShowAddForm(!showAddForm)}
-              style={styles.addBtn}
-            >
+            <TouchableOpacity onPress={() => setShowAddForm(!showAddForm)} style={styles.addBtn}>
               <Plus size={16} color={colors.primary[500]} />
               <Text style={styles.addBtnText}>Add Child</Text>
             </TouchableOpacity>
@@ -305,42 +347,40 @@ export default function PediatricDashboard() {
 
           {showAddForm && (
             <View style={styles.addForm}>
+              <Text style={styles.formLabel}>Child's Name</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Child's name"
+                placeholder="e.g. Emma"
                 value={newChildName}
                 onChangeText={setNewChildName}
                 placeholderTextColor={colors.neutral[400]}
               />
-              <Text style={styles.formLabel}>Age Group</Text>
-              <View style={styles.ageGroupGrid}>
-                {ageGroups.map((ag) => (
-                  <TouchableOpacity
-                    key={ag.id}
-                    style={[
-                      styles.ageGroupChip,
-                      selectedAgeGroup === ag.id && styles.ageGroupChipSelected,
-                    ]}
-                    onPress={() => setSelectedAgeGroup(ag.id)}
-                  >
-                    <Text
-                      style={[
-                        styles.ageGroupChipText,
-                        selectedAgeGroup === ag.id && styles.ageGroupChipTextSelected,
-                      ]}
-                    >
-                      {ag.display_name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+
+              <Text style={styles.formLabel}>Child's Age (in months)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 14"
+                value={newChildAgeMonths}
+                onChangeText={(t) => setNewChildAgeMonths(t.replace(/[^0-9]/g, ''))}
+                keyboardType="numeric"
+                maxLength={2}
+                placeholderTextColor={colors.neutral[400]}
+              />
+              {newChildAgeMonths !== '' && (
+                <Text style={styles.ageHint}>
+                  {parseInt(newChildAgeMonths, 10) >= 12
+                    ? `${Math.floor(parseInt(newChildAgeMonths, 10) / 12)} year${Math.floor(parseInt(newChildAgeMonths, 10) / 12) !== 1 ? 's' : ''}${parseInt(newChildAgeMonths, 10) % 12 > 0 ? `, ${parseInt(newChildAgeMonths, 10) % 12} month${parseInt(newChildAgeMonths, 10) % 12 !== 1 ? 's' : ''}` : ''}`
+                    : `${newChildAgeMonths} month${newChildAgeMonths !== '1' ? 's' : ''}`}
+                </Text>
+              )}
+
               <TouchableOpacity
                 style={[
                   styles.saveBtn,
-                  (!newChildName.trim() || !selectedAgeGroup) && styles.saveBtnDisabled,
+                  (!newChildName.trim() || !newChildAgeMonths || parseInt(newChildAgeMonths, 10) > 60) && styles.saveBtnDisabled,
                 ]}
                 onPress={handleAddChild}
-                disabled={!newChildName.trim() || !selectedAgeGroup || isSaving}
+                disabled={!newChildName.trim() || !newChildAgeMonths || parseInt(newChildAgeMonths, 10) > 60 || isSaving}
               >
                 {isSaving ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
@@ -352,10 +392,10 @@ export default function PediatricDashboard() {
           )}
 
           {profiles.length === 0 && !showAddForm && (
-            <View style={styles.emptyProfiles}>
+            <View style={styles.emptyBox}>
               <Baby size={32} color={colors.neutral[300]} />
               <Text style={styles.emptyText}>
-                Add a child profile to start the milestone assessment.
+                Add a child profile to start the milestone tracker.
               </Text>
             </View>
           )}
@@ -370,16 +410,13 @@ export default function PediatricDashboard() {
                 activeOpacity={0.7}
               >
                 <View style={styles.profileInfo}>
-                  <Baby
-                    size={18}
-                    color={isSelected ? colors.primary[500] : colors.neutral[400]}
-                  />
+                  <Baby size={18} color={isSelected ? colors.primary[500] : colors.neutral[400]} />
                   <View>
                     <Text style={[styles.profileName, isSelected && styles.profileNameSelected]}>
                       {p.child_name}
                     </Text>
                     <Text style={styles.profileAge}>
-                      {p.age_group?.display_name ?? 'No age group'}
+                      {p.age_group?.display_name ?? 'Unknown age'}
                     </Text>
                   </View>
                 </View>
@@ -397,298 +434,198 @@ export default function PediatricDashboard() {
         {/* Start Assessment */}
         {selectedProfile && (
           <View style={styles.section}>
-            <View style={styles.assessmentStartCard}>
+            <View style={styles.startCard}>
               <Award size={28} color={colors.primary[500]} />
-              <Text style={styles.assessmentStartTitle}>
-                Gross Motor Assessment
+              <Text style={styles.startTitle}>Milestone Tracker</Text>
+              <Text style={styles.startDesc}>
+                We'll ask about key developmental milestones starting at
+                {' '}{selectedProfile.child_name}'s age level. If your child isn't doing
+                a skill yet, we'll work backward to find where they are. At the end, you'll get
+                an age equivalency for their gross motor development.
               </Text>
-              <Text style={styles.assessmentStartDesc}>
-                Based on the Peabody Developmental Motor Scales (PDMS-2).
-                Score each milestone as your child performs it.
-                At the end you'll receive a gross motor age equivalency.
-              </Text>
-              <Text style={styles.assessmentStartNote}>
-                For {selectedProfile.child_name} ({selectedProfile.age_group?.display_name ?? ''})
-              </Text>
-              <TouchableOpacity
-                style={styles.startAssessmentBtn}
-                onPress={startAssessment}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.startAssessmentBtnText}>Begin Assessment</Text>
-                <ArrowRight size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.historyBtn}
-                onPress={loadHistory}
-                activeOpacity={0.7}
-              >
+
+              <AgePrompt
+                profile={selectedProfile}
+                ageGroups={ageGroups}
+                onStart={startAssessment}
+              />
+
+              <TouchableOpacity style={styles.historyBtn} onPress={loadHistory} activeOpacity={0.7}>
                 <History size={16} color={colors.neutral[600]} />
-                <Text style={styles.historyBtnText}>View Past Assessments</Text>
+                <Text style={styles.historyBtnText}>View Past Results</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
-
-        {/* Scoring Guide */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>How Scoring Works</Text>
-          <View style={styles.scoringRow}>
-            <View style={[styles.scoreBadge, styles.scoreBadge0]}>
-              <Text style={styles.scoreBadgeText}>0</Text>
-            </View>
-            <View style={styles.scoringDesc}>
-              <Text style={styles.scoringLabel}>Cannot Perform</Text>
-              <Text style={styles.scoringDetail}>Child cannot attempt or complete the skill</Text>
-            </View>
-          </View>
-          <View style={styles.scoringRow}>
-            <View style={[styles.scoreBadge, styles.scoreBadge1]}>
-              <Text style={styles.scoreBadgeText}>1</Text>
-            </View>
-            <View style={styles.scoringDesc}>
-              <Text style={styles.scoringLabel}>Emerging</Text>
-              <Text style={styles.scoringDetail}>Child shows the skill partially or inconsistently</Text>
-            </View>
-          </View>
-          <View style={styles.scoringRow}>
-            <View style={[styles.scoreBadge, styles.scoreBadge2]}>
-              <Text style={[styles.scoreBadgeText, { color: '#FFFFFF' }]}>2</Text>
-            </View>
-            <View style={styles.scoringDesc}>
-              <Text style={styles.scoringLabel}>Mastered</Text>
-              <Text style={styles.scoringDetail}>Child performs the skill consistently and confidently</Text>
-            </View>
-          </View>
-        </View>
       </ScrollView>
     );
   }
 
-  // ── ASSESSMENT SCREEN ─────────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════════════
+  // ASSESSMENT SCREEN
+  // ═════════════════════════════════════════════════════════════════════════
   if (screen === 'assessment') {
-    const catInfo = CATEGORY_LABELS[currentCategory] ?? { label: currentCategory, description: '' };
-    const isLastCategory = currentCategoryIdx === categories.length - 1;
+    const milestone = orderedMilestones[currentMilestoneIdx];
+    const answeredCount = Object.keys(answers).length;
+
+    if (!milestone) {
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.emptyText}>No milestones available.</Text>
+          <TouchableOpacity onPress={() => setScreen('profiles')}>
+            <Text style={{ color: colors.primary[500], marginTop: 16 }}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    const isAtOrAboveAge = milestone.expected_by_month <= childAgeMonths;
 
     return (
-      <View style={{ flex: 1 }}>
-        {/* Assessment Header */}
+      <View style={{ flex: 1, backgroundColor: colors.neutral[50] }}>
+        {/* Header */}
         <View style={styles.assessmentHeader}>
           <TouchableOpacity
-            style={styles.assessmentBackBtn}
+            style={styles.backBtn}
             onPress={() => {
-              if (currentCategoryIdx === 0) {
-                const confirmExit = () => setScreen('profiles');
-                if (Platform.OS === 'web') {
-                  if (confirm('Exit assessment? Your progress will be lost.')) confirmExit();
-                } else {
-                  Alert.alert('Exit Assessment', 'Your progress will be lost.', [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Exit', style: 'destructive', onPress: confirmExit },
-                  ]);
-                }
+              const confirmExit = () => setScreen('profiles');
+              if (Platform.OS === 'web') {
+                if (confirm('Exit assessment? Progress will be lost.')) confirmExit();
               } else {
-                goPrevCategory();
+                Alert.alert('Exit', 'Progress will be lost.', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Exit', style: 'destructive', onPress: confirmExit },
+                ]);
               }
             }}
           >
             <ArrowLeft size={18} color={colors.neutral[600]} />
-            <Text style={styles.assessmentBackText}>
-              {currentCategoryIdx === 0 ? 'Exit' : 'Back'}
-            </Text>
+            <Text style={styles.backBtnText}>Exit</Text>
           </TouchableOpacity>
-          <Text style={styles.assessmentHeaderTitle}>
-            {selectedProfile?.child_name ?? 'Assessment'}
-          </Text>
-          <Text style={styles.assessmentCategoryCount}>
-            {currentCategoryIdx + 1} / {categories.length}
-          </Text>
-        </View>
-
-        {/* Overall Progress Bar */}
-        <View style={styles.overallProgressContainer}>
-          <View style={styles.overallProgressTrack}>
-            <View style={[styles.overallProgressFill, { width: `${progressPct}%` }]} />
-          </View>
-          <Text style={styles.overallProgressText}>
-            {totalMilestonesScored} of {totalMilestones} items scored
-          </Text>
+          <Text style={styles.assessmentHeaderTitle}>{selectedProfile?.child_name}</Text>
+          <Text style={styles.assessmentCount}>{answeredCount} answered</Text>
         </View>
 
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
-          contentContainerStyle={styles.assessmentContent}
+          contentContainerStyle={styles.assessmentBody}
           showsVerticalScrollIndicator={false}
         >
-          {/* Category Header */}
-          <View style={styles.categoryHeader}>
-            <Text style={styles.categoryTitle}>{catInfo.label}</Text>
-            <Text style={styles.categoryDesc}>{catInfo.description}</Text>
-            <Text style={styles.categoryItemCount}>
-              {currentMilestones.length} items in this section
+          {/* Direction indicator */}
+          <View style={styles.directionBadge}>
+            <Text style={styles.directionText}>
+              {direction === 'backward'
+                ? 'Finding your child\'s starting level...'
+                : 'Checking skills above your child\'s level...'}
             </Text>
           </View>
 
-          {/* Milestone Items */}
-          {currentMilestones.map((m, idx) => {
-            const currentScore = scores[m.id];
-            const ageGroup = m.age_group ?? ageGroups.find((ag) => ag.id === m.age_group_id);
-
-            return (
-              <View key={m.id} style={styles.milestoneCard}>
-                <View style={styles.milestoneCardHeader}>
-                  <Text style={styles.milestoneNumber}>{idx + 1}</Text>
-                  <View style={styles.milestoneCardInfo}>
-                    <Text style={styles.milestoneCardName}>{m.display_name}</Text>
-                    {m.description && (
-                      <Text style={styles.milestoneCardDesc}>{m.description}</Text>
-                    )}
-                    <Text style={styles.milestoneCardAge}>
-                      Expected by {m.expected_by_month} months
-                      {ageGroup ? ` (${ageGroup.display_name})` : ''}
-                    </Text>
-                    {m.red_flag && (
-                      <View style={styles.redFlagBadge}>
-                        <AlertTriangle size={11} color={colors.error[600]} />
-                        <Text style={styles.redFlagText}>
-                          Red flag if not met by {m.concern_if_missing_by_month} months
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                {/* Score Buttons */}
-                <View style={styles.scoreButtonRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.scoreButton,
-                      styles.scoreButton0,
-                      currentScore === 0 && styles.scoreButton0Active,
-                    ]}
-                    onPress={() => handleScore(m.id, 0)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[
-                      styles.scoreButtonNum,
-                      currentScore === 0 && styles.scoreButtonNumActive,
-                    ]}>0</Text>
-                    <Text style={[
-                      styles.scoreButtonLabel,
-                      currentScore === 0 && styles.scoreButtonLabelActive,
-                    ]}>Cannot</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.scoreButton,
-                      styles.scoreButton1,
-                      currentScore === 1 && styles.scoreButton1Active,
-                    ]}
-                    onPress={() => handleScore(m.id, 1)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[
-                      styles.scoreButtonNum,
-                      currentScore === 1 && styles.scoreButtonNumActive1,
-                    ]}>1</Text>
-                    <Text style={[
-                      styles.scoreButtonLabel,
-                      currentScore === 1 && styles.scoreButtonLabelActive1,
-                    ]}>Emerging</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.scoreButton,
-                      styles.scoreButton2,
-                      currentScore === 2 && styles.scoreButton2Active,
-                    ]}
-                    onPress={() => handleScore(m.id, 2)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[
-                      styles.scoreButtonNum,
-                      currentScore === 2 && styles.scoreButtonNumActive2,
-                    ]}>2</Text>
-                    <Text style={[
-                      styles.scoreButtonLabel,
-                      currentScore === 2 && styles.scoreButtonLabelActive2,
-                    ]}>Mastered</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          })}
-
-          {/* Navigation */}
-          <View style={styles.assessmentNav}>
-            {currentCategoryIdx > 0 && (
-              <TouchableOpacity
-                style={styles.assessmentNavBtnBack}
-                onPress={goPrevCategory}
-                activeOpacity={0.7}
-              >
-                <ArrowLeft size={16} color={colors.neutral[600]} />
-                <Text style={styles.assessmentNavBtnBackText}>Previous Section</Text>
-              </TouchableOpacity>
+          {/* Milestone Question */}
+          <View style={styles.questionCard}>
+            <Text style={styles.questionAgeTag}>
+              Typically by {milestone.expected_by_month} months
+            </Text>
+            <Text style={styles.questionTitle}>
+              Is {selectedProfile?.child_name ?? 'your child'} {milestone.display_name.toLowerCase()}?
+            </Text>
+            {milestone.description && (
+              <Text style={styles.questionDesc}>{milestone.description}</Text>
             )}
-            <TouchableOpacity
-              style={[
-                styles.assessmentNavBtnNext,
-                !allCurrentScored && styles.assessmentNavBtnDisabled,
-              ]}
-              onPress={goNextCategory}
-              disabled={!allCurrentScored}
-              activeOpacity={0.7}
-            >
-              {isSavingAssessment ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Text style={styles.assessmentNavBtnNextText}>
-                    {isLastCategory ? 'Finish & See Results' : 'Next Section'}
-                  </Text>
-                  <ArrowRight size={16} color="#FFFFFF" />
-                </>
-              )}
-            </TouchableOpacity>
+            {milestone.red_flag && isAtOrAboveAge && (
+              <View style={styles.redFlagBadge}>
+                <AlertTriangle size={13} color={colors.error[600]} />
+                <Text style={styles.redFlagText}>
+                  Important milestone — concern if not met by {milestone.concern_if_missing_by_month} months
+                </Text>
+              </View>
+            )}
           </View>
 
-          {!allCurrentScored && (
-            <Text style={styles.scoringReminder}>
-              Please score all items in this section to continue.
-            </Text>
-          )}
+          {/* Answer Buttons */}
+          <TouchableOpacity
+            style={[styles.answerBtn, styles.answerBtnYes]}
+            onPress={() => handleAnswer('yes')}
+            activeOpacity={0.7}
+          >
+            <CheckCircle size={22} color={colors.success[600]} />
+            <View style={styles.answerBtnContent}>
+              <Text style={styles.answerBtnTitle}>Yes</Text>
+              <Text style={styles.answerBtnHint}>My child does this consistently</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.answerBtn, styles.answerBtnSometimes]}
+            onPress={() => handleAnswer('sometimes')}
+            activeOpacity={0.7}
+          >
+            <Circle size={22} color={colors.warning[600]} />
+            <View style={styles.answerBtnContent}>
+              <Text style={styles.answerBtnTitle}>Sometimes</Text>
+              <Text style={styles.answerBtnHint}>My child does this inconsistently or is just starting to</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.answerBtn, styles.answerBtnNo]}
+            onPress={() => handleAnswer('not_yet')}
+            activeOpacity={0.7}
+          >
+            <Circle size={22} color={colors.error[500]} />
+            <View style={styles.answerBtnContent}>
+              <Text style={styles.answerBtnTitle}>Not Yet</Text>
+              <Text style={styles.answerBtnHint}>My child is not doing this yet</Text>
+            </View>
+          </TouchableOpacity>
         </ScrollView>
       </View>
     );
   }
 
-  // ── RESULTS SCREEN ────────────────────────────────────────────────────────
-  if (screen === 'results' && assessmentResultData) {
-    const { ageEquivalentMonths, rawScore, maxScore, categoryScores } = assessmentResultData;
-    const ageGroup = ageGroups.find((ag) => ag.id === selectedProfile?.age_group_id);
-    const childMaxMonths = ageGroup?.max_months ?? 0;
+  // ═════════════════════════════════════════════════════════════════════════
+  // RESULTS SCREEN
+  // ═════════════════════════════════════════════════════════════════════════
+  if (screen === 'results' && resultData) {
+    const { ageEquivalentMonths, highestMastered, firstNotMet, masteredCount, totalAsked } = resultData;
 
-    // Determine status
-    let statusColor: string = colors.success[500];
-    let statusBg: string = colors.success[50];
-    let statusLabel = 'On Track';
-    let statusDesc = 'Your child\'s gross motor development appears to be progressing well for their age.';
+    const isOnTrack = ageEquivalentMonths >= childAgeMonths;
+    const delayMonths = childAgeMonths - ageEquivalentMonths;
+    const isMild = delayMonths > 0 && delayMonths <= 3;
+    const isModerate = delayMonths > 3 && delayMonths <= 6;
+    const isSignificant = delayMonths > 6;
 
-    if (ageEquivalentMonths < childMaxMonths * 0.6) {
-      statusColor = colors.error[500];
-      statusBg = colors.error[50];
-      statusLabel = 'Significant Delay';
-      statusDesc = 'The assessment suggests a significant gross motor delay. We strongly recommend consulting a pediatric physical therapist for a comprehensive evaluation.';
-    } else if (ageEquivalentMonths < childMaxMonths * 0.8) {
-      statusColor = colors.warning[500];
+    let statusLabel: string;
+    let statusColor: string;
+    let statusBg: string;
+    let statusDesc: string;
+
+    if (isOnTrack) {
+      statusLabel = 'On Track';
+      statusColor = colors.success[600];
+      statusBg = colors.success[50];
+      statusDesc = `${selectedProfile?.child_name ?? 'Your child'}'s gross motor skills appear to be on track for their age. Keep up the great work!`;
+    } else if (isMild) {
+      statusLabel = 'Mild Delay';
+      statusColor = colors.warning[600];
       statusBg = colors.warning[50];
-      statusLabel = 'Mild-Moderate Delay';
-      statusDesc = 'The assessment suggests some areas of delay. Consider discussing these results with your pediatrician or a pediatric physical therapist.';
+      statusDesc = `${selectedProfile?.child_name ?? 'Your child'} may be slightly behind in some gross motor milestones. This is common and often resolves with practice, but monitoring is recommended.`;
+    } else if (isModerate) {
+      statusLabel = 'Moderate Delay';
+      statusColor = colors.warning[700];
+      statusBg = colors.warning[50];
+      statusDesc = `${selectedProfile?.child_name ?? 'Your child'} appears to be behind in gross motor development. We recommend discussing these results with your pediatrician or scheduling a virtual consultation with a pediatric physical therapist.`;
+    } else {
+      statusLabel = 'Significant Delay';
+      statusColor = colors.error[600];
+      statusBg = colors.error[50];
+      statusDesc = `${selectedProfile?.child_name ?? 'Your child'} appears to have a significant gross motor delay. We strongly recommend a professional evaluation by a pediatric physical therapist.`;
     }
+
+    // Milestones not yet met
+    const notMetMilestones = orderedMilestones.filter(
+      (m) => answers[m.id] === 'not_yet' || answers[m.id] === 'sometimes'
+    );
 
     return (
       <ScrollView
@@ -699,151 +636,131 @@ export default function PediatricDashboard() {
       >
         <PediatricDisclaimer compact />
 
-        {/* Age Equivalency Result */}
+        {/* Main Result */}
         <View style={[styles.section, styles.resultMainCard]}>
           <Award size={36} color={colors.primary[500]} />
           <Text style={styles.resultTitle}>Assessment Complete</Text>
           <Text style={styles.resultChildName}>{selectedProfile?.child_name}</Text>
 
           <View style={styles.ageEquivalencyBox}>
-            <Text style={styles.ageEquivalencyLabel}>Gross Motor Age Equivalency</Text>
-            <Text style={styles.ageEquivalencyValue}>
+            <Text style={styles.ageEqLabel}>Gross Motor Age Equivalency</Text>
+            <Text style={styles.ageEqValue}>
               {formatAgeEquivalency(ageEquivalentMonths)}
             </Text>
-            <Text style={styles.ageEquivalencyDetail}>
-              Child's age group: {ageGroup?.display_name ?? 'Unknown'}
+            <Text style={styles.ageEqDetail}>
+              Child's age: {formatAgeEquivalency(childAgeMonths)}
             </Text>
           </View>
 
-          {/* Status Badge */}
           <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
             <Text style={[styles.statusLabel, { color: statusColor }]}>{statusLabel}</Text>
           </View>
           <Text style={styles.statusDesc}>{statusDesc}</Text>
+
+          {!isOnTrack && (
+            <View style={styles.delayBox}>
+              <Text style={styles.delayText}>
+                Estimated delay: ~{Math.round(delayMonths)} month{Math.round(delayMonths) !== 1 ? 's' : ''}
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Score Breakdown */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <BarChart3 size={18} color={colors.neutral[700]} />
-            <Text style={styles.sectionTitle}>Score Breakdown</Text>
-          </View>
-
-          <View style={styles.totalScoreRow}>
-            <Text style={styles.totalScoreLabel}>Total Score</Text>
-            <Text style={styles.totalScoreValue}>{rawScore} / {maxScore}</Text>
-          </View>
-
-          {Object.entries(categoryScores).map(([cat, data]) => {
-            const catLabel = CATEGORY_LABELS[cat]?.label ?? cat;
-            const pct = data.max > 0 ? (data.raw / data.max) * 100 : 0;
-            return (
-              <View key={cat} style={styles.categoryScoreRow}>
-                <View style={styles.categoryScoreHeader}>
-                  <Text style={styles.categoryScoreLabel}>{catLabel}</Text>
-                  <Text style={styles.categoryScoreValue}>{data.raw} / {data.max}</Text>
-                </View>
-                <View style={styles.categoryBarTrack}>
-                  <View
-                    style={[
-                      styles.categoryBarFill,
-                      { width: `${pct}%` },
-                      pct >= 80
-                        ? { backgroundColor: colors.success[500] }
-                        : pct >= 50
-                        ? { backgroundColor: colors.warning[500] }
-                        : { backgroundColor: colors.error[500] },
-                    ]}
-                  />
-                </View>
+        {/* What your child is doing */}
+        {highestMastered && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>What Your Child Is Doing</Text>
+            <View style={styles.milestoneResult}>
+              <CheckCircle size={18} color={colors.success[500]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.milestoneResultName}>{highestMastered.display_name}</Text>
+                <Text style={styles.milestoneResultAge}>
+                  Typically by {highestMastered.expected_by_month} months
+                </Text>
               </View>
-            );
-          })}
-        </View>
+            </View>
+          </View>
+        )}
 
-        {/* Milestones Not Mastered */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Areas for Growth</Text>
-          <Text style={styles.areasDesc}>
-            These milestones were scored as "Cannot Perform" or "Emerging":
-          </Text>
-          {assessmentMilestones
-            .filter((m) => (scores[m.id] ?? 0) < 2)
-            .map((m) => {
-              const s = scores[m.id] ?? 0;
+        {/* Next milestones to work on */}
+        {notMetMilestones.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Next Skills to Work On</Text>
+            {notMetMilestones.slice(0, 5).map((m) => {
+              const answer = answers[m.id];
               return (
-                <View key={m.id} style={styles.areaRow}>
-                  <View style={[
-                    styles.areaScoreBadge,
-                    s === 0 ? { backgroundColor: colors.error[50], borderColor: colors.error[100] }
-                            : { backgroundColor: colors.warning[50], borderColor: colors.warning[100] },
-                  ]}>
-                    <Text style={[
-                      styles.areaScoreText,
-                      s === 0 ? { color: colors.error[700] } : { color: colors.warning[700] },
-                    ]}>{s}</Text>
-                  </View>
+                <View key={m.id} style={styles.milestoneResult}>
+                  <Circle
+                    size={18}
+                    color={answer === 'sometimes' ? colors.warning[500] : colors.neutral[300]}
+                  />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.areaName}>{m.display_name}</Text>
-                    <Text style={styles.areaAgeNote}>
-                      Expected by {m.expected_by_month} months
-                      {m.red_flag ? ' — Red flag' : ''}
+                    <Text style={styles.milestoneResultName}>{m.display_name}</Text>
+                    <Text style={styles.milestoneResultAge}>
+                      Typically by {m.expected_by_month} months
+                      {answer === 'sometimes' ? ' — emerging' : ''}
                     </Text>
                   </View>
                 </View>
               );
             })}
-          {assessmentMilestones.filter((m) => (scores[m.id] ?? 0) < 2).length === 0 && (
-            <Text style={styles.allMasteredText}>
-              All milestones mastered — excellent!
-            </Text>
-          )}
+          </View>
+        )}
+
+        {/* Virtual Call CTA */}
+        <View style={[styles.section, styles.ctaCard]}>
+          <Phone size={24} color={colors.primary[500]} />
+          <Text style={styles.ctaTitle}>Want Expert Guidance?</Text>
+          <Text style={styles.ctaDesc}>
+            Schedule a virtual consultation with a pediatric physical therapist to review
+            your child's development and get a personalized plan.
+          </Text>
+          <TouchableOpacity style={styles.ctaBtn} activeOpacity={0.7}>
+            <Phone size={16} color="#FFFFFF" />
+            <Text style={styles.ctaBtnText}>Schedule Virtual Call</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Disclaimer */}
         <View style={[styles.section, { backgroundColor: colors.info[50], borderColor: colors.info[500] }]}>
-          <Text style={[styles.disclaimerText, { color: colors.info[700] }]}>
-            This assessment is a screening tool based on the PDMS-2 framework and is NOT a substitute
-            for a professional evaluation. Age equivalency estimates are approximate.
+          <Text style={styles.disclaimerText}>
+            This screening is based on the Peabody Developmental Motor Scales (PDMS-2) framework
+            and is NOT a clinical assessment. Age equivalency estimates are approximate.
             Always consult a qualified pediatric physical therapist or pediatrician
-            for clinical diagnosis and treatment planning.
+            for diagnosis and treatment.
           </Text>
         </View>
 
-        {/* Action Buttons */}
+        {/* Actions */}
         <View style={styles.resultActions}>
           <TouchableOpacity
-            style={styles.startAssessmentBtn}
+            style={styles.primaryBtn}
             onPress={() => {
-              setAssessmentResultData(null);
-              startAssessment();
+              const ageGroup = ageGroups.find((ag) => ag.id === selectedProfile?.age_group_id);
+              const ageMonths = ageGroup
+                ? Math.round((ageGroup.min_months + ageGroup.max_months) / 2)
+                : 12;
+              startAssessment(ageMonths);
             }}
             activeOpacity={0.7}
           >
-            <RotateCcw size={16} color="#FFFFFF" />
-            <Text style={styles.startAssessmentBtnText}>Retake Assessment</Text>
+            <Text style={styles.primaryBtnText}>Retake Assessment</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.historyBtn}
-            onPress={loadHistory}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.secondaryBtn} onPress={loadHistory} activeOpacity={0.7}>
             <History size={16} color={colors.neutral[600]} />
-            <Text style={styles.historyBtnText}>View Past Assessments</Text>
+            <Text style={styles.secondaryBtnText}>View Past Results</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.backToProfilesBtn}
-            onPress={() => setScreen('profiles')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.backToProfilesBtnText}>Back to Profiles</Text>
+          <TouchableOpacity style={styles.secondaryBtn} onPress={() => setScreen('profiles')} activeOpacity={0.7}>
+            <Text style={styles.secondaryBtnText}>Back to Profiles</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
     );
   }
 
-  // ── HISTORY SCREEN ────────────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════════════
+  // HISTORY SCREEN
+  // ═════════════════════════════════════════════════════════════════════════
   if (screen === 'history') {
     return (
       <ScrollView
@@ -852,12 +769,9 @@ export default function PediatricDashboard() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <TouchableOpacity
-          style={styles.assessmentBackBtn}
-          onPress={() => setScreen('profiles')}
-        >
+        <TouchableOpacity style={styles.backBtn} onPress={() => setScreen('profiles')}>
           <ArrowLeft size={16} color={colors.neutral[600]} />
-          <Text style={styles.assessmentBackText}>Back</Text>
+          <Text style={styles.backBtnText}>Back</Text>
         </TouchableOpacity>
 
         <View style={styles.section}>
@@ -868,40 +782,28 @@ export default function PediatricDashboard() {
           {isLoadingHistory ? (
             <ActivityIndicator size="large" color={colors.primary[500]} style={{ marginTop: 20 }} />
           ) : assessmentHistory.length === 0 ? (
-            <View style={styles.emptyProfiles}>
+            <View style={styles.emptyBox}>
               <Clock size={28} color={colors.neutral[300]} />
               <Text style={styles.emptyText}>No assessments completed yet.</Text>
             </View>
           ) : (
-            assessmentHistory.map((result, idx) => {
-              const catScores = result.category_scores ?? {};
-              return (
-                <View key={result.id} style={styles.historyCard}>
-                  <View style={styles.historyCardHeader}>
-                    <Text style={styles.historyDate}>
-                      {new Date(result.assessment_date).toLocaleDateString('en-US', {
-                        month: 'short', day: 'numeric', year: 'numeric',
-                      })}
-                    </Text>
-                    <Text style={styles.historyAgeEq}>
-                      {formatAgeEquivalency(result.age_equivalent_months)}
-                    </Text>
-                  </View>
-                  <View style={styles.historyScoreRow}>
-                    <Text style={styles.historyScoreLabel}>Total Score:</Text>
-                    <Text style={styles.historyScoreValue}>{result.raw_score}</Text>
-                  </View>
-                  {Object.entries(catScores).map(([cat, data]: [string, any]) => (
-                    <View key={cat} style={styles.historyScoreRow}>
-                      <Text style={styles.historyCatLabel}>
-                        {CATEGORY_LABELS[cat]?.label ?? cat}:
-                      </Text>
-                      <Text style={styles.historyCatValue}>{data.raw}/{data.max}</Text>
-                    </View>
-                  ))}
+            assessmentHistory.map((result) => (
+              <View key={result.id} style={styles.historyCard}>
+                <View style={styles.historyCardHeader}>
+                  <Text style={styles.historyDate}>
+                    {new Date(result.assessment_date).toLocaleDateString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric',
+                    })}
+                  </Text>
+                  <Text style={styles.historyAgeEq}>
+                    {formatAgeEquivalency(result.age_equivalent_months)}
+                  </Text>
                 </View>
-              );
-            })
+                <Text style={styles.historyScore}>
+                  {result.raw_score} milestones mastered
+                </Text>
+              </View>
+            ))
           )}
         </View>
       </ScrollView>
@@ -918,11 +820,74 @@ export default function PediatricDashboard() {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// AGE PROMPT SUB-COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════
+function AgePrompt({
+  profile,
+  ageGroups,
+  onStart,
+}: {
+  profile: PediatricProfile;
+  ageGroups: PediatricAgeGroup[];
+  onStart: (ageMonths: number) => void;
+}) {
+  const [ageInput, setAgeInput] = useState('');
+
+  // Pre-fill with midpoint of their age group
+  useEffect(() => {
+    const ag = ageGroups.find((g) => g.id === profile.age_group_id);
+    if (ag) {
+      const mid = Math.round((ag.min_months + ag.max_months) / 2);
+      setAgeInput(String(mid));
+    }
+  }, [profile, ageGroups]);
+
+  const ageNum = parseInt(ageInput, 10);
+  const isValid = !isNaN(ageNum) && ageNum >= 0 && ageNum <= 60;
+
+  return (
+    <View style={styles.agePrompt}>
+      <Text style={styles.agePromptLabel}>
+        How old is {profile.child_name} (in months)?
+      </Text>
+      <TextInput
+        style={styles.agePromptInput}
+        value={ageInput}
+        onChangeText={(t) => setAgeInput(t.replace(/[^0-9]/g, ''))}
+        keyboardType="numeric"
+        maxLength={2}
+        placeholder="e.g. 14"
+        placeholderTextColor={colors.neutral[400]}
+      />
+      {isValid && ageNum > 0 && (
+        <Text style={styles.agePromptHint}>
+          {formatAgeEquivalency(ageNum)}
+        </Text>
+      )}
+      <TouchableOpacity
+        style={[styles.primaryBtn, !isValid && styles.primaryBtnDisabled]}
+        onPress={() => isValid && onStart(ageNum)}
+        disabled={!isValid}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.primaryBtnText}>Start Assessment</Text>
+        <ArrowRight size={16} color="#FFFFFF" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════════════════════════════════
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 12, color: colors.neutral[500], fontSize: 14 },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 40 },
+
+  // Section
   section: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -931,9 +896,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.neutral[200],
   },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.neutral[800] },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.neutral[800], marginBottom: 8 },
+
+  // Add child
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   addBtnText: { fontSize: 14, fontWeight: '500', color: colors.primary[500] },
   addForm: {
     backgroundColor: colors.neutral[50],
@@ -943,6 +910,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.neutral[200],
   },
+  formLabel: { fontSize: 13, fontWeight: '600', color: colors.neutral[700], marginBottom: 4 },
   input: {
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
@@ -953,19 +921,7 @@ const styles = StyleSheet.create({
     color: colors.neutral[900],
     marginBottom: 10,
   },
-  formLabel: { fontSize: 13, fontWeight: '600', color: colors.neutral[700], marginBottom: 6 },
-  ageGroupGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
-  ageGroupChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: colors.neutral[300],
-  },
-  ageGroupChipSelected: { backgroundColor: colors.primary[50], borderColor: colors.primary[500] },
-  ageGroupChipText: { fontSize: 13, color: colors.neutral[600] },
-  ageGroupChipTextSelected: { color: colors.primary[700], fontWeight: '600' },
+  ageHint: { fontSize: 12, color: colors.primary[600], marginBottom: 10, marginTop: -6 },
   saveBtn: {
     backgroundColor: colors.primary[500],
     borderRadius: 8,
@@ -974,8 +930,12 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: { backgroundColor: colors.neutral[300] },
   saveBtnText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
-  emptyProfiles: { paddingVertical: 24, alignItems: 'center', gap: 10 },
+
+  // Empty
+  emptyBox: { paddingVertical: 24, alignItems: 'center', gap: 10 },
   emptyText: { fontSize: 14, color: colors.neutral[500], textAlign: 'center' },
+
+  // Profile cards
   profileCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -992,12 +952,46 @@ const styles = StyleSheet.create({
   profileNameSelected: { color: colors.primary[700] },
   profileAge: { fontSize: 12, color: colors.neutral[500] },
 
-  // Assessment Start
-  assessmentStartCard: { alignItems: 'center', paddingVertical: 8 },
-  assessmentStartTitle: { fontSize: 18, fontWeight: '700', color: colors.neutral[900], marginTop: 10, marginBottom: 4 },
-  assessmentStartDesc: { fontSize: 13, color: colors.neutral[600], textAlign: 'center', lineHeight: 19, marginBottom: 10, paddingHorizontal: 4 },
-  assessmentStartNote: { fontSize: 14, fontWeight: '600', color: colors.primary[600], marginBottom: 16 },
-  startAssessmentBtn: {
+  // Start card
+  startCard: { alignItems: 'center', paddingVertical: 8 },
+  startTitle: { fontSize: 18, fontWeight: '700', color: colors.neutral[900], marginTop: 8, marginBottom: 4 },
+  startDesc: { fontSize: 13, color: colors.neutral[600], textAlign: 'center', lineHeight: 19, marginBottom: 16, paddingHorizontal: 4 },
+
+  // Age prompt
+  agePrompt: { width: '100%', marginBottom: 8 },
+  agePromptLabel: { fontSize: 14, fontWeight: '600', color: colors.neutral[700], marginBottom: 6, textAlign: 'center' },
+  agePromptInput: {
+    backgroundColor: colors.neutral[50],
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.neutral[300],
+    padding: 12,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.neutral[900],
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  agePromptHint: { fontSize: 12, color: colors.primary[600], textAlign: 'center', marginBottom: 12 },
+
+  // History
+  historyBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 },
+  historyBtnText: { fontSize: 14, color: colors.neutral[600] },
+  historyCard: {
+    backgroundColor: colors.neutral[50],
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.neutral[200],
+  },
+  historyCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  historyDate: { fontSize: 14, fontWeight: '600', color: colors.neutral[800] },
+  historyAgeEq: { fontSize: 14, fontWeight: '700', color: colors.primary[600] },
+  historyScore: { fontSize: 12, color: colors.neutral[500] },
+
+  // Buttons
+  primaryBtn: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1005,31 +999,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary[500],
     borderRadius: 10,
     paddingVertical: 14,
-    paddingHorizontal: 24,
     width: '100%',
-    marginBottom: 10,
   },
-  startAssessmentBtnText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
-  historyBtn: {
+  primaryBtnDisabled: { backgroundColor: colors.neutral[300] },
+  primaryBtnText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  secondaryBtn: {
     flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.neutral[300],
+    width: '100%',
   },
-  historyBtnText: { fontSize: 14, color: colors.neutral[600] },
+  secondaryBtnText: { fontSize: 14, fontWeight: '500', color: colors.neutral[600] },
 
-  // Scoring Guide
-  scoringRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
-  scoreBadge: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2 },
-  scoreBadge0: { backgroundColor: colors.neutral[50], borderColor: colors.neutral[300] },
-  scoreBadge1: { backgroundColor: colors.warning[50], borderColor: colors.warning[500] },
-  scoreBadge2: { backgroundColor: colors.success[500], borderColor: colors.success[600] },
-  scoreBadgeText: { fontSize: 14, fontWeight: '700', color: colors.neutral[700] },
-  scoringDesc: { flex: 1 },
-  scoringLabel: { fontSize: 14, fontWeight: '600', color: colors.neutral[800] },
-  scoringDetail: { fontSize: 12, color: colors.neutral[500] },
-
-  // Assessment Header
+  // Assessment header
   assessmentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1040,130 +1027,70 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.neutral[200],
   },
-  assessmentBackBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  assessmentBackText: { fontSize: 14, color: colors.neutral[600] },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  backBtnText: { fontSize: 14, color: colors.neutral[600] },
   assessmentHeaderTitle: { fontSize: 16, fontWeight: '700', color: colors.neutral[800] },
-  assessmentCategoryCount: { fontSize: 13, color: colors.neutral[500], fontWeight: '500' },
+  assessmentCount: { fontSize: 13, color: colors.neutral[500] },
 
-  // Overall Progress
-  overallProgressContainer: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#FFFFFF' },
-  overallProgressTrack: { height: 4, backgroundColor: colors.neutral[200], borderRadius: 2, marginBottom: 4 },
-  overallProgressFill: { height: 4, backgroundColor: colors.primary[500], borderRadius: 2 },
-  overallProgressText: { fontSize: 11, color: colors.neutral[500] },
+  // Assessment body
+  assessmentBody: { padding: 16, paddingBottom: 40 },
 
-  // Assessment Content
-  assessmentContent: { padding: 16, paddingBottom: 40 },
-  categoryHeader: {
-    backgroundColor: colors.primary[50],
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: colors.primary[200],
+  directionBadge: {
+    backgroundColor: colors.info[50],
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+    alignItems: 'center',
   },
-  categoryTitle: { fontSize: 20, fontWeight: '700', color: colors.primary[700], marginBottom: 4 },
-  categoryDesc: { fontSize: 13, color: colors.primary[600], lineHeight: 18, marginBottom: 4 },
-  categoryItemCount: { fontSize: 12, color: colors.primary[500], fontWeight: '500' },
+  directionText: { fontSize: 13, color: colors.info[700], fontWeight: '500' },
 
-  // Milestone Card
-  milestoneCard: {
+  // Question card
+  questionCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+    borderRadius: 14,
+    padding: 20,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: colors.neutral[200],
   },
-  milestoneCardHeader: { flexDirection: 'row', gap: 10, marginBottom: 12 },
-  milestoneNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.neutral[100],
-    textAlign: 'center',
-    lineHeight: 24,
+  questionAgeTag: {
     fontSize: 12,
-    fontWeight: '700',
-    color: colors.neutral[600],
-    overflow: 'hidden',
+    fontWeight: '600',
+    color: colors.primary[500],
+    marginBottom: 8,
   },
-  milestoneCardInfo: { flex: 1 },
-  milestoneCardName: { fontSize: 15, fontWeight: '600', color: colors.neutral[800], marginBottom: 2 },
-  milestoneCardDesc: { fontSize: 13, color: colors.neutral[500], lineHeight: 17, marginBottom: 4 },
-  milestoneCardAge: { fontSize: 11, color: colors.neutral[400] },
-
-  // Red flag
+  questionTitle: { fontSize: 20, fontWeight: '700', color: colors.neutral[900], marginBottom: 6, lineHeight: 26 },
+  questionDesc: { fontSize: 14, color: colors.neutral[500], lineHeight: 20 },
   redFlagBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
+    gap: 6,
+    marginTop: 10,
     backgroundColor: colors.error[50],
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  redFlagText: { fontSize: 11, color: colors.error[700], fontWeight: '500' },
+  redFlagText: { fontSize: 12, color: colors.error[700], fontWeight: '500', flex: 1 },
 
-  // Score Buttons
-  scoreButtonRow: { flexDirection: 'row', gap: 8 },
-  scoreButton: {
-    flex: 1,
+  // Answer buttons
+  answerBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
+    gap: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
     borderWidth: 2,
   },
-  scoreButton0: { backgroundColor: '#FFFFFF', borderColor: colors.neutral[200] },
-  scoreButton0Active: { backgroundColor: colors.neutral[100], borderColor: colors.neutral[500] },
-  scoreButton1: { backgroundColor: '#FFFFFF', borderColor: colors.neutral[200] },
-  scoreButton1Active: { backgroundColor: colors.warning[50], borderColor: colors.warning[500] },
-  scoreButton2: { backgroundColor: '#FFFFFF', borderColor: colors.neutral[200] },
-  scoreButton2Active: { backgroundColor: colors.success[50], borderColor: colors.success[500] },
-  scoreButtonNum: { fontSize: 16, fontWeight: '700', color: colors.neutral[400], marginBottom: 1 },
-  scoreButtonNumActive: { color: colors.neutral[700] },
-  scoreButtonNumActive1: { color: colors.warning[700] },
-  scoreButtonNumActive2: { color: colors.success[700] },
-  scoreButtonLabel: { fontSize: 11, color: colors.neutral[400] },
-  scoreButtonLabelActive: { color: colors.neutral[700], fontWeight: '500' },
-  scoreButtonLabelActive1: { color: colors.warning[700], fontWeight: '500' },
-  scoreButtonLabelActive2: { color: colors.success[700], fontWeight: '500' },
-
-  // Assessment Nav
-  assessmentNav: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  assessmentNavBtnBack: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.neutral[300],
-    backgroundColor: '#FFFFFF',
-  },
-  assessmentNavBtnBackText: { fontSize: 14, fontWeight: '500', color: colors.neutral[600] },
-  assessmentNavBtnNext: {
-    flex: 2,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.primary[500],
-    borderRadius: 10,
-    paddingVertical: 14,
-  },
-  assessmentNavBtnDisabled: { backgroundColor: colors.neutral[300] },
-  assessmentNavBtnNextText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
-  scoringReminder: {
-    fontSize: 13,
-    color: colors.neutral[500],
-    textAlign: 'center',
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
+  answerBtnYes: { borderColor: colors.success[100] },
+  answerBtnSometimes: { borderColor: colors.warning[100] },
+  answerBtnNo: { borderColor: colors.error[100] },
+  answerBtnContent: { flex: 1 },
+  answerBtnTitle: { fontSize: 16, fontWeight: '600', color: colors.neutral[800] },
+  answerBtnHint: { fontSize: 12, color: colors.neutral[500], marginTop: 1 },
 
   // Results
   resultMainCard: { alignItems: 'center', paddingVertical: 24 },
@@ -1177,80 +1104,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: colors.primary[200],
+    borderColor: colors.primary[100],
   },
-  ageEquivalencyLabel: { fontSize: 13, fontWeight: '600', color: colors.primary[600], marginBottom: 4 },
-  ageEquivalencyValue: { fontSize: 28, fontWeight: '700', color: colors.primary[700], marginBottom: 4 },
-  ageEquivalencyDetail: { fontSize: 12, color: colors.primary[500] },
-  statusBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginBottom: 10,
-  },
+  ageEqLabel: { fontSize: 13, fontWeight: '600', color: colors.primary[600], marginBottom: 4 },
+  ageEqValue: { fontSize: 28, fontWeight: '700', color: colors.primary[700], marginBottom: 4 },
+  ageEqDetail: { fontSize: 12, color: colors.primary[500] },
+  statusBadge: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, marginBottom: 10 },
   statusLabel: { fontSize: 14, fontWeight: '700' },
   statusDesc: { fontSize: 13, color: colors.neutral[600], textAlign: 'center', lineHeight: 19, paddingHorizontal: 8 },
-
-  // Score Breakdown
-  totalScoreRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 12,
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.neutral[100],
-  },
-  totalScoreLabel: { fontSize: 15, fontWeight: '600', color: colors.neutral[800] },
-  totalScoreValue: { fontSize: 16, fontWeight: '700', color: colors.primary[600] },
-  categoryScoreRow: { marginBottom: 12 },
-  categoryScoreHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  categoryScoreLabel: { fontSize: 14, fontWeight: '500', color: colors.neutral[700] },
-  categoryScoreValue: { fontSize: 13, fontWeight: '600', color: colors.neutral[600] },
-  categoryBarTrack: { height: 8, backgroundColor: colors.neutral[100], borderRadius: 4 },
-  categoryBarFill: { height: 8, borderRadius: 4, minWidth: 4 },
-
-  // Areas for Growth
-  areasDesc: { fontSize: 13, color: colors.neutral[500], marginBottom: 12 },
-  areaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  areaScoreBadge: {
-    width: 28, height: 28, borderRadius: 14,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1,
-  },
-  areaScoreText: { fontSize: 13, fontWeight: '700' },
-  areaName: { fontSize: 14, fontWeight: '500', color: colors.neutral[800] },
-  areaAgeNote: { fontSize: 11, color: colors.neutral[400] },
-  allMasteredText: { fontSize: 14, color: colors.success[600], fontStyle: 'italic', textAlign: 'center', paddingVertical: 12 },
-
-  disclaimerText: { fontSize: 12, lineHeight: 17 },
-
-  // Result actions
-  resultActions: { marginTop: 4, marginBottom: 20, gap: 4 },
-  backToProfilesBtn: {
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.neutral[300],
-    alignItems: 'center',
-  },
-  backToProfilesBtnText: { fontSize: 14, fontWeight: '500', color: colors.neutral[600] },
-
-  // History
-  historyCard: {
+  delayBox: {
+    marginTop: 12,
     backgroundColor: colors.neutral[50],
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.neutral[200],
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  historyCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  historyDate: { fontSize: 14, fontWeight: '600', color: colors.neutral[800] },
-  historyAgeEq: { fontSize: 14, fontWeight: '700', color: colors.primary[600] },
-  historyScoreRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  historyScoreLabel: { fontSize: 13, fontWeight: '500', color: colors.neutral[700] },
-  historyScoreValue: { fontSize: 13, fontWeight: '600', color: colors.neutral[800] },
-  historyCatLabel: { fontSize: 12, color: colors.neutral[500] },
-  historyCatValue: { fontSize: 12, fontWeight: '500', color: colors.neutral[600] },
+  delayText: { fontSize: 13, fontWeight: '600', color: colors.neutral[700] },
+
+  // Milestone results
+  milestoneResult: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  milestoneResultName: { fontSize: 14, fontWeight: '500', color: colors.neutral[800] },
+  milestoneResultAge: { fontSize: 11, color: colors.neutral[400] },
+
+  // CTA
+  ctaCard: { alignItems: 'center', paddingVertical: 20 },
+  ctaTitle: { fontSize: 17, fontWeight: '700', color: colors.neutral[900], marginTop: 8, marginBottom: 4 },
+  ctaDesc: { fontSize: 13, color: colors.neutral[600], textAlign: 'center', lineHeight: 19, marginBottom: 16, paddingHorizontal: 4 },
+  ctaBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primary[500],
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    width: '100%',
+  },
+  ctaBtnText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+
+  disclaimerText: { fontSize: 12, color: colors.info[700], lineHeight: 17 },
+
+  resultActions: { gap: 8, marginBottom: 20 },
 });
