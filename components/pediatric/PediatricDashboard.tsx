@@ -26,6 +26,7 @@ import {
 } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import PediatricDisclaimer from './PediatricDisclaimer';
+import { supabase } from '@/lib/supabase';
 import {
   fetchAgeGroups,
   fetchChildProfiles,
@@ -86,22 +87,59 @@ export default function PediatricDashboard() {
 
   const scrollRef = useRef<ScrollView>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      const [ag, cp, ms] = await Promise.all([
-        fetchAgeGroups(),
-        fetchChildProfiles(),
-        fetchSimplifiedMilestones(),
-      ]);
-      setAgeGroups(ag);
-      setProfiles(cp);
-      setAllMilestones(ms);
-      if (cp.length > 0) setSelectedProfile(cp[0]);
-      setIsLoading(false);
-    };
-    load();
+  // Reset all assessment state when switching users
+  const resetAllState = useCallback(() => {
+    setScreen('profiles');
+    setProfiles([]);
+    setSelectedProfile(null);
+    setShowAddForm(false);
+    setNewChildName('');
+    setNewChildAgeMonths('');
+    setOrderedMilestones([]);
+    setCurrentMilestoneIdx(0);
+    setAnswers({});
+    setDirection('backward');
+    setAssessmentDone(false);
+    setResultData(null);
+    setAssessmentHistory([]);
   }, []);
+
+  // Load data for the current user
+  const loadUserData = useCallback(async () => {
+    setIsLoading(true);
+    const [ag, cp, ms] = await Promise.all([
+      fetchAgeGroups(),
+      fetchChildProfiles(),
+      fetchSimplifiedMilestones(),
+    ]);
+    setAgeGroups(ag);
+    setProfiles(cp);
+    setAllMilestones(ms);
+    if (cp.length > 0) setSelectedProfile(cp[0]);
+    else setSelectedProfile(null);
+    setIsLoading(false);
+  }, []);
+
+  // Initial load
+  useEffect(() => {
+    loadUserData();
+  }, [loadUserData]);
+
+  // Listen for auth changes — reload data when user signs in/out
+  useEffect(() => {
+    if (!supabase) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event) => {
+        if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+          resetAllState();
+          if (event !== 'SIGNED_OUT') {
+            loadUserData();
+          }
+        }
+      }
+    );
+    return () => subscription.unsubscribe();
+  }, [resetAllState, loadUserData]);
 
   // Find the matching age group for a given age in months
   const findAgeGroup = (months: number): PediatricAgeGroup | null => {
@@ -482,7 +520,7 @@ export default function PediatricDashboard() {
     const isAtOrAboveAge = milestone.expected_by_month <= childAgeMonths;
 
     return (
-      <View style={{ flex: 1, backgroundColor: colors.neutral[50] }}>
+      <View style={styles.assessmentContainer}>
         {/* Header */}
         <View style={styles.assessmentHeader}>
           <TouchableOpacity
@@ -511,6 +549,7 @@ export default function PediatricDashboard() {
           style={styles.scroll}
           contentContainerStyle={styles.assessmentBody}
           showsVerticalScrollIndicator={false}
+          key={`assessment-${currentMilestoneIdx}`}
         >
           {/* Direction indicator */}
           <View style={styles.directionBadge}>
@@ -1032,7 +1071,8 @@ const styles = StyleSheet.create({
   assessmentHeaderTitle: { fontSize: 16, fontWeight: '700', color: colors.neutral[800] },
   assessmentCount: { fontSize: 13, color: colors.neutral[500] },
 
-  // Assessment body
+  // Assessment container & body
+  assessmentContainer: { flex: 1, backgroundColor: colors.neutral[50] },
   assessmentBody: { padding: 16, paddingBottom: 40 },
 
   directionBadge: {
