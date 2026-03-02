@@ -14,7 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Youtube, ExternalLink, MapPin, Clock, Star, Play, CircleCheck as CheckCircle, Heart, Dumbbell, Search, Sparkles, Target, Share2, FileText, AlertTriangle, ChevronRight, Lock, BookOpen } from 'lucide-react-native';
 import InjuryLibraryModal from '@/components/exercises/InjuryLibraryModal';
@@ -137,8 +137,9 @@ const previewExercises: Exercise[] = [
 
 export default function ExercisesScreen() {
   const { careMode } = useCareMode();
+  const { pedTab } = useLocalSearchParams<{ pedTab?: string }>();
   if (careMode === 'pediatric') {
-    return <PediatricExercises />;
+    return <PediatricExercises initialTab={pedTab === 'concern' ? 'concern' : 'age'} />;
   }
 
   return <AdultExercisesScreen />;

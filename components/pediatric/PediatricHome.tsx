@@ -11,7 +11,6 @@ import {
   Baby,
   CalendarSearch,
   Target,
-  TriangleAlert as AlertTriangle,
   Heart,
   ArrowRight,
 } from 'lucide-react-native';
@@ -30,7 +29,7 @@ const QUICK_LINKS = [
     title: 'Browse by Age',
     subtitle: 'Find activities for your child\'s age group',
     icon: CalendarSearch,
-    tab: 'exercises',
+    path: '/(tabs)/exercises?pedTab=age',
     color: colors.info[500],
     bgColor: colors.info[50],
   },
@@ -39,7 +38,7 @@ const QUICK_LINKS = [
     title: 'Browse by Concern',
     subtitle: 'Activities for specific developmental concerns',
     icon: Target,
-    tab: 'exercises',
+    path: '/(tabs)/exercises?pedTab=concern',
     color: colors.primary[500],
     bgColor: colors.primary[50],
   },
@@ -48,27 +47,14 @@ const QUICK_LINKS = [
     title: 'Milestones',
     subtitle: 'Track your child\'s developmental milestones',
     icon: Heart,
-    tab: 'dashboard',
+    path: '/(tabs)/dashboard',
     color: colors.success[500],
     bgColor: colors.success[50],
-  },
-  {
-    key: 'worry',
-    title: 'When to Worry',
-    subtitle: 'Red flags and when to seek professional help',
-    icon: AlertTriangle,
-    tab: 'assessment',
-    color: colors.warning[600],
-    bgColor: colors.warning[50],
   },
 ];
 
 export default function PediatricHome({ setCareMode }: Props) {
   const router = useRouter();
-
-  const navigateTo = (tab: string) => {
-    router.navigate(`/(tabs)/${tab}` as any);
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -110,7 +96,7 @@ export default function PediatricHome({ setCareMode }: Props) {
             <TouchableOpacity
               key={link.key}
               style={styles.linkCard}
-              onPress={() => navigateTo(link.tab)}
+              onPress={() => router.navigate(link.path as any)}
               activeOpacity={0.7}
             >
               <View style={[styles.linkIcon, { backgroundColor: link.bgColor }]}>

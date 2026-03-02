@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,8 +35,12 @@ import {
 type BrowseMode = 'tabs' | 'age_list' | 'concern_list' | 'videos';
 type Tab = 'age' | 'concern';
 
-export default function PediatricExercises() {
-  const [activeTab, setActiveTab] = useState<Tab>('age');
+interface PediatricExercisesProps {
+  initialTab?: Tab;
+}
+
+export default function PediatricExercises({ initialTab = 'age' }: PediatricExercisesProps) {
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [browseMode, setBrowseMode] = useState<BrowseMode>('tabs');
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -49,6 +53,12 @@ export default function PediatricExercises() {
   const [isLoadingVideos, setIsLoadingVideos] = useState(false);
   const lastLoadAt = useRef<number>(0);
   const STALE_MS = 5 * 60 * 1000; // Re-fetch if data is older than 5 min
+
+  // Sync active tab when parent passes a different initialTab (component stays mounted)
+  useEffect(() => {
+    setActiveTab(initialTab);
+    setBrowseMode('tabs');
+  }, [initialTab]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
