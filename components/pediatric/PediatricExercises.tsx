@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import {
   Baby,
   Play,
@@ -17,6 +18,7 @@ import {
   ArrowLeft,
   TriangleAlert as AlertTriangle,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react-native';
 import { colors } from '@/constants/theme';
 import PediatricDisclaimer from './PediatricDisclaimer';
@@ -37,6 +39,7 @@ export default function PediatricExercises() {
   const [activeTab, setActiveTab] = useState<Tab>('age');
   const [browseMode, setBrowseMode] = useState<BrowseMode>('tabs');
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   // Data
   const [ageGroups, setAgeGroups] = useState<PediatricAgeGroup[]>([]);
@@ -44,17 +47,39 @@ export default function PediatricExercises() {
   const [videos, setVideos] = useState<PediatricExerciseVideo[]>([]);
   const [selectedLabel, setSelectedLabel] = useState('');
   const [isLoadingVideos, setIsLoadingVideos] = useState(false);
+  const lastLoadAt = useRef<number>(0);
+  const STALE_MS = 5 * 60 * 1000; // Re-fetch if data is older than 5 min
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(false);
+    try {
       const [ag, c] = await Promise.all([fetchAgeGroups(), fetchConcerns()]);
       setAgeGroups(ag);
       setConcerns(c);
+      // If both returned empty, the fetch likely failed (RLS / network)
+      if (ag.length === 0 && c.length === 0) {
+        setLoadError(true);
+      } else {
+        lastLoadAt.current = Date.now();
+      }
+    } catch {
+      setLoadError(true);
+    } finally {
       setIsLoading(false);
-    };
-    load();
+    }
   }, []);
+
+  // Re-fetch on focus if data is stale or was never loaded successfully
+  useFocusEffect(
+    useCallback(() => {
+      const dataEmpty = ageGroups.length === 0 && concerns.length === 0;
+      const stale = Date.now() - lastLoadAt.current > STALE_MS;
+      if (dataEmpty || stale) {
+        loadData();
+      }
+    }, [loadData, ageGroups.length, concerns.length])
+  );
 
   const openAgeGroup = useCallback(async (ag: PediatricAgeGroup) => {
     setSelectedLabel(ag.display_name);
@@ -146,6 +171,24 @@ export default function PediatricExercises() {
         {browseMode === 'tabs' && (
           <>
             <PediatricDisclaimer compact />
+
+            {/* Error / empty state with retry */}
+            {loadError && ageGroups.length === 0 && concerns.length === 0 && (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>Unable to load activities</Text>
+                <Text style={styles.emptyText}>
+                  Please check your connection and try again.
+                </Text>
+                <TouchableOpacity
+                  style={styles.retryBtn}
+                  onPress={loadData}
+                  activeOpacity={0.7}
+                >
+                  <RefreshCw size={14} color="#FFFFFF" />
+                  <Text style={styles.retryBtnText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {activeTab === 'age' &&
               ageGroups.map((ag) => (
@@ -345,7 +388,17 @@ const styles = StyleSheet.create({
     borderColor: colors.neutral[200],
   },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.neutral[700], marginBottom: 6 },
-  emptyText: { fontSize: 14, color: colors.neutral[500], textAlign: 'center' },
+  emptyText: { fontSize: 14, color: colors.neutral[500], textAlign: 'center', marginBottom: 12 },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary[500],
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryBtnText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
   videoCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
