@@ -13,8 +13,6 @@ import { useFocusEffect } from 'expo-router';
 import {
   Baby,
   Play,
-  CalendarSearch,
-  Target,
   ArrowLeft,
   TriangleAlert as AlertTriangle,
   ChevronRight,
@@ -148,29 +146,13 @@ export default function PediatricExercises({ initialTab = 'age' }: PediatricExer
           <Text style={styles.headerTitle}>Pediatric Exercises</Text>
         </View>
         <Text style={styles.headerSubtitle}>
-          {browseMode === 'videos' ? selectedLabel : 'Browse activity library'}
+          {browseMode === 'videos'
+            ? selectedLabel
+            : activeTab === 'age'
+              ? 'Browse by age group'
+              : 'Browse by concern'}
         </Text>
       </View>
-
-      {/* Tab switcher */}
-      {browseMode === 'tabs' && (
-        <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'age' && styles.tabActive]}
-            onPress={() => setActiveTab('age')}
-          >
-            <CalendarSearch size={16} color={activeTab === 'age' ? colors.primary[500] : colors.neutral[500]} />
-            <Text style={[styles.tabText, activeTab === 'age' && styles.tabTextActive]}>By Age</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'concern' && styles.tabActive]}
-            onPress={() => setActiveTab('concern')}
-          >
-            <Target size={16} color={activeTab === 'concern' ? colors.primary[500] : colors.neutral[500]} />
-            <Text style={[styles.tabText, activeTab === 'concern' && styles.tabTextActive]}>By Concern</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       <ScrollView
         style={styles.content}
@@ -346,25 +328,6 @@ const styles = StyleSheet.create({
   logoText: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
   headerTitle: { fontSize: 18, fontWeight: '600', color: '#FFFFFF' },
   headerSubtitle: { fontSize: 13, color: colors.primary[200], marginTop: 2 },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.neutral[200],
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  tabActive: { borderBottomColor: colors.primary[500] },
-  tabText: { fontSize: 14, fontWeight: '500', color: colors.neutral[500] },
-  tabTextActive: { color: colors.primary[500] },
   content: { flex: 1 },
   contentInner: { padding: 16, paddingBottom: 40 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60 },
