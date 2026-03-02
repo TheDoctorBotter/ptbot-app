@@ -41,15 +41,17 @@ export function CareModeProvider({ children }: { children: React.ReactNode }) {
       if (!cancelled) setIsLoading(false);
 
       // 2. Background sync from Supabase (non-blocking)
+      // Use getSession() instead of getUser() — getUser() makes a network
+      // request that can hang indefinitely after sign-out or on slow networks.
       if (!supabase) return;
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user || cancelled) return;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user || cancelled) return;
 
         const { data, error } = await supabase
           .from('profiles')
           .select('care_mode')
-          .eq('id', user.id)
+          .eq('id', session.user.id)
           .single();
 
         if (!error && data?.care_mode && !cancelled) {
@@ -70,15 +72,13 @@ export function CareModeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!supabase) return;
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event) => {
-        if (event === 'SIGNED_IN') {
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
           try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
             const { data } = await supabase
               .from('profiles')
               .select('care_mode')
-              .eq('id', user.id)
+              .eq('id', session.user.id)
               .single();
             if (data?.care_mode) {
               const mode = data.care_mode as CareMode;
@@ -106,13 +106,13 @@ export function CareModeProvider({ children }: { children: React.ReactNode }) {
     // Persist to Supabase
     if (!supabase) return;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       await supabase
         .from('profiles')
         .update({ care_mode: mode })
-        .eq('id', user.id);
+        .eq('id', session.user.id);
     } catch (err) {
       console.warn('[CareModeProvider] Failed to persist care_mode:', err);
     }
