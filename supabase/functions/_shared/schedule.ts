@@ -1,5 +1,5 @@
 // Scheduling utilities for PTBot Zoom Calls
-// Adapted from buckeye-scheduler for 30-minute appointments with 5-minute buffer
+// Adapted from eccentrix-scheduler for 30-minute appointments with 5-minute buffer
 
 export const TZ = 'America/Chicago';
 

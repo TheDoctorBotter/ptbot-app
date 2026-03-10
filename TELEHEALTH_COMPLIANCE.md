@@ -33,7 +33,7 @@ This document describes the HIPAA-compliant telehealth features implemented in P
 
 #### Services
 - `services/telehealthService.ts` - Consent, location, and notes services
-- `services/emrAdapter.ts` - Buckeye EMR integration adapter
+- `services/emrAdapter.ts` - Eccentrix EMR integration adapter
 - `lib/hipaaLogger.ts` - HIPAA-compliant logging utility
 
 #### Components
@@ -144,7 +144,7 @@ Clinical SOAP documentation (admin-only visibility).
 5. Set clinical flags (red flags, follow-up, in-person referral)
 6. Enter session duration
 7. Save note
-8. Optional: Export to Buckeye EMR
+8. Optional: Export to Eccentrix EMR
 
 ### Red Flag Handling
 - When red_flags = true, consult appears in "Red Flags" filter
@@ -155,13 +155,13 @@ Clinical SOAP documentation (admin-only visibility).
 
 ## EMR Integration
 
-### Buckeye EMR (https://github.com/TheDoctorBotter/AIDOCS)
+### Eccentrix EMR (https://github.com/TheDoctorBotter/AIDOCS)
 
 The EMR adapter is ready for integration. Currently returns success=false with TODO.
 
 #### Configuration Required
 ```env
-EMR_BASE_URL=https://emr.buckeyephysicaltherapy.org
+EMR_BASE_URL=https://eccentrixscheduler.buckeyephysicaltherapy.org
 EMR_API_KEY=your-api-key
 ```
 
@@ -170,7 +170,7 @@ EMR_API_KEY=your-api-key
 - `POST /api/ptbot/patients` - Upsert patient records
 
 #### Integration Steps
-1. Provide Buckeye EMR API documentation
+1. Provide Eccentrix EMR API documentation
 2. Update `emrAdapter.ts` payload format
 3. Test with staging EMR
 4. Deploy with production credentials
@@ -243,7 +243,7 @@ These items require external setup and cannot be implemented in code:
 - [ ] Or use HIPAA-compliant hosting (AWS HIPAA eligible, etc.)
 
 ### 4. EMR BAA
-- [ ] Sign BAA with Buckeye EMR system
+- [ ] Sign BAA with Eccentrix EMR system
 - [ ] Configure secure API credentials
 
 ### 5. SSL/TLS
@@ -273,12 +273,12 @@ Required for full functionality:
 EXPO_PUBLIC_SUPABASE_URL=your-project-url
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
-# EMR Integration (optional - for Buckeye EMR)
-EXPO_PUBLIC_EMR_BASE_URL=https://emr.buckeyephysicaltherapy.org
+# EMR Integration (optional - for Eccentrix EMR)
+EXPO_PUBLIC_EMR_BASE_URL=https://eccentrixscheduler.buckeyephysicaltherapy.org
 EXPO_PUBLIC_EMR_API_KEY=your-emr-api-key
 
 # Or server-side only:
-EMR_BASE_URL=https://emr.buckeyephysicaltherapy.org
+EMR_BASE_URL=https://eccentrixscheduler.buckeyephysicaltherapy.org
 EMR_API_KEY=your-emr-api-key
 ```
 
