@@ -2,7 +2,7 @@
  * EMR Adapter Module
  *
  * Integration layer for connecting PTBOT to external EMR systems.
- * Currently designed for Buckeye EMR (https://github.com/TheDoctorBotter/AIDOCS)
+ * Currently designed for Eccentrix EMR (https://github.com/TheDoctorBotter/AIDOCS)
  *
  * HIPAA Compliance Notes:
  * - All EMR communications should use HTTPS/TLS
@@ -10,7 +10,7 @@
  * - PHI transmitted must be encrypted in transit
  * - Audit logs should track all EMR sync operations
  *
- * TODO: Wire to real Buckeye EMR endpoints once API is available
+ * TODO: Wire to real Eccentrix EMR endpoints once API is available
  */
 
 import { createLogger, containsPHI, stripPHI } from '../lib/hipaaLogger';
@@ -104,7 +104,7 @@ class StubEMRAdapter implements IEMRAdapter {
       appointmentId: note.appointment_id,
     });
 
-    // TODO: Implement real EMR sync when Buckeye EMR API is available
+    // TODO: Implement real EMR sync when Eccentrix EMR API is available
     // See: https://github.com/TheDoctorBotter/AIDOCS
 
     return {
@@ -128,16 +128,16 @@ class StubEMRAdapter implements IEMRAdapter {
 }
 
 // ============================================
-// HTTP ADAPTER (Buckeye EMR)
+// HTTP ADAPTER (Eccentrix EMR)
 // ============================================
 
 /**
- * HTTP-based adapter for Buckeye EMR
+ * HTTP-based adapter for Eccentrix EMR
  * Expects endpoints at:
  *   POST /api/ptbot/consult-notes
  *   POST /api/ptbot/patients
  */
-class BuckeyeEMRAdapter implements IEMRAdapter {
+class EccentrixEMRAdapter implements IEMRAdapter {
   private config: EMRConfig;
 
   constructor() {
@@ -149,7 +149,7 @@ class BuckeyeEMRAdapter implements IEMRAdapter {
   }
 
   getAdapterType(): string {
-    return 'buckeye_emr';
+    return 'eccentrix_emr';
   }
 
   /**
@@ -234,8 +234,8 @@ class BuckeyeEMRAdapter implements IEMRAdapter {
         appointmentId: note.appointment_id,
       });
 
-      // Transform payload for Buckeye EMR format
-      // TODO: Adjust based on actual Buckeye EMR API schema
+      // Transform payload for Eccentrix EMR format
+      // TODO: Adjust based on actual Eccentrix EMR API schema
       const emrPayload = {
         external_id: note.note_id,
         appointment_external_id: note.appointment_id,
@@ -323,7 +323,7 @@ class BuckeyeEMRAdapter implements IEMRAdapter {
         userId: patient.user_id,
       });
 
-      // Transform payload for Buckeye EMR format
+      // Transform payload for Eccentrix EMR format
       const emrPayload = {
         external_id: patient.user_id,
         first_name: patient.first_name,
@@ -381,10 +381,10 @@ function createEMRAdapter(): IEMRAdapter {
   const config = getEMRConfig();
 
   if (config.enabled) {
-    logger.info('Using Buckeye EMR adapter', {
+    logger.info('Using Eccentrix EMR adapter', {
       baseUrl: config.baseUrl?.replace(/\/.*$/, '/***'), // Redact path
     });
-    return new BuckeyeEMRAdapter();
+    return new EccentrixEMRAdapter();
   }
 
   logger.info('Using stub EMR adapter (no EMR configured)');
@@ -415,15 +415,15 @@ export function getEMRAdapterType(): string {
 }
 
 // ============================================
-// BUCKEYE EMR INTEGRATION NOTES
+// ECCENTRIX EMR INTEGRATION NOTES
 // ============================================
 
 /**
- * Buckeye EMR Integration TODO:
+ * Eccentrix EMR Integration TODO:
  *
  * Repository: https://github.com/TheDoctorBotter/AIDOCS
  *
- * When connecting to Buckeye EMR, implement the following:
+ * When connecting to Eccentrix EMR, implement the following:
  *
  * 1. API Endpoints (expected):
  *    - POST /api/ptbot/consult-notes - Create/update consult notes
@@ -436,15 +436,15 @@ export function getEMRAdapterType(): string {
  *    - Set EMR_API_KEY in environment
  *
  * 3. Environment Variables:
- *    - EMR_BASE_URL: Base URL of Buckeye EMR API
+ *    - EMR_BASE_URL: Base URL of Eccentrix EMR API
  *    - EMR_API_KEY: API authentication key
  *
  * 4. Payload Schema:
  *    - Adjust emrPayload objects in adapter methods to match
- *      actual Buckeye EMR API schema
+ *      actual Eccentrix EMR API schema
  *
  * 5. HIPAA Requirements:
- *    - Ensure Buckeye EMR has signed BAA
+ *    - Ensure Eccentrix EMR has signed BAA
  *    - Use HTTPS for all communications
  *    - Implement proper error handling to avoid PHI exposure
  *

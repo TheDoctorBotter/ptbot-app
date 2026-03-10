@@ -585,7 +585,7 @@ export default function AdminConsultNoteScreen({
                 ) : (
                   <>
                     <Upload size={18} color={colors.white} />
-                    <Text style={styles.emrButtonText}>Export to Buckeye EMR</Text>
+                    <Text style={styles.emrButtonText}>Export to Eccentrix EMR</Text>
                   </>
                 )}
               </TouchableOpacity>

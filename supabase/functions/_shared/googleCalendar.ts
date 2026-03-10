@@ -272,7 +272,7 @@ export class GoogleCalendarService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          summary: 'Buckeye PT Appointments',
+          summary: 'Eccentrix Appointments',
           description: 'Appointment calendar managed by PTBot',
           timeZone: TZ,
         }),
